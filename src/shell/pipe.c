@@ -1,9 +1,6 @@
 #include <unistd.h>
 #include <sys/wait.h>
 
-// Hardcode some commands
-struct parsedCommand command1;
-struct parsedCommand command2;
 
 // int pipe(int filedes[2]);
 

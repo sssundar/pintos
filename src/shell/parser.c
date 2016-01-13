@@ -6,7 +6,7 @@
 #include "parser.h"
 
 /**
- * There can be at most 1024 KiB tokens or commands, where the extra one is
+ * There can be at most 1024 bytes tokens or commands, where the extra one is
  * for '\0'. This is our own constraint, not the one suggested in the problem
  * set.
  */
