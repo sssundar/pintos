@@ -7,12 +7,18 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <stdbool.h>
 
 /**
  * Opens a file named log.txt, writes a line to it, closes it,
  * then immediately reads from it. 
  */
-int main () {	
+int main () {		
+	bool test = false;
+	if (test) {
+		fprintf(stderr, "Help!\n");
+	}	
+
 	const char *mypath = "log.txt";
 	char *mytext = "Hello World!\n";		
 	int flags = O_WRONLY | O_TRUNC | O_CREAT;
@@ -53,5 +59,5 @@ int main () {
 	} else {
 		printf("Result: %s\n", buffer);
 	}	
-	return 0;
+	return 1;
 }
