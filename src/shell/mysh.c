@@ -104,14 +104,14 @@ int main(void)
   char *command_name;
   command *comms = NULL;
   command *command_walker;
-  int command_length;
-  int num_commands; 
+  int command_length;  
   int i;
   
   int cpid; 
   int status;  
 
-  char *myhomedirectory = malloc(sizeof(char) * MAXPATH);
+  // This will never be freed until we exit (and then by default).
+  char *myhomedirectory = malloc(sizeof(char) * MAXPATH);  
   if (myhomedirectory == NULL) {
     fprintf(stderr, "%s: Could not allocate holder for home directory. Exiting.\n", SHELL_ERROR_IDENTIFIER);
     exit(EXIT_FAILURE);
@@ -141,7 +141,7 @@ int main(void)
       continue;
     }
 
-    // count number of commands, num_commands
+    // count number of commands, command_length
     command_length = 0;
     command_walker = comms;
     while (command_walker->argv != NULL) {
@@ -149,6 +149,14 @@ int main(void)
       command_walker += 1;
     }
     for (i = 0; i < command_length; i++) {
+      /*
+        Pipe Handler
+      */ 
+
+      /*
+        Pipe Handler
+      */       
+
       /////////////////////////////////////////////////////
       // Single Command, No Pipes, Possible Redirections.//
       /////////////////////////////////////////////////////
@@ -196,7 +204,7 @@ int main(void)
 
           if (cpid == 0) {
             // I am the child
-            if (redirection(comms[i].ifile, comms[i].ofile,comms[i].append) == 0) {
+            if (redirection(comms[i].ifile, comms[i].ofile, comms[i].append) == 0) {
               // Will not return if successful.                 
               execvp(comms[i].argv[0], comms[i].argv);    
               perror(SHELL_ERROR_IDENTIFIER);           
@@ -242,4 +250,5 @@ int main(void)
     }
     // NO CODE ALLOWED HERE - must go straight to while loop.
   }
+
 }
