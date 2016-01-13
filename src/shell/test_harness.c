@@ -85,7 +85,11 @@ void test_parser() {
 
 			c_ptr++;
 		}
+
+		free_commands(commands);
 	}
+
+
 }
 
 // Run some simple tests.

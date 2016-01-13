@@ -23,7 +23,8 @@ typedef struct command {
 
 	// Array of pointers to C strings, each of which is an argument for this
 	// program. The first "argument" is actually the program name. This array
-	// is not NULL-terminated; use "argc" for its length.
+	// IS null terminated even though "argc" can be used to mark the end of
+	// the array.
 	char **argv;
 
 	// The length of the "arguments" array.

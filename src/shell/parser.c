@@ -236,6 +236,7 @@ command *get_commands(char *input) {
 
 			// If we get here the current command has the minimum fields set,
 			// so move onto the next command.
+			commands[ci].argv[commands[ci].argc] = NULL;
 			ci++;
 		}
 		// Process output redirection operator. The next token must be a file
@@ -334,6 +335,13 @@ command *get_commands(char *input) {
 			commands[ci].argc++;
 		}
 	}
+	// Make sure that the current command has a non-null "argv" and argc >= 1.
+	if (commands[ci].argc <= 0 || commands[ci].argv == NULL) {
+		fprintf(stderr, "Parser didn't set at least program name.\n");
+		free_tokens(tokens);
+		return NULL;
+	}
+	commands[ci].argv[commands[ci].argc] = NULL; // NULL-terminate last "argv".
 
 	free_tokens(tokens); // It's OK to free tokens here b/c they were copied.
 
@@ -359,7 +367,7 @@ void free_commands(command *commands) {
 	command *c_ptr = commands;
 
 	// Don't free a null pointer.
-	if (commands == NULL) {
+	if (c_ptr == NULL) {
 		return;
 	}
 
