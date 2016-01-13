@@ -26,6 +26,15 @@ Sushant Sundaresh <sushant.sundaresh@gmail.com>
 >> If you have any preliminary comments on your submission, notes for the
 >> TAs, or extra credit, please include them here.
 
+TODO update this:
+We attempted 
+  - to support multiline comments (+1 pt)
+  - to support appending via ">>" (+1 pt)
+  - to support general redirection with "n>" (+2 pts)
+  - to support scrolling through history of commands and editing in-place 
+    (+3 pts)
+  - to support running old commands with !n (+2 pts)
+
 >> Please cite any offline or online sources you consulted while
 >> preparing your submission, other than the Pintos documentation, course
 >> text, lecture notes, and course instructors.
