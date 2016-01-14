@@ -12,13 +12,13 @@ Hamik Mukelyan <hamik@caltech.edu>
 David Luo <swimmerdyl@gmail.com>
 Sushant Sundaresh <sushant.sundaresh@gmail.com>
 
->> Specify how many late tokens you are using on this assignment:  
+>> Specify how many late tokens you are using on this assignment: 0
 
 >> What is the Git repository and commit hash for your submission?
    (You only need to include the commit-hash in the file you submit
    on Moodle.)
 
-   Repository URL:  
+   Repository URL: username@login.cms.caltech.edu:/cs/courses/cs124/teams/Curiosity
    commit ...
 
 ---- PRELIMINARIES ----
@@ -28,16 +28,18 @@ Sushant Sundaresh <sushant.sundaresh@gmail.com>
 
 TODO update this:
 We attempted 
-  - to support multiline comments (+1 pt)
   - to support appending via ">>" (+1 pt)
-  - to support general redirection with "n>" (+2 pts)
   - to support scrolling through history of commands and editing in-place 
     (+3 pts)
-  - to support running old commands with !n (+2 pts)
 
 >> Please cite any offline or online sources you consulted while
 >> preparing your submission, other than the Pintos documentation, course
 >> text, lecture notes, and course instructors.
+
+http://stackoverflow.com/
+http://www.linux-mag.com/id/700/
+http://tldp.org/LDP/lpg/node11.html
+http://www.tutorialspoint.com
 
 			   COMMAND SHELL
 			   =============
@@ -51,8 +53,19 @@ which parts.
 >> L1: How many hours did each team member spend on this assignment?
    Make sure that each member's total time is listed.
 
+   Hamik: 15 
+   Sushant: 25
+   Dave: 25
+
 >> L2: What did each team member focus on for this assignment?  Keep
    descriptions to 25-30 words or less.
+
+   Hamik: wrote the parser to tokenize the given commands, debugging.
+   Sushant: worked on finishing mysh.c, implemented piping, redirection. 
+   	    Debugged with gdb and valgrind.
+   Dave: skeleton code for mysh.c, learned pipes, implemented
+   	 forking, and functions for wait, execvp, and running internal
+	 commands. 
 
 ---- DATA STRUCTURES ----
 
@@ -60,6 +73,7 @@ which parts.
 >> commands that contain arguments and pipes, using the example
 >> command "a arg1 arg2 | b arg1 | c arg1 arg2 arg3".  How does your
 >> shell internally represent such a command?
+
 
 >> A2: Now, given the command:
 >> "a arg1 arg2 < inp.txt | b arg1 | c arg1 arg2 arg3 > out.txt"
