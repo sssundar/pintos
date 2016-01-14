@@ -1,3 +1,9 @@
+/**
+ * @file
+ * @author Hamik Mukelyan, David Luo, Sushant Sundaresh
+ */
+
+//------------------------------ Includes -------------------------------------
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
@@ -17,6 +23,9 @@
 
 #define MAXPATH 260
 
+/** 
+ * Global string to display with any error messages.
+ */
 char *SHELL_ERROR_IDENTIFIER = "cursh";
 
 /**
@@ -29,15 +38,19 @@ char *SHELL_ERROR_IDENTIFIER = "cursh";
  *
  * @param ifile
  * @param ofile
- * @param append_flag 
- * @returns bool true on success or false on IO failure. 
+ * @param append_flag
+ * @return true on success or false on IO failure.
  */
 bool redirection(char *ifile, char *ofile, bool append_flag) {
 
-  int flags = O_RDONLY;            
+  // Flags for open(), read only
+  int flags = O_RDONLY;         
+  // Flags for open() failure on input, output redirection files
   bool in_fail = false;
   bool out_fail = false;
+  // Error flag from open()
   int indesc, outdesc;
+  // Mode for open() when creating a file, to specify permissions.
   mode_t mode;
 
   if (ifile != NULL) {    
@@ -89,11 +102,13 @@ bool redirection(char *ifile, char *ofile, bool append_flag) {
 }
 
 /*
- * function fork_yourself:
+ * function fork_yourself forks off children if we're not a parent executing
+ * an internal command.
  * @param IS_INTERNAL: bool flag is it an internal command?
  * @param IS_ALONE: bool flag is it a single command?
  * @param *IS_PARENT: pointer will be set if fork results in a parent.
  * @param *IS_CHILD: pointer will be set if fork results in a child.
+ * @param *fpid: pointer to child process id for downstream function to wait on
  * @return bool: returns false for an error, true if executed successfully.
  */
 
@@ -148,7 +163,7 @@ bool fork_yourself(bool IS_INTERNAL, bool IS_ALONE, bool *IS_PARENT, bool *IS_CH
  * @param int **ptr_pipe_left pointer to a pointer to an array capable of holding two integer file descriptors
  * @param int **ptr_pipe_right pointer to a pointer to an array capable of holding two integer file descriptors
  * @param int flag 0, 1 are interpreted as described above.
- * @returns false on any error, and true on total success
+ * @return false on any error, and true on total success
  */
 bool pipe_creation_handler(int **ptr_pipe_left, int **ptr_pipe_right, int flag) {
   int error_pipe;     // pipe return flag
@@ -238,7 +253,8 @@ void execute(char **argv){
 }
 
 /*
- * function waiting is a wrapper for wait
+ * function waiting is a wrapper for wait. it only returns true
+ * if the child reaped terminated normally and successfully.
  * @param pid_t fpid: the command to be executed.
  * @return bool: true if successful, false if unsuccessful.
  */
@@ -296,10 +312,10 @@ int main(void) {
   // for execution & internal/external checking
   char *command_name;
 
-  int command_length;  
   // parsed command holder + pointer for counting number of commands
   command *comms = NULL;
   command *command_walker;
+  int command_length;
 
   // for loop iteration variable
   int i;
@@ -313,12 +329,22 @@ int main(void) {
     exit(EXIT_FAILURE);
   }
   
-  /* 
-    Curiosity Shell Control Flow
-  */
+  /**
+    * Curiosity Shell Control Flow
+    * The structure of the program is broken up as follows:
+    * Pipe Creation
+    * Fork Handler
+    * Pipe Cleanup
+    * Redirection (Including for Parent Internal Commands)
+    * Command Run (Child, Parent), Parent Wait (if appropriate)
+    * Reset Temporary Parent Redirection for Internal Commands
+    * Get Next User Input
+    */
   while(1){
+    // Free the previous command
     free_commands(comms);
     
+    // Set up shell prompt & get user input
     printf("%s:%s> ", login, cwd);
     error_fgets = fgets(str, 1024, stdin);
     if (error_fgets == NULL) {
@@ -326,17 +352,19 @@ int main(void) {
       // correct behavior is to terminate so:
       exit(EXIT_SUCCESS);
     }
+
+    // Prepare to tokenize
     command_length = strlen((const char *) str);
-    
     if (command_length == 0) {
       comms = NULL;
       continue;
     }
 
     str[command_length-1] = '\0';
+    // Tokenize & parse into discrete commands
     comms = get_commands(str);           
     
-    // Create another prompt in the next iteration
+    // If no commands, create another prompt in the next iteration
     if (comms == NULL) {
       continue;
     }
