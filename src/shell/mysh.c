@@ -108,11 +108,10 @@ bool fork_yourself(bool IS_INTERNAL, bool IS_ALONE, bool *IS_PARENT, bool *IS_CH
 
     return true;
   } else{
-
-    pid_t fpid;
-    fpid = fork();
+    
+    *fpid = fork();
  
-    if (fpid == -1) {            
+    if (*fpid == -1) {            
       perror(SHELL_ERROR_IDENTIFIER); 
 
       // Done executing this command set, go back to the shell
@@ -121,7 +120,7 @@ bool fork_yourself(bool IS_INTERNAL, bool IS_ALONE, bool *IS_PARENT, bool *IS_CH
       return false;
     }
     
-    if (fpid == 0) {
+    if (*fpid == 0) {
       // I am the child
       // Set child and parent flags
       *IS_CHILD = true;
@@ -184,18 +183,15 @@ bool pipe_creation_handler(int **ptr_pipe_left, int **ptr_pipe_right, int flag) 
 
 bool run_internal(bool IS_CD, bool IS_EXIT, char *cwd, char **argv, int argc){
   int error_chdir;
-  char * error_getenv;
-
+  char *error_getenv;
+  char *error_getcwd;
   // Change Directory. Redirection ignored.
   if (IS_CD) {
     if (argc > 1) {
       error_chdir = chdir(argv[1]);
-      if (error_chdir == 0){
-	     // Success
-	     return true;
-      } else{
-	       return false;
-      }
+      if (error_chdir != 0){
+        return false;
+      } // else Success, now go change cwd for display      
     } else {
       error_getenv = getenv("HOME");
       if (error_getenv != NULL) {
@@ -210,7 +206,8 @@ bool run_internal(bool IS_CD, bool IS_EXIT, char *cwd, char **argv, int argc){
     
     if (error_chdir == 0) {
       // success, run getcwd again for shell prompt as directory has changed.
-      if(getcwd(cwd, sizeof(cwd)) == NULL){
+      error_getcwd = getcwd(cwd, MAXPATH);
+      if(error_getcwd == NULL){
       	perror(SHELL_ERROR_IDENTIFIER);
       	return false;
       } else{
@@ -220,12 +217,12 @@ bool run_internal(bool IS_CD, bool IS_EXIT, char *cwd, char **argv, int argc){
       fprintf(stderr, "%s: Unknown error with chdir().\n", SHELL_ERROR_IDENTIFIER);   
       return false; // return to shell prompt
     }
-  }
-  else if (IS_EXIT){
+  } else if (IS_EXIT) {
     // Exit Curiosity Shell. Redirection Ignored.
-    exit(EXIT_SUCCESS);
-    
+    exit(EXIT_SUCCESS);    
   }
+
+  return false;
 }
 
 
@@ -288,7 +285,7 @@ int main(void) {
   // This is the current working directory
   // This will be updated on cd commands run internally
   char cwd[MAXPATH];
-  getcwd(cwd, sizeof(cwd));
+  getcwd(cwd, MAXPATH);
 
   // Error Flag Holders
   char *error_fgets;  // fgets return flag      
@@ -315,20 +312,7 @@ int main(void) {
     fprintf(stderr, "%s: Could not allocate holder for potential pipes. Exiting.\n", SHELL_ERROR_IDENTIFIER);
     exit(EXIT_FAILURE);
   }
-  // *(pipe_left) = 1;
-  // *(pipe_left+1) = 2;
-  // *(pipe_right) = 3;
-  // *(pipe_right+1) = 4;
-
-  // Holds $HOME result from getenv call.
-  // This will never be freed until we exit (and then by default).
-  char *myhomedirectory = malloc(sizeof(char) * MAXPATH);  
-  if (myhomedirectory == NULL) {
-    fprintf(stderr, "%s: Could not allocate holder for home directory. Exiting.\n", SHELL_ERROR_IDENTIFIER);
-    exit(EXIT_FAILURE);
-  }
-
-
+  
   /* 
     Curiosity Shell Control Flow
   */
@@ -395,14 +379,21 @@ int main(void) {
       }
 
       IS_INTERNAL = false;
-      IS_EXTERNAL = false;
+      IS_EXTERNAL = true;
       IS_CD = false;
       IS_EXIT = false;
-      if (strcmp((const char *)command_name, (const char *) "cd") == 0) IS_CD = true;
-      if (strcmp((const char *)command_name, (const char *) "exit") == 0) IS_EXIT = true;
-      if (IS_CD || IS_EXIT) IS_INTERNAL = true;
-      if (IS_INTERNAL) IS_EXTERNAL = false;
-
+      if (strcmp((const char *)command_name, (const char *) "cd") == 0) {
+        IS_CD = true;
+      }
+      if (strcmp((const char *)command_name, (const char *) "exit") == 0) {
+        IS_EXIT = true;
+      }
+      if (IS_CD || IS_EXIT) {
+        IS_INTERNAL = true;
+      }
+      if (IS_INTERNAL) {
+        IS_EXTERNAL = false;
+      } 
       /*
         Pipe & Fork Handler (fork_yourself), 
         Set IS_PARENT, IS_CHILD in fork_yourself, and use its return value to determine error
@@ -525,6 +516,7 @@ int main(void) {
         This implementation possibly racks up "erroneous file handlers"
         unless dup() removes those on error.
       */       
+      IS_REDIRECTED = false;
       if (IS_PARENT && IS_INTERNAL) {        
         if (comms[i].ifile != NULL) {
           IS_REDIRECTED = true;
