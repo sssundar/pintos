@@ -81,16 +81,17 @@ which parts.
 >> L1: How many hours did each team member spend on this assignment?
    Make sure that each member's total time is listed.
 
-   Hamik: 15 
+   Hamik: 15 (parser ended up being easier than the rest, & that was his job)
    Sushant: 25
    Dave: 25
 
 >> L2: What did each team member focus on for this assignment?  Keep
    descriptions to 25-30 words or less.
 
-   Hamik: wrote the parser to tokenize the given commands, debugging.
+   Hamik: wrote the parser to tokenize the given commands, debugging, readline
+     library integration.
    Sushant: worked on finishing mysh.c, implemented piping, redirection. 
-   	    Debugged with gdb and valgrind.
+   	 Debugged with gdb and valgrind.
    Dave: skeleton code for mysh.c, learned pipes, implemented
    	 forking, and functions for wait, execvp, and running internal
 	 commands. 
