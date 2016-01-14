@@ -53,6 +53,14 @@ bool redirection(char *ifile, char *ofile, bool append_flag) {
   // Mode for open() when creating a file, to specify permissions.
   mode_t mode;
 
+  // can't redirect STDIN and STDOUT to the same file.
+  if ((ifile != NULL) && (ofile != NULL)) {    
+    if (strcmp(ifile,ofile) == 0) {
+      fprintf(stderr, "%s: Cannot redirect input and output to same file.\n", SHELL_ERROR_IDENTIFIER);
+      return false;
+    }
+  }
+
   if (ifile != NULL) {    
     indesc = open(ifile, flags);    
     if (indesc == -1) {
@@ -569,10 +577,14 @@ int main(void) {
         //   break;
         // }        
 
-        redirection(comms[i].ifile, comms[i].ofile, comms[i].append);
+        if (!redirection(comms[i].ifile, comms[i].ofile, comms[i].append)) {
+          break;
+        }
       } else if (IS_CHILD) {
         IS_REDIRECTED = true;
-        redirection(comms[i].ifile, comms[i].ofile, comms[i].append);
+        if (!redirection(comms[i].ifile, comms[i].ofile, comms[i].append)) {
+          break;
+        }
       } 
 
       /*
