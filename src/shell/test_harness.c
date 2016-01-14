@@ -22,6 +22,7 @@ void test_parser() {
 			"  echo\t\"sup\"",
 			"\techo\t\"sup\"",
 			"\techo    \"sup\"\t  ",
+			"cat <log.txt>log.txt",
 			NULL
 	};
 	char **s_ptr;

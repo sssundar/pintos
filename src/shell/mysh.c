@@ -18,7 +18,9 @@
 
 #include <fcntl.h>
 
-#include "parser.c"
+#include <readline/readline.h>
+#include <readline/history.h>
+
 #include "parser.h"
 
 #define MAXPATH 260
@@ -299,8 +301,7 @@ int main(void) {
   int ORIGINAL_STDIN, ORIGINAL_STDOUT; 
 
   // Holder for command string from STDIO.
-  // Max size is 1 KiB
-  char str[1024];
+  char *str;
   
   // This gets the current username
   char *login;
@@ -310,9 +311,6 @@ int main(void) {
   // This will be updated on cd commands run internally
   char cwd[MAXPATH];
   getcwd(cwd, MAXPATH);
-
-  // Error Flag Holders
-  char *error_fgets;  // fgets return flag      
   
   // pointer to pid holder for children and waiting
   pid_t child_pid; 
@@ -320,14 +318,16 @@ int main(void) {
   // for execution & internal/external checking
   char *command_name;
 
+  size_t command_length;
+
   // parsed command holder + pointer for counting number of commands
   command *comms = NULL;
   command *command_walker;
-  int command_length;
+
+  char prompt[80];
 
   // for loop iteration variable
   int i;
-
 
   // This will never be freed until we exit (and then by default).
   pipe_left = malloc(2*sizeof(int));
@@ -351,15 +351,14 @@ int main(void) {
   while(1){
     // Free the previous command
     free_commands(comms);
-    
-    // Set up shell prompt & get user input
-    printf("%s:%s> ", login, cwd);
-    error_fgets = fgets(str, 1024, stdin);
-    if (error_fgets == NULL) {
-      // Either because of EOF or STDIN read error. Can't tell, and 
-      // correct behavior is to terminate so:
-      exit(EXIT_SUCCESS);
-    }
+
+    // Display prompt.
+    sprintf(prompt, "%s:%s> ", login, cwd);
+    str = readline(prompt);
+
+    // Save the history.
+    if (str && *str)
+      add_history (str);
 
     // Prepare to tokenize
     command_length = strlen((const char *) str);
@@ -368,9 +367,10 @@ int main(void) {
       continue;
     }
 
-    str[command_length-1] = '\0';
     // Tokenize & parse into discrete commands
-    comms = get_commands(str);           
+    comms = get_commands(str);
+    if (str != NULL)
+      free(str);
     
     // If no commands, create another prompt in the next iteration
     if (comms == NULL) {

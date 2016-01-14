@@ -136,6 +136,20 @@ char **get_tokens(char *input) {
 			else { // Assume this is the start of a new token.
 				tok_start = i++;
 			}
+
+			// Look ahead to next char. If it's a non-whitespace delim
+			// then store this token and move on.
+			if (input[i] != '\0') {
+
+				if (input[i] == '|' || input[i] == '<' ||
+						input[i] == '>' || input[i] == '"') {
+
+					if (tok_start != -1) { // We're at the end of a token.
+						tokens[num_tok++] = substr(input, tok_start, i);
+						tok_start = -1;
+					}
+				}
+			}
 		}
 	}
 	// Handle the final token.
@@ -320,7 +334,7 @@ command *get_commands(char *input) {
 			// as tokens. We need to allocate space for a null terminator, too.
 			if (commands[ci].argv == NULL) {
 				commands[ci].argv = (char **)
-						malloc (sizeof(char *) * (num_toks+1));
+						malloc (sizeof(char *) * (num_toks + 1));
 				if (commands[ci].argv == NULL) {
 					fprintf(stderr, "Problem allocating argv.\n");
 					exit(1);
