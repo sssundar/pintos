@@ -355,12 +355,15 @@ int main(void) {
     // Display prompt.
     sprintf(prompt, "%s:%s> ", login, cwd);
     str = readline(prompt);
-
+    if (str == NULL) {
+      exit(EXIT_SUCCESS);
+    }
+    
     // Save the history.
     if (str && *str)
-      add_history (str);
-
-    // Prepare to tokenize
+      add_history (str);    
+      
+    // Prepare to tokenize    
     command_length = strlen((const char *) str);
     if (command_length == 0) {
       comms = NULL;

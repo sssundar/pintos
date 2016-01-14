@@ -12,14 +12,14 @@ Hamik Mukelyan <hamik@caltech.edu>
 David Luo <swimmerdyl@gmail.com>
 Sushant Sundaresh <sushant.sundaresh@gmail.com>
 
->> Specify how many late tokens you are using on this assignment: 0
+>> Specify how many late tokens you are using on this assignment: 1
 
 >> What is the Git repository and commit hash for your submission?
    (You only need to include the commit-hash in the file you submit
    on Moodle.)
 
    Repository URL: username@login.cms.caltech.edu:/cs/courses/cs124/teams/Curiosity
-   commit ...
+   commit ddfcc78a6eed49ca74e196ce97d11d8737751dc8
 
 ---- PRELIMINARIES ----
 
