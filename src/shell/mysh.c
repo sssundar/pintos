@@ -30,9 +30,9 @@ char *SHELL_ERROR_IDENTIFIER = "cursh";
  * @param ifile
  * @param ofile
  * @param append_flag 
- * @returns 0 on success or -1 on any failure. NULL iofiles ensure successes.
+ * @returns bool true on success or false on IO failure. 
  */
-int redirection(char *ifile, char *ofile, bool append_flag) {
+bool redirection(char *ifile, char *ofile, bool append_flag) {
 
   int flags = O_RDONLY;            
   bool in_fail = false;
@@ -81,24 +81,53 @@ int redirection(char *ifile, char *ofile, bool append_flag) {
     }      
 
     if (!out_fail) {
-      return 0;
+      return true;
     }
   }            
 
-  return -1;    
+  return false;
 }
 
-int main(void)
-{
+/*
+ * Swap pipe_left and pipe_right pointers for readability of code if argument is 0
+ * Pipe to pipe_right if argument is 2, then check for pipe errors if argument is 1
+ * @param int **ptr_pipe_left pointer to a pointer to an array capable of holding two integer file descriptors
+ * @param int **ptr_pipe_right pointer to a pointer to an array capable of holding two integer file descriptors
+ * @param int flag 0, 1 are interpreted as described above.
+ * @returns false on any error, and true on total success
+ */
+bool pipe_creation_handler(int **ptr_pipe_left, int **ptr_pipe_right, int flag) {
+  int error_pipe;     // pipe return flag
+  int *ptr_pipe_temp;     // pointer swap holder
+  switch (flag) {
+    case 0:
+        ptr_pipe_temp = *ptr_pipe_left;
+        *ptr_pipe_left = *ptr_pipe_right;
+        *ptr_pipe_right = ptr_pipe_temp;
+      break;
+    case 1:
+      error_pipe = pipe(*ptr_pipe_right);
+      if (error_pipe >= 0) {
+        break;
+      }
+    default:
+      return false;    
+  }  
+  return true;
+}
+
+int main(void) {
   // Helpful Flags
   bool IS_NOT_ALONE, IS_ALONE, IS_INTERNAL, IS_EXTERNAL, IS_CD, IS_EXIT;
   bool IS_PARENT, IS_CHILD, IS_REDIRECTED, IS_FIRST, IS_LAST, IS_MIDDLE;
 
   // Pipe Holders
   int *pipe_left;
-  int *pipe_right; 
-  int *pipe_temp; 
+  int *pipe_right;   
   
+  // Holders for dup'd STDIN, OUT in case of redirected internal commands
+  int ORIGINAL_STDIN, ORIGINAL_STDOUT; 
+
   // Holder for command string from STDIO.
   // Max size is 1 KiB
   char str[1024];
@@ -117,9 +146,7 @@ int main(void)
   char *error_getenv; // getenv return flag
   int error_chdir;    // chdir return flag
   int error_waitpid;  // waitpid return flag
-  int status;         // waitpid child status holder
-  int error_pipe;     // pipe return flag
-  int cpid;           // fork return flag
+  int status;         // waitpid child status holder  
   
   // for execution & internal/external checking
   char *command_name;
@@ -191,30 +218,227 @@ int main(void)
       command_length += 1;
       command_walker += 1;
     }
+    
+    // Set IS_ALONE, IS_NOT_ALONE Flags
+    IS_ALONE = false;
+    IS_NOT_ALONE = false;
+    if (command_length == 1) IS_ALONE = true;
+    if (command_length > 1) IS_NOT_ALONE = true;
 
     /* Handle Latest Set of Commands */
     for (i = 0; i < command_length; i++) {
       /*
         Set Flags for THIS command
-        IS_FIRST, IS_MIDDLE, IS_LAST, IS_ALONE, IS_NOT_ALONE, IS_INTERNAL, IS_EXTERNAL, IS_CD, IS_EXIT
+        IS_FIRST, IS_MIDDLE, IS_LAST, IS_INTERNAL, IS_EXTERNAL, IS_CD, IS_EXIT
       */
+      
+      command_name = comms[i].argv[0];        
+
+      IS_FIRST = false;
+      IS_MIDDLE = false;
+      IS_LAST = false;
+
+      if (i == 0) {
+        IS_FIRST = true;
+      }
+      if (i == (command_length-1)) {
+        IS_LAST = true;
+      }
+      if ((!IS_FIRST) && (!IS_LAST)) {
+        IS_MIDDLE = true;
+      }
+
+      IS_INTERNAL = false;
+      IS_EXTERNAL = false;
+      IS_CD = false;
+      IS_EXIT = false;
+      if (strcmp((const char *)command_name, (const char *) "cd") == 0) IS_CD = true;
+      if (strcmp((const char *)command_name, (const char *) "exit") == 0) IS_EXIT = true;
+      if (IS_CD || IS_EXIT) IS_INTERNAL = true;
+      if (IS_INTERNAL) IS_EXTERNAL = false;
 
       /*
-        Pipe & Fork Handler,
-        Set IS_PARENT, IS_CHILD
-      */       
+        Pipe & Fork Handler (fork_yourself), 
+        Set IS_PARENT, IS_CHILD in fork_yourself, and use its return value to determine error
+      */
+
+      if (IS_FIRST && IS_ALONE) {
+        // No piping        
+        
+        // Fork and set IS_PARENT, IS_CHILD
+        if (!fork_yourself(IS_INTERNAL, IS_ALONE, &IS_PARENT, &IS_CHILD)) { 
+          break; 
+        }
+
+        // No pipe handling
+
+      } else if (IS_FIRST && IS_NOT_ALONE) {
+        // pipe to pipe_right, check for pipe errors & return to prompt if errors found.
+        if (!pipe_creation_handler(&pipe_left, &pipe_right, 1)) {
+          fprintf(stderr, "%s: Right-pipe creation error for command %s.\n", SHELL_ERROR_IDENTIFIER, command_name);
+          break;
+        }
+        
+        // Fork and set IS_PARENT, IS_CHILD
+        if (!fork_yourself(IS_INTERNAL, IS_ALONE, &IS_PARENT, &IS_CHILD)) { 
+          break; 
+        }
+
+        // parent closes pipe_right_write
+        // errors reported by close are inconsequential
+        if (IS_PARENT) {
+          close(pipe_right[1]);
+        } 
+        
+        // child closes pipe_right_read
+        // child duplicates pipe_right_write to stdout, then closes it.          
+        // errors reported by close are inconsequential
+        if (IS_CHILD) {
+          close(pipe_right[0]);
+          if (dup2(pipe_right[1], STDOUT_FILENO) == -1) {
+            perror(SHELL_ERROR_IDENTIFIER);
+            exit(EXIT_FAILURE);
+          }
+          close(pipe_right[1]);
+        }
+        
+      } else if (IS_LAST && IS_NOT_ALONE) {
+        // swap pipe_left/pipe_right
+        // no piping        
+        pipe_creation_handler(&pipe_left, &pipe_right, 0);                            
+        
+        // Fork and set IS_PARENT, IS_CHILD        
+        if (!fork_yourself(IS_INTERNAL, IS_ALONE, &IS_PARENT, &IS_CHILD)) { 
+          break; 
+        }
+
+        // parent closees pipe_left_read
+        // errors reported by close are inconsequential
+        if (IS_PARENT) {
+          close(pipe_left[0]);
+        }
+
+        // child duplicates pipe_left_read to its stdin, then closes it
+        // errors reported by close are inconsequential
+        if (IS_CHILD) {
+          if (dup2(pipe_left[0], STDIN_FILENO) == -1) {
+            perror(SHELL_ERROR_IDENTIFIER);
+            exit(EXIT_FAILURE);
+          }
+          close(pipe_left[0]);
+        }
+
+      } else if (IS_MIDDLE && IS_NOT_ALONE) {
+        // swap pipe_left/pipe_right
+        pipe_creation_handler(&pipe_left, &pipe_right, 0);                            
+        // pipe to pipe_right, check for pipe errors & return to prompt if errors found.        
+        if (!pipe_creation_handler(&pipe_left, &pipe_right, 1)) {
+          fprintf(stderr, "%s: Right-pipe creation error for command %s.\n", SHELL_ERROR_IDENTIFIER, command_name);
+          break;
+        }        
+
+        // Fork and set IS_PARENT, IS_CHILD
+        if (!fork_yourself(IS_INTERNAL, IS_ALONE, &IS_PARENT, &IS_CHILD)) { 
+          break; 
+        }
+
+        // parent closes pipe_left_read and pipe_right_write
+        // errors reported by close are inconsequential
+        if (IS_PARENT) {
+          close(pipe_left[0]);
+          close(pipe_right[1]);
+        }
+
+        // child closes pipe_right_read, duplicates pipe_left_read to stdin,
+        // pipe_right_write to stdout, then closes both.
+        // errors reported by close are inconsequential
+        if (IS_CHILD) {
+          close(pipe_right[0]);
+          if (dup2(pipe_left[0], STDIN_FILENO) == -1) {
+            perror(SHELL_ERROR_IDENTIFIER);
+            exit(EXIT_FAILURE);
+          }
+          if (dup2(pipe_right[1], STDOUT_FILENO) == -1) {
+            perror(SHELL_ERROR_IDENTIFIER);
+            exit(EXIT_FAILURE);
+          }
+          close(pipe_left[0]);
+          close(pipe_right[1]);
+        }
+
+      } else {
+        // Unknown case.
+        fprintf(stderr, "%s: Unexpected pipe handling case for command %s.\n", SHELL_ERROR_IDENTIFIER, command_name);
+        break; 
+      }
 
       /*
         Redirection Handler      
         Set IS_REDIRECTED flag
+        Save STDIN/STDOUT/STDERR for later restoration
+        This implementation possibly racks up "erroneous file handlers"
+        unless dup() removes those on error.
       */       
+      if (IS_PARENT && IS_INTERNAL) {        
+        if (comms[i].ifile != NULL) {
+          IS_REDIRECTED = true;
+          ORIGINAL_STDIN = dup(STDIN_FILENO);
+          if (ORIGINAL_STDIN == -1) {
+            perror(SHELL_ERROR_IDENTIFIER);
+            break;
+          }
+        }
+        if (comms[i].ofile != NULL) {
+          IS_REDIRECTED = true;
+          ORIGINAL_STDOUT = dup(STDOUT_FILENO);
+          if (ORIGINAL_STDOUT == -1) {
+            perror(SHELL_ERROR_IDENTIFIER);
+            break;
+          }
+        }
+        // Not necessary as we do not handle STDERR redirection
+        // ORIGINAL_STDERR = dup(STDERR_FILENO);
+        // if (ORIGINAL_STDERR == -1) {
+        //   perror(SHELL_ERROR_IDENTIFIER);
+        //   break;
+        // }        
+
+        redirection(comms[i].ifile, comms[i].ofile, comms[i].append);
+      } else if (IS_CHILD) {
+        IS_REDIRECTED = true;
+        redirection(comms[i].ifile, comms[i].ofile, comms[i].append);
+      } 
 
       /*
         Run/Wait Handler
       */       
 
+
       /*
         Parent STDIO Reset
         In case of Single Internal Command with Redirection
-      */       
+        On failure, MUST EXIT as user can no longer target STDIN or
+        see our STDOUT, possibly.
+      */
+      if (IS_PARENT && IS_INTERNAL && IS_ALONE && IS_REDIRECTED) {
+        if (comms[i].ifile != NULL) {
+          if (dup2(ORIGINAL_STDIN, STDIN_FILENO) == -1) {
+            perror(SHELL_ERROR_IDENTIFIER);
+            exit(EXIT_FAILURE);
+          }
+          close(ORIGINAL_STDIN);
+        }
+        if (comms[i].ofile != NULL) {
+          if (dup2(ORIGINAL_STDOUT, STDOUT_FILENO) == -1) {
+            perror(SHELL_ERROR_IDENTIFIER);
+            exit(EXIT_FAILURE);
+          }
+          close(ORIGINAL_STDOUT);
+        }
+        // Do not need to handle STDERR, we do not support it's redirection
+      }
+
     }
+  }
+  exit(EXIT_SUCCESS);
+}
