@@ -248,6 +248,10 @@ c terminates
 >> A5: Similarly, describe the details of how terminated processes are
 >> reaped in the example command "a | b | c".
 
+Terminated processes are reaped at the beginning of the while loop which 
+loops through the given commands. At the beginning, the while loop frees 
+each struct representing the command.
+
 >> A6: Similarly, describe which processes are responsible for setting
 >> up the redirections in the example command
 >> "a < inp.txt | b | c > out.txt".
@@ -271,8 +275,20 @@ sets it to stdin, and redirects (no piping) to out.txt as described previously.
 >> A7: Why must the chdir and exit commands be implemented as built-in
 >> functions, rather than external programs?
 
+The chdir and exit functions must be implemented as built-in functions 
+because if they are forked like external programs, the address space 
+is overwritten, so they won't change the environment the way the user wants.
+For example, cd in a child changes the child process' view not the parent
+shell so the user stays in place.
+
 >> A8: Why did you ultimately choose this design?  In what ways is it
 >> superior to other designs you considered as you developed your solution?
+
+We ultimately chose this design to imitate as closely as possible the 
+results we saw from the bash shell provided by Mint Linux. Ultimately we 
+chose to do batch processing. This is slower but simpler to implement
+and we didn't think the common case (simple linked programs) would
+suffer too greatly from the user's standpoint.
 
 			  SURVEY QUESTIONS
 			  ================
