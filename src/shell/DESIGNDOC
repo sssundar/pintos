@@ -26,11 +26,39 @@ Sushant Sundaresh <sushant.sundaresh@gmail.com>
 >> If you have any preliminary comments on your submission, notes for the
 >> TAs, or extra credit, please include them here.
 
-TODO update this:
 We attempted 
   - to support appending via ">>" (+1 pt)
   - to support scrolling through history of commands and editing in-place 
     (+3 pts)
+
+--------------------------------------------------------------------------------
+--------------
+VERY IMPORTANT
+--------------
+Donnie, you have to run 
+sudo apt-get install libreadline-dev for our extra credit to work.
+--------------------------------------------------------------------------------
+
+Our approach to our shell was "if a child fails during execution, it ought
+to tell the user." So we don't display exit codes on failure or success.
+
+No IO errors that we know of will cause our shell to terminate. We will just
+return to the command prompt if something weird happens in our system calls.
+
+If the shell parent dies, keep in mind the children are adopted by init() so 
+they will happily keep running. This is just like the bash shell.
+
+We will be perfectly happy to parse commands like 
+cat < log1.txt > log2.txt | cd | exit | echo "hi" | grep -e "h"
+
+The cd and exit will be executed in a child process, which is, as far
+as we can tell, what happens in bash. Notice we said "cd" not "chdir"
+we DO NOT handle "chdir" on the shell prompt because bash doesn't either.
+
+As we redirect after piping, nothing is really passed through the first pipe. 
+So while this command is useless, it will execute just fine.
+
+Happy hunting (for bugs)!
 
 >> Please cite any offline or online sources you consulted while
 >> preparing your submission, other than the Pintos documentation, course
@@ -74,17 +102,122 @@ which parts.
 >> command "a arg1 arg2 | b arg1 | c arg1 arg2 arg3".  How does your
 >> shell internally represent such a command?
 
+We split input into whitespace | " and < > delimited string tokens. We 
+treated quoted strings as a single token. 
+
+We broke these into commands on pipes by matching redirection characters
+to the next token and thus building up a command structure array with each
+command having a name, an argument list (null delimited), an argument count
+ignoring the null, an input and output file redirection pathstring, and a 
+boolean flag to say whether output redirection was > or >>. 
+
+So:
+
+a, arg1, arg2, |, b, arg1, |, c, arg1, arg2, arg3
+becomes
+a,arg1,arg2
+b,arg1,
+c,arg1,arg2,arg3
+which becomes
+
+command -> 
+  name -> "a\0"
+  argv -> ["a\0", "arg1\0", "arg2\0", NULL]
+  argc = 3
+  ifile -> NULL
+  ofile -> NULL
+  append -> false
+
+and so on.
+
+Then we passed these commands in an array (terminated by a command with a null
+argv field) to the Curiosity Shell (cursh) flow control a big for loop
+within the while loop getting user input.
+
+We execute commands one at a time, left to right.
+
+We first handled pipe creation based solely on whether a command had neighbors.
+We maintain left_pipe and right_pipe int[2] data structures which were swapped 
+to make sure for a given command in the queue left meant the input pipe and
+right meant the output pipe. 
+
+Visually:
+
+left_pipe -> [left_read, left_write]
+right_pipe -> [right_read, right_write]
+
+Maps to, from the point of view of b:
+
+a |-> (left read) b (right_write)->| c
+
+and in the next iteration for c, 
+
+a | b |-> (left_read) c
+
+where left_read = right_read from the previous iteration.
+
+No special data structures were necessary after pipe storage.
+Briefly, we then fork() and complete pipe setup, then handle redirections by 
+whether we're in the parent or child. We do allow internal commands
+to temporarily redirect STDOUT and STDIN as they see fit, but we do not
+handle STDERR redirection. The ONLY time we intentionally programmed our
+shell to exit instead of recover was here - if our redirections cannot be 
+reverted after the internal command executes. 
+
+All this flow is modular, so we don't have long nested if-else statements. 
+See the main()-while loop documentation in mysh.c.
+
+It boils down to:
+
+Set up Shell (directory, login name, flags, mallocs for common variables)
+Get Input
+Tokenize
+Parse to Commands
+Pipe Creation
+Fork
+Pipe Cleanup
+Redirect (including for single and piped internal commands)
+Run/Wait
+Reset Redirection (in case of single internal commands)
+Return to prompt
 
 >> A2: Now, given the command:
 >> "a arg1 arg2 < inp.txt | b arg1 | c arg1 arg2 arg3 > out.txt"
 >> Briefly explain specifically how the redirections are parsed and
 >> represented, and by what processes.
 
+Well, first we set up pipes. For the first command, we set up a 
+write pipe as its STDOUT using pipe(), fork(), close(), and dup2(). 
+In the parent, we close the write end of the pipe and keep the read end
+to pass to the next child when we get to him. We use the data structure
+described above (in the first problem) to do this.
+
+We then handle redirection for command a, using open() to get a read
+only filehandle into inp.txt. We set this up as our STDIN and close 
+the original handle. 
+
+For b, we first handle pipes, so our stdin is set from the pipe read handle
+from the previous process (copied as we forked off our parent). Our write
+handle is similar. The pipe here for the b read/write (right pipe) is created
+before we fork so the parent shell has the read pipe.
+
+Finally c gets input from the read pipe off the STDOUT of the b process. After
+handling piping we set up redirections, opening a truncated file out.txt with
+flags set for creation with 760 permissions if possible given our umask. 
+
 ---- ALGORITHMS ----
 
 >> A3: Illustrate how you solved the problem of setting up
 >> redirection in a simple command like "a < inp.txt > out.txt", by
 >> describing what process takes care of the redirection and when.
+
+We fork off a child with its own command struct, and then the child
+proceeds to recognize that it needs to redirect its input and output
+as the ifile and ofile are not null in its struct. It opens a read-only
+view into inp.txt and uses dup2() to set this as its STDIN. It opens
+a truncating/creating view into out.txt and sets this as its STDOUT using
+dup2(). The original file handles open()ed are close()d. Then we proceed to
+execvp().
 
 >> A4: Illustrate how you solved the problem of setting up the pipes
 >> between multiple operations in a single command, by describing
@@ -95,12 +228,43 @@ which parts.
 >> Keep your description of each process' responsibilities limited to
 >> ~25 words or less.
 
+cursh creates r/w pipes for a's output.
+cursh forks to a
+cursh closes its w end.
+a closes its r end
+a sets its w end as stdout and closes its other w handle
+a terminates
+cursh sets up the r/w pipes for b's output
+cursh forks b
+cursh closes a's r end and b's w end
+b sets a's r end as its stdin and its w as stdout then closes the originals
+b terminates
+cursh sets up the r/w pipes for c's output
+cursh forks c
+cursh closes b's w end
+c sets b's w end as its stdin
+c terminates
+
 >> A5: Similarly, describe the details of how terminated processes are
 >> reaped in the example command "a | b | c".
 
 >> A6: Similarly, describe which processes are responsible for setting
 >> up the redirections in the example command
 >> "a < inp.txt | b | c > out.txt".
+
+We handle commands one at a time. So we start off (in the parent shell) creating
+the pipe for process-a. Then we fork a off, which recognizes that it's the
+first command and so does not expect an input pipe.
+
+It sets up its redirections as described in A3. 
+
+Then we proceed to b. As the parent, we set up b's right pipe,
+and then fork. process-b recognizes that it's a middle command, and 
+takes as its stdin the pipe from its left, and sets as its stdout the pipe
+to its right, using dup2 again. Then we move on to c, and 
+recognizing that we're at the last command, process c just takes its input pipe,
+sets it to stdin, and redirects (no piping) to out.txt as described previously.
+
 
 ---- RATIONALE ----
 
@@ -121,19 +285,28 @@ penalized.  We can't fix things until we know about them.  :-)
 
 >> In your opinion, was this assignment, or any one of the three problems
 >> in it, too easy or too hard?  Did it take too long or too little time?
+It was fine. No wait, it was the hardest thing we've ever done. I'm crying
+as I type this and the tears make it hard to read what I've written. They
+are acidic tears and are ruining my laptop. 
 
 >> Did you find that working on a particular part of the assignment gave
 >> you greater insight into some aspect of OS design?
+Not the parsing says Hamik, sadly.
 
 >> Were there any parts of the assignment that you felt were unnecessarily
 >> tedious or pointless?
+No.
 
 >> Is there some particular fact or hint we should give students in
 >> future quarters to help them solve the problems?  Conversely, did you
 >> find any of our guidance to be misleading?
+No. No.
 
 >> Do you have any suggestions for the instructor and/or TAs to more
 >> effectively assist students, either for future quarters or the remaining
 >> projects?
+This lent itself to two people, not so much to three. 
+It worked as 1/3 and 2/3 well through.
 
 >> Any other comments?
+Nope!
