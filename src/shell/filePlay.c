@@ -14,6 +14,23 @@
  * then immediately reads from it. 
  */
 int main () {		
+
+  int *pipe_left;
+  pipe_left = malloc(2*sizeof(int));
+  *(pipe_left) = 1;
+  *(pipe_left+1) = 2;
+  int *pipe_right; 
+  pipe_right = malloc(2*sizeof(int));
+  *(pipe_right) = 3;
+  *(pipe_right+1) = 4;
+  int *pipe_temp; 
+
+  printf("Left %d,%d Right %d,%d\n",pipe_left[0],pipe_left[1],pipe_right[0],pipe_right[1]);
+  pipe_temp = pipe_left;
+  pipe_left = pipe_right;
+  pipe_right = pipe_temp;
+  printf("Left %d,%d Right %d,%d\n",pipe_left[0],pipe_left[1],pipe_right[0],pipe_right[1]);
+
 	bool test = false;
 	if (test) {
 		fprintf(stderr, "Help!\n");
