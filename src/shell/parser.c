@@ -317,10 +317,10 @@ command *get_commands(char *input) {
 		else {
 
 			// Initialize if necessary. There can be only as many arguments
-			// as tokens.
+			// as tokens. We need to allocate space for a null terminator, too.
 			if (commands[ci].argv == NULL) {
 				commands[ci].argv = (char **)
-						malloc (sizeof(char *) * num_toks);
+						malloc (sizeof(char *) * (num_toks+1));
 				if (commands[ci].argv == NULL) {
 					fprintf(stderr, "Problem allocating argv.\n");
 					exit(1);
