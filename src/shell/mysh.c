@@ -148,6 +148,9 @@ int main(void) {
   int error_waitpid;  // waitpid return flag
   int status;         // waitpid child status holder  
   
+  // pointer to pid holder for children and waiting
+  pid_t child_pid; 
+
   // for execution & internal/external checking
   char *command_name;
 
@@ -266,7 +269,7 @@ int main(void) {
         // No piping        
         
         // Fork and set IS_PARENT, IS_CHILD
-        if (!fork_yourself(IS_INTERNAL, IS_ALONE, &IS_PARENT, &IS_CHILD)) { 
+        if (!fork_yourself(IS_INTERNAL, IS_ALONE, &IS_PARENT, &IS_CHILD, &child_pid)) { 
           break; 
         }
 
@@ -280,7 +283,7 @@ int main(void) {
         }
         
         // Fork and set IS_PARENT, IS_CHILD
-        if (!fork_yourself(IS_INTERNAL, IS_ALONE, &IS_PARENT, &IS_CHILD)) { 
+        if (!fork_yourself(IS_INTERNAL, IS_ALONE, &IS_PARENT, &IS_CHILD, &child_pid)) { 
           break; 
         }
 
@@ -308,7 +311,7 @@ int main(void) {
         pipe_creation_handler(&pipe_left, &pipe_right, 0);                            
         
         // Fork and set IS_PARENT, IS_CHILD        
-        if (!fork_yourself(IS_INTERNAL, IS_ALONE, &IS_PARENT, &IS_CHILD)) { 
+        if (!fork_yourself(IS_INTERNAL, IS_ALONE, &IS_PARENT, &IS_CHILD, &child_pid)) { 
           break; 
         }
 
@@ -338,7 +341,7 @@ int main(void) {
         }        
 
         // Fork and set IS_PARENT, IS_CHILD
-        if (!fork_yourself(IS_INTERNAL, IS_ALONE, &IS_PARENT, &IS_CHILD)) { 
+        if (!fork_yourself(IS_INTERNAL, IS_ALONE, &IS_PARENT, &IS_CHILD, &child_pid)) { 
           break; 
         }
 
@@ -412,6 +415,13 @@ int main(void) {
       /*
         Run/Wait Handler
       */       
+      
+      /* 
+      if (IS_INTERNAL && IS_CHILD) {
+        // Do nothing - just exit so piped file descriptors close.
+      }
+      */
+
 
 
       /*
