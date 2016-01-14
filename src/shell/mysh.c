@@ -94,7 +94,7 @@ bool redirection(char *ifile, char *ofile, bool append_flag) {
  * @param IS_ALONE: bool flag is it a single command?
  * @param *IS_PARENT: pointer will be set if fork results in a parent.
  * @param *IS_CHILD: pointer will be set if fork results in a child.
- * @return bool: returns -1 for an error, 0 if forked successfully.
+ * @return bool: returns false for an error, true if executed successfully.
  */
 
 bool fork_yourself(bool IS_INTERNAL, bool IS_ALONE, bool *IS_PARENT, bool *IS_CHILD) {
@@ -106,19 +106,19 @@ bool fork_yourself(bool IS_INTERNAL, bool IS_ALONE, bool *IS_PARENT, bool *IS_CH
     *IS_PARENT = true;
     *IS_CHILD = false;
 
-    return -1;
+    return true;
   } else{
 
     pid_t fpid;
     fpid = fork();
-    
  
-   if (fpid == -1) {            
+    if (fpid == -1) {            
       perror(SHELL_ERROR_IDENTIFIER); 
+
       // Done executing this command set, go back to the shell
       *IS_PARENT = true;
       *IS_CHILD = false;
-      return fpid;
+      return false;
     }
     
     if (fpid == 0) {
@@ -126,39 +126,19 @@ bool fork_yourself(bool IS_INTERNAL, bool IS_ALONE, bool *IS_PARENT, bool *IS_CH
       // Set child and parent flags
       *IS_CHILD = true;
       *IS_PARENT = false;
-      
-      if (redirection(comms[i].ifile, comms[i].ofile, comms[i].append) == 0) {
-	// Will not return if successful.                 
-	execvp(comms[i].argv[0], comms[i].argv);    
-	perror(SHELL_ERROR_IDENTIFIER);           
-	exit(EXIT_FAILURE);
-      }
-      // Our implementation does not allow redirection of STDERR
-      // Therefore if we are here, STDERR is the same as our shell,
-      // and would be visible to the user.
-      fprintf(stderr, "%s: Redirection for %s failed.\n", SHELL_ERROR_IDENTIFIER, comms[i].argv[0]);
-      exit(EXIT_FAILURE);
+
+      return true;
     } else {
       // I am the parent
-      
-      // Wait for termination ONLY - not any other state changes.
-      error_waitpid = waitpid(cpid, &status, 0);   
-      
-      if (error_waitpid == -1) {
-	perror(SHELL_ERROR_IDENTIFIER); 
-	// Stop executing this command set, go back to the shell              
-	break;
-      }
+      // Set child and parent flags
+      *IS_CHILD = false;
+      *IS_PARENT = true;
+
+      return true;
     }
-    
   }
 }
 
-
-
-
-int main(void)
-{
 /*
  * Swap pipe_left and pipe_right pointers for readability of code if argument is 0
  * Pipe to pipe_right if argument is 2, then check for pipe errors if argument is 1
@@ -229,8 +209,6 @@ int main(void) {
 
   // for loop iteration variable
   int i;
-  
-  
 
 
   // This will never be freed until we exit (and then by default).
