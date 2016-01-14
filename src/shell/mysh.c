@@ -97,7 +97,7 @@ bool redirection(char *ifile, char *ofile, bool append_flag) {
  * @return bool: returns false for an error, true if executed successfully.
  */
 
-bool fork_yourself(bool IS_INTERNAL, bool IS_ALONE, bool *IS_PARENT, bool *IS_CHILD) {
+bool fork_yourself(bool IS_INTERNAL, bool IS_ALONE, bool *IS_PARENT, bool *IS_CHILD, pid_t *fpid) {
   // First determine if we even need to fork:
 
   if (IS_INTERNAL && IS_ALONE){
@@ -133,6 +133,10 @@ bool fork_yourself(bool IS_INTERNAL, bool IS_ALONE, bool *IS_PARENT, bool *IS_CH
       // Set child and parent flags
       *IS_CHILD = false;
       *IS_PARENT = true;
+      
+      // this is the only case where the pid matters
+      // in every other case where we are the parent, 
+      // or the child, we will never wait. 
 
       return true;
     }
@@ -166,6 +170,100 @@ bool pipe_creation_handler(int **ptr_pipe_left, int **ptr_pipe_right, int flag) 
   }  
   return true;
 }
+
+/*
+ * function run_internal
+ * @param command: takes an internal command to run, cd or exit.
+ * @param char *cwd: string of the current working directory.
+ * @param IS_CD: is the command cd?
+ * @param IS_exit: is the command exit?
+ * @param argv: the argv of the command.
+ * @param argc: the argc of the command.
+ * @return bool: true if no errors, false if error.
+ */
+
+bool run_internal(bool IS_CD, bool IS_EXIT, char *cwd, char **argv, int argc){
+  int error_chdir;
+  char * error_getenv;
+
+  // Change Directory. Redirection ignored.
+  if (IS_CD) {
+    if (argc > 1) {
+      error_chdir = chdir(argv[1]);
+      if (error_chdir == 0){
+	// Success
+	return true;
+      } else{
+	return false;
+      }
+    } else {
+      error_getenv = getenv("HOME");
+      if (error_getenv != NULL) {
+	// WARNING: race condition, but we will almost certainly catch the error with chdir
+	// if the string gets overwritten halfway.
+	error_chdir = chdir((const char *) error_getenv);
+      } else {
+	fprintf(stderr, "%s: Unable to locate your home directory.\n", SHELL_ERROR_IDENTIFIER);   
+	return false; // return to shell prompt
+      }            
+    }
+    
+    if (error_chdir == 0) {
+      // success, run getcwd again for shell prompt as directory has changed.
+      if(getcwd(cwd, sizeof(cwd)) == NULL){
+	perror(SHELL_ERROR_IDENTIFIER);
+	return false;
+      } else{
+	return true;
+      }
+    } else {
+      fprintf(stderr, "%s: Unknown error with chdir().\n", SHELL_ERROR_IDENTIFIER);   
+      return false; // return to shell prompt
+    }
+  }
+  else if (IS_EXIT){
+    // Exit Curiosity Shell. Redirection Ignored.
+    exit(EXIT_SUCCESS);
+    
+  }
+}
+
+
+/*
+ * function execute is a wrapper for execvp.
+ * @param argv: the command to be executed.
+ */
+
+void execute(char **argv){
+  execvp(argv[0], argv);
+  perror(SHELL_ERROR_IDENTIFIER);
+  exit(EXIT_FAILURE);
+}
+
+/*
+ * function waiting is a wrapper for wait
+ * @param pid_t fpid: the command to be executed.
+ * @return bool: true if successful, false if unsuccessful.
+ */
+
+bool waiting(pid_t fpid){
+  int status;
+  int error_waitpid;
+  // Wait for termination ONLY - not any other state changes.
+  error_waitpid = waitpid(fpid, &status, 0);   
+  
+  if (error_waitpid == -1) {
+    perror(SHELL_ERROR_IDENTIFIER); 
+    // Stop executing this command set, go back to the shell              
+    return false;
+  }
+  
+  if (WIFEXITED(status)) {
+    if (WEXITSTATUS(status) == 0) {
+      return true;
+    } else return false;
+  } else return false;                
+}          
 
 int main(void) {
   // Helpful Flags
@@ -461,7 +559,31 @@ int main(void) {
       /*
         Run/Wait Handler
       */       
-
+      
+      if(IS_CHILD && IS_INTERNAL){
+	if(!run_internal(IS_CD, IS_EXIT, cwd, comms[i].argv, comms[i].argc)){
+	  exit(EXIT_FAILURE);
+	}
+	else{
+	  exit(EXIT_SUCCESS);
+	}
+      }
+      if(IS_CHILD && IS_EXTERNAL){
+	execute(comms[i].argv);
+      }
+      if(IS_PARENT && IS_INTERNAL && IS_ALONE){
+	run_internal(IS_CD, IS_EXIT, cwd, comms[i].argv, comms[i].argc);
+      }
+      if(IS_PARENT && IS_INTERNAL && IS_NOT_ALONE){
+	if(!(waiting(child_pid))){
+	  break;
+	}
+      }
+      if(IS_PARENT && IS_EXTERNAL){
+	if(!(waiting(child_pid))){
+	  break;
+	}
+      }
 
       /*
         Parent STDIO Reset
