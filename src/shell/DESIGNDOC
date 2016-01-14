@@ -95,8 +95,14 @@ which parts.
 >> Keep your description of each process' responsibilities limited to
 >> ~25 words or less.
 
+For "a | b | c", the shell sets up a pipe and forks a child process a.
+
 >> A5: Similarly, describe the details of how terminated processes are
 >> reaped in the example command "a | b | c".
+
+Terminated processes are reaped at the beginning of the while loop which 
+loops through the given commands. At the beginning, the while loop frees 
+each struct representing the command.
 
 >> A6: Similarly, describe which processes are responsible for setting
 >> up the redirections in the example command
@@ -107,8 +113,18 @@ which parts.
 >> A7: Why must the chdir and exit commands be implemented as built-in
 >> functions, rather than external programs?
 
+The chdir and exit functions must be implemented as built-in functions 
+because if they are forked like external programs, the address space 
+is overwritten.
+
 >> A8: Why did you ultimately choose this design?  In what ways is it
 >> superior to other designs you considered as you developed your solution?
+
+We ultimately chose this design to imitate as closely as possible the 
+results we saw from the bash shell provided by Mint Linux. Ultimately we 
+chose to do batch processing. Rather than running one program multiple 
+times to process one transaction each time, we run the program once, and 
+reduce the overhead.
 
 			  SURVEY QUESTIONS
 			  ================
