@@ -58,7 +58,8 @@ bool redirection(char *ifile, char *ofile, bool append_flag) {
   // can't redirect STDIN and STDOUT to the same file.
   if ((ifile != NULL) && (ofile != NULL)) {    
     if (strcmp(ifile,ofile) == 0) {
-      fprintf(stderr, "%s: Cannot redirect input and output to same file.\n", SHELL_ERROR_IDENTIFIER);
+      fprintf(stderr, "%s: Cannot redirect input and output to same file.\n", 
+        SHELL_ERROR_IDENTIFIER);
       return false;
     }
   }
@@ -122,7 +123,8 @@ bool redirection(char *ifile, char *ofile, bool append_flag) {
  * @return bool: returns false for an error, true if executed successfully.
  */
 
-bool fork_yourself(bool IS_INTERNAL, bool IS_ALONE, bool *IS_PARENT, bool *IS_CHILD, pid_t *fpid) {
+bool fork_yourself(bool IS_INTERNAL, bool IS_ALONE, bool *IS_PARENT, 
+  bool *IS_CHILD, pid_t *fpid) {
   // First determine if we even need to fork:
 
   if (IS_INTERNAL && IS_ALONE){
@@ -168,14 +170,19 @@ bool fork_yourself(bool IS_INTERNAL, bool IS_ALONE, bool *IS_PARENT, bool *IS_CH
 }
 
 /*
- * Swap pipe_left and pipe_right pointers for readability of code if argument is 0
- * Pipe to pipe_right if argument is 2, then check for pipe errors if argument is 1
- * @param int **ptr_pipe_left pointer to a pointer to an array capable of holding two integer file descriptors
- * @param int **ptr_pipe_right pointer to a pointer to an array capable of holding two integer file descriptors
+ * Swap pipe_left and pipe_right pointers for readability of code if argument 
+ * is 0
+ * Pipe to pipe_right if argument is 2, then check for pipe errors if argument 
+ * is 1
+ * @param int **ptr_pipe_left pointer to a pointer to an array capable of 
+ * holding two integer file descriptors
+ * @param int **ptr_pipe_right pointer to a pointer to an array capable of 
+ * holding two integer file descriptors
  * @param int flag 0, 1 are interpreted as described above.
  * @return false on any error, and true on total success
  */
-bool pipe_creation_handler(int **ptr_pipe_left, int **ptr_pipe_right, int flag) {
+bool pipe_creation_handler(int **ptr_pipe_left, int **ptr_pipe_right, 
+  int flag) {
   int error_pipe;     // pipe return flag
   int *ptr_pipe_temp;     // pointer swap holder
   switch (flag) {
@@ -220,11 +227,13 @@ bool run_internal(bool IS_CD, bool IS_EXIT, char *cwd, char **argv, int argc){
     } else {
       error_getenv = getenv("HOME");
       if (error_getenv != NULL) {
-      	// WARNING: race condition, but we will almost certainly catch the error with chdir
+      	// WARNING: race condition, but we will almost certainly catch the 
+        // error with chdir
       	// if the string gets overwritten halfway.
       	error_chdir = chdir((const char *) error_getenv);
       } else {
-      	fprintf(stderr, "%s: Unable to locate your home directory.\n", SHELL_ERROR_IDENTIFIER);   
+      	fprintf(stderr, "%s: Unable to locate your home directory.\n", 
+          SHELL_ERROR_IDENTIFIER);   
       	return false; // return to shell prompt
       }            
     }
@@ -239,7 +248,8 @@ bool run_internal(bool IS_CD, bool IS_EXIT, char *cwd, char **argv, int argc){
       	return true;
       }
     } else {
-      fprintf(stderr, "%s: Unknown error with chdir().\n", SHELL_ERROR_IDENTIFIER);   
+      fprintf(stderr, "%s: Unknown error with chdir().\n", 
+        SHELL_ERROR_IDENTIFIER);   
       return false; // return to shell prompt
     }
   } else if (IS_EXIT) {
@@ -333,7 +343,9 @@ int main(void) {
   pipe_left = malloc(2*sizeof(int));
   pipe_right = malloc(2*sizeof(int));
   if ((pipe_left == NULL) || (pipe_right == NULL)) {
-    fprintf(stderr, "%s: Could not allocate holder for potential pipes. Exiting.\n", SHELL_ERROR_IDENTIFIER);
+    fprintf(stderr, 
+      "%s: Could not allocate holder for potential pipes. Exiting.\n", 
+      SHELL_ERROR_IDENTIFIER);
     exit(EXIT_FAILURE);
   }
   
@@ -435,28 +447,33 @@ int main(void) {
       } 
       /*
         Pipe & Fork Handler (fork_yourself), 
-        Set IS_PARENT, IS_CHILD in fork_yourself, and use its return value to determine error
+        Set IS_PARENT, IS_CHILD in fork_yourself, and use its return value to 
+        determine error
       */
 
       if (IS_FIRST && IS_ALONE) {
         // No piping        
         
         // Fork and set IS_PARENT, IS_CHILD
-        if (!fork_yourself(IS_INTERNAL, IS_ALONE, &IS_PARENT, &IS_CHILD, &child_pid)) { 
+        if (!fork_yourself(IS_INTERNAL, IS_ALONE, &IS_PARENT, &IS_CHILD, 
+          &child_pid)) { 
           break; 
         }
 
         // No pipe handling
 
       } else if (IS_FIRST && IS_NOT_ALONE) {
-        // pipe to pipe_right, check for pipe errors & return to prompt if errors found.
+        // pipe to pipe_right, check for pipe errors & return to prompt 
+        // if errors found.
         if (!pipe_creation_handler(&pipe_left, &pipe_right, 1)) {
-          fprintf(stderr, "%s: Right-pipe creation error for command %s.\n", SHELL_ERROR_IDENTIFIER, command_name);
+          fprintf(stderr, "%s: Right-pipe creation error for command %s.\n", 
+            SHELL_ERROR_IDENTIFIER, command_name);
           break;
         }
         
         // Fork and set IS_PARENT, IS_CHILD
-        if (!fork_yourself(IS_INTERNAL, IS_ALONE, &IS_PARENT, &IS_CHILD, &child_pid)) { 
+        if (!fork_yourself(IS_INTERNAL, IS_ALONE, &IS_PARENT, &IS_CHILD, 
+          &child_pid)) { 
           break; 
         }
 
@@ -484,7 +501,8 @@ int main(void) {
         pipe_creation_handler(&pipe_left, &pipe_right, 0);                            
         
         // Fork and set IS_PARENT, IS_CHILD        
-        if (!fork_yourself(IS_INTERNAL, IS_ALONE, &IS_PARENT, &IS_CHILD, &child_pid)) { 
+        if (!fork_yourself(IS_INTERNAL, IS_ALONE, &IS_PARENT, &IS_CHILD, 
+          &child_pid)) { 
           break; 
         }
 
@@ -507,14 +525,17 @@ int main(void) {
       } else if (IS_MIDDLE && IS_NOT_ALONE) {
         // swap pipe_left/pipe_right
         pipe_creation_handler(&pipe_left, &pipe_right, 0);                            
-        // pipe to pipe_right, check for pipe errors & return to prompt if errors found.        
+        // pipe to pipe_right, check for pipe errors & return to prompt if 
+        // errors found.        
         if (!pipe_creation_handler(&pipe_left, &pipe_right, 1)) {
-          fprintf(stderr, "%s: Right-pipe creation error for command %s.\n", SHELL_ERROR_IDENTIFIER, command_name);
+          fprintf(stderr, "%s: Right-pipe creation error for command %s.\n", 
+            SHELL_ERROR_IDENTIFIER, command_name);
           break;
         }        
 
         // Fork and set IS_PARENT, IS_CHILD
-        if (!fork_yourself(IS_INTERNAL, IS_ALONE, &IS_PARENT, &IS_CHILD, &child_pid)) { 
+        if (!fork_yourself(IS_INTERNAL, IS_ALONE, &IS_PARENT, &IS_CHILD, 
+          &child_pid)) { 
           break; 
         }
 
@@ -544,7 +565,8 @@ int main(void) {
 
       } else {
         // Unknown case.
-        fprintf(stderr, "%s: Unexpected pipe handling case for command %s.\n", SHELL_ERROR_IDENTIFIER, command_name);
+        fprintf(stderr, "%s: Unexpected pipe handling case for command %s.\n", 
+          SHELL_ERROR_IDENTIFIER, command_name);
         break; 
       }
 
