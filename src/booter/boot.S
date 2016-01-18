@@ -29,7 +29,7 @@
 
 boot_start:
 	# Initialize both data segment and stack segment to be 0, then
-	# set up the top of the stack at 0000:f000.
+	# set up the top of the stack at 0000:f000. 
 	sub	%ax, %ax
 	mov	%ax, %ds
 	mov	%ax, %ss
@@ -49,6 +49,36 @@ boot_start:
 	#        "Extended Read Operation."  If it fails, jump to boot_fail.
 	#
 	#        REMOVE THIS COMMENT BLOCK WHEN YOU WRITE THIS CODE.
+	#---------------------------------------------------------------------
+
+	# === TO DO ===
+	# 	Check final demo size, set up to handle multiple contiguous 64kB blocks
+	
+	# Set up Disk Address Packet on stack	
+	# dap[0x04-0x07] = segment:offset of buffer to receive the data
+	# dap[0x08-0x0F] = starting index of the sectors to read, using LBA							
+
+	# dap[0x00] = size of packet, 16 bytes (0x10) for our purposes
+	lea -1(%esp), %esi 		# dap[0x00] address in %ds:%si 
+							# as high bits of esi are 0
+	mov $0x10, %bl		
+	push %bl
+	# dap[0x01] is unused, should be 0
+	eor %bl, %bl
+	push %bl
+	# dap[0x02-0x03] = number of 512-byte sectors to read	
+	#  Our boot.bin is concatenated with program.bin, 
+	#  and occupies exactly 1 sector of 512-bytes. 
+	#  I will start off assuming the sectors are written contiguously.
+	#  Therefore we start at sector 2 in our floppy, and let's just get 64kByte
+	#  for now. so 2^6 2^10 = 2^16 bytes, with 2^9 byte sectors
+	#  that is 2^7 = 128 sectors
+		# NEED LITTLE ENDIAN!! 
+
+		
+	mov $0x42, %ah 		# extended read sectors, LBA
+						# %dl is set already by BIOS
+	int $0x13 			# disk access
 	#---------------------------------------------------------------------
 
 	mov	$STR_LOADED, %si
