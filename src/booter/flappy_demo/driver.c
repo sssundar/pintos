@@ -3,7 +3,7 @@
  * @author Hamik Mukelyan
  *
  * Drives a text-based Flappy Bird knock-off that is intended to run in an
- * 80 x 25 console.
+ * 80 x 24 console.
  */
 
 #include <ncurses.h>
@@ -15,53 +15,8 @@
 #include <time.h>
 #include <assert.h>
 #include <limits.h>
-#include <sys/timerfd.h>
 
-// TODO this program still needs vertical pipe collision detection. There are
-// also issues that are obvious when the program is run... namely hanging and
-// not registering up arrow presses.
-
-/**
- * Number of rows in the console window.
- */
-#define ROWS 25
-
-/**
- * Number of columns in the console window.
- */
-#define COLS 80
-
-/**
- * Radius of each vertical pipe.
- */
-#define PIPE_RADIUS 4
-
-/**
- * Width of the opening in each pipe.
- */
-#define OPENING_WIDTH 4
-
-/** Flappy stays in this column. */
-#define FLAPPY_COL 10
-
-/** Gravitational acceleration constant */
-#define GRAV 0.01
-
-/** Initial velocity with up arrow press */
-#define V0 -0.01
-
-//------------------------------ Global variables -----------------------------
-
-/**
- * Frame number.
- */
-int frame = 0;
-
-/**
- * Aiming for this many frame per second.
- */
-float target_fps = 27;
-
+//-------------------------------- Definitions --------------------------------
 
 /**
  * Represents a vertical pipe through which Flappy The Bird is supposed to fly.
@@ -107,111 +62,96 @@ typedef struct periodic_info {
 } periodic_info;
 
 /**
- * The screen's characters in row-major order, indexed with the upper-left at
- * [0][0].
+ * Represents a character at a particular location in a window. These are
+ * intended to be chained together in a singly-linked list.
  */
-char window[ROWS * (COLS - 1)];
+typedef struct tpixel {
+	char ch;
+	int row, col;
+	struct tpixel *next;
+} tpixel;
+
+//------------------------------ Global variables -----------------------------
+
+/** Gravitational acceleration constant */
+const float GRAV = 0.05;
+
+/** Initial velocity with up arrow press */
+const float V0 = -0.5;
+
+/**
+ * Number of rows in the console window.
+ */
+const int NUM_ROWS = 24;
+
+/**
+ * Number of columns in the console window.
+ */
+const int NUM_COLS = 80;
+
+/**
+ * Radius of each vertical pipe.
+ */
+const int PIPE_RADIUS = 4;
+
+/**
+ * Width of the opening in each pipe.
+ */
+const int OPENING_WIDTH = 4;
+
+/** Flappy stays in this column. */
+const int FLAPPY_COL = 10;
+
+/**
+ * Aiming for this many frame per second.
+ */
+const float TARGET_FPS = 20;
+
+/**
+ * Frame number.
+ */
+int frame = 0;
+
+/**
+ * Linked list of "text pixels" in the current frame.
+ */
+tpixel *head = NULL;
 
 //---------------------------------- Functions --------------------------------
 
 /**
- * Returns the char at [i][j], where [0][0] is at the upper left corner of the
- * screen.
- *
- * @param i
- * @param j
- *
- * @return element at index [i][j]
- */
-char getElem(int i, int j) {
-	assert(i >= 0 && i < ROWS);
-	assert(j >= 0 && j < COLS - 1);
-	return window[(COLS - 1) * i + j];
-}
-
-/**
- * Set the element at [i][j] to the given char.
+ * Set the element at window position [i][j] to the given char.
  *
  * @param i row
  * @param j col
  * @param c Char to set
  */
-void setElem(int i, int j, char c) {
-	assert(i >= 0 && i < ROWS);
-	assert(j >= 0 && j < COLS - 1);
-	window[(COLS - 1) * i + j] = c;
-}
+void set_elem(int i, int j, char c) {
+	tpixel *tmp;
 
-/**
- * Sets each element of the given array to the given char.
- *
- * @param arr
- * @param len
- * @param ch
- */
-void zero_char_array(char *arr, int len, char ch) {
-	int i;
-	for (i = 0; i < len; i++)
-		arr[i] = ch;
-}
+	assert(i >= 0 && i < NUM_ROWS);
+	assert(j >= 0 && j < NUM_COLS - 1);
 
-/**
- * Signal handler for SIGALRM. Alarms are triggered for each frame in the game.
- * Increments frame counter.
- *
- * @param signal
- */
-void timer_handler(int signal) {
-	frame++;
-}
-
-/**
- * Copied from http://www.2net.co.uk/tutorial/periodic_threads.
- */
-int make_periodic (unsigned int period, struct periodic_info *info) {
-	int ret;
-	unsigned int ns;
-	unsigned int sec;
-	int fd;
-	struct itimerspec itval;
-
-	/* Create the timer */
-	fd = timerfd_create (CLOCK_MONOTONIC, 0);
-	info->wakeups_missed = 0;
-	info->timer_fd = fd;
-	if (fd == -1)
-		return fd;
-
-	/* Make the timer periodic */
-	sec = period/1000000;
-	ns = (period - (sec * 1000000)) * 1000;
-	itval.it_interval.tv_sec = sec;
-	itval.it_interval.tv_nsec = ns;
-	itval.it_value.tv_sec = sec;
-	itval.it_value.tv_nsec = ns;
-	ret = timerfd_settime (fd, 0, &itval, NULL);
-	return ret;
-}
-
-/**
- * Copied from http://www.2net.co.uk/tutorial/periodic_threads.
- */
-void wait_period (struct periodic_info *info) {
-	unsigned long long missed;
-	int ret;
-
-	/* Wait for the next timer event. If we have missed any the
-	   number is written to "missed" */
-	ret = read (info->timer_fd, &missed, sizeof (missed));
-	if (ret == -1)
-	{
-		perror ("read timer");
-		return;
+	if (head == NULL) {
+		head = (tpixel *) malloc(sizeof(tpixel));
+		if (head == NULL) {
+			perror("Malloc failed.");
+			exit(1);
+		}
+		head->next = NULL;
 	}
-
-	/* "missed" should always be >= 1, but just to be sure, check it is not 0 anyway */
-	if (missed > 0)
-		info->wakeups_missed += (missed - 1);
+	else {
+		tmp = (tpixel *) malloc(sizeof(tpixel));
+		if (tmp == NULL) {
+			perror("Malloc failed.");
+			exit(1);
+		}
+		tmp->next= head;
+		head = tmp;
+	}
+	head->ch = c;
+	head->row = i;
+	head->col = j;
 }
 
 /**
@@ -227,9 +167,9 @@ void wait_period (struct periodic_info *info) {
 void draw_floor_and_ceiling(int ceiling_row, int floor_row,
 		char ch, int spacing, int col_start) {
 	int i;
-	for (i = col_start; i < COLS - 1; i += spacing) {
-		setElem(ceiling_row, i, ch);
-		setElem(floor_row, i, ch);
+	for (i = col_start; i < NUM_COLS - 1; i += spacing) {
+		set_elem(ceiling_row, i, ch);
+		set_elem(floor_row, i, ch);
 	}
 }
 
@@ -240,7 +180,7 @@ void draw_floor_and_ceiling(int ceiling_row, int floor_row,
  */
 void pipe_refresh(vpipe *p) {
 	if(p->center + PIPE_RADIUS < 0) {
-		p->center = COLS + PIPE_RADIUS;
+		p->center = NUM_COLS + PIPE_RADIUS;
 		p->opening_height = rand() / ((float) INT_MAX) * 0.8 + 0.1;
 	}
 	p->center--;
@@ -262,14 +202,14 @@ void draw_pipe(vpipe p, char vch, char hch, int ceiling_row, int floor_row) {
 
 	// Draw vertical part of upper half of pipe.
 	for(i = ceiling_row + 1;
-			i < p.opening_height * (ROWS - 1) - OPENING_WIDTH / 2; i++) {
+			i < p.opening_height * (NUM_ROWS - 1) - OPENING_WIDTH / 2; i++) {
 		if ((p.center - PIPE_RADIUS) >= 0 &&
-				(p.center - PIPE_RADIUS) < COLS - 1) {
-			setElem(i, p.center - PIPE_RADIUS, vch);
+				(p.center - PIPE_RADIUS) < NUM_COLS - 1) {
+			set_elem(i, p.center - PIPE_RADIUS, vch);
 		}
 		if ((p.center + PIPE_RADIUS) >= 0 &&
-				(p.center + PIPE_RADIUS) < COLS - 1) {
-			setElem(i, p.center + PIPE_RADIUS, vch);
+				(p.center + PIPE_RADIUS) < NUM_COLS - 1) {
+			set_elem(i, p.center + PIPE_RADIUS, vch);
 		}
 	}
 	upper_terminus = i;
@@ -277,21 +217,21 @@ void draw_pipe(vpipe p, char vch, char hch, int ceiling_row, int floor_row) {
 	// Draw horizontal part of upper part of pipe.
 	for (i = -PIPE_RADIUS; i <= PIPE_RADIUS; i++) {
 		if ((p.center + i) >= 0 &&
-				(p.center + i) < COLS - 1) {
-			setElem(upper_terminus, p.center + i, hch);
+				(p.center + i) < NUM_COLS - 1) {
+			set_elem(upper_terminus, p.center + i, hch);
 		}
 	}
 
 	// Draw vertical part of lower half of pipe.
 	for(i = floor_row - 1;
-			i > p.opening_height * (ROWS - 1) + OPENING_WIDTH / 2; i--) {
+			i > p.opening_height * (NUM_ROWS - 1) + OPENING_WIDTH / 2; i--) {
 		if ((p.center - PIPE_RADIUS) >= 0 &&
-				(p.center - PIPE_RADIUS) < COLS - 1) {
-			setElem(i, p.center - PIPE_RADIUS, vch);
+				(p.center - PIPE_RADIUS) < NUM_COLS - 1) {
+			set_elem(i, p.center - PIPE_RADIUS, vch);
 		}
 		if ((p.center + PIPE_RADIUS) >= 0 &&
-				(p.center + PIPE_RADIUS) < COLS - 1) {
-			setElem(i, p.center + PIPE_RADIUS, vch);
+				(p.center + PIPE_RADIUS) < NUM_COLS - 1) {
+			set_elem(i, p.center + PIPE_RADIUS, vch);
 		}
 	}
 	lower_terminus = i;
@@ -299,8 +239,8 @@ void draw_pipe(vpipe p, char vch, char hch, int ceiling_row, int floor_row) {
 	// Draw horizontal part of lower part of pipe.
 	for (i = -PIPE_RADIUS; i <= PIPE_RADIUS; i++) {
 		if ((p.center + i) >= 0 &&
-				(p.center + i) < COLS - 1) {
-			setElem(lower_terminus, p.center + i, hch);
+				(p.center + i) < NUM_COLS - 1) {
+			set_elem(lower_terminus, p.center + i, hch);
 		}
 	}
 }
@@ -308,7 +248,7 @@ void draw_pipe(vpipe p, char vch, char hch, int ceiling_row, int floor_row) {
 void draw_flappy(flappy f) {
 	int h = ((int) (f.h0 + V0 * f.t + 0.5 * GRAV * f.t * f.t));
 
-	if (h <= 0 || h >= ROWS - 1) {
+	if (h <= 0 || h >= NUM_ROWS - 1) {
 		clear();
 		printw("You're dead!\n");
 		refresh();
@@ -317,7 +257,7 @@ void draw_flappy(flappy f) {
 		exit(0);
 	}
 
-	setElem(h, FLAPPY_COL, '*');
+	set_elem(h, FLAPPY_COL, '*');
 }
 
 //------------------------------------ Main -----------------------------------
@@ -325,42 +265,39 @@ void draw_flappy(flappy f) {
 int main()
 {
 	int leave_loop = 0;
-	int i, j;
 	vpipe p1, p2;
 	int ch;
-	periodic_info pinfo;
 	flappy f;
-
-	// Set up the frame rate timer.
-	// make_periodic(1 / target_fps * 1000 * 1000, &pinfo);
+	tpixel *tmp;
 
 	// Initialize ncurses window.
 	initscr();			/* Start curses mode 		*/
 	raw();				/* Line buffering disabled	*/
 	keypad(stdscr, TRUE);		/* We get F1, F2 etc..		*/
 	noecho();			/* Don't echo() while we do getch */
+	timeout(0);
 
 	srand(time(NULL));
 
 	// Start the pipes just out of view on the right.
-	p1.center = (int)(1.1 * COLS);
+	p1.center = (int)(1.1 * NUM_COLS);
 	p1.opening_height = rand() / ((float) INT_MAX) * 0.8 + 0.1;
-	p2.center = (int)(1.6 * COLS);
+	p2.center = (int)(1.6 * NUM_COLS);
 	p2.opening_height = rand() / ((float) INT_MAX) * 0.8 + 0.1;
 
 	// Initialize flappy
-	f.h0 = ROWS / 2;
+	f.h0 = NUM_ROWS / 2;
 	f.t = 0;
 
 	printw("Welcome to Flappy Texty Bird. Press <up> to keep "
 				"Flappy flying!\n");
 	refresh();
-	sleep(3);
+	sleep(1);
 
 	while(!leave_loop) {
-		//wait_period(&pinfo);
-		usleep((unsigned int) (1000000 / target_fps));
+		usleep((unsigned int) (1000000 / TARGET_FPS));
 
+		// Process keystrokes.
 		ch = -1;
 		ch = getch();
 		switch (ch) {
@@ -377,26 +314,27 @@ int main()
 		}
 
 		clear();
-		zero_char_array(window, ROWS * (COLS - 1), ' ');
 
 		// Print "moving" floor and ceiling
-		draw_floor_and_ceiling(0, ROWS - 1, '/', 2, frame % 2);
+		draw_floor_and_ceiling(0, NUM_ROWS - 1, '/', 2, frame % 2);
 
 		// Update pipe locations and draw them.
-		draw_pipe(p1, '|', '-', 0, ROWS - 1);
-		draw_pipe(p2, '|', '-', 0, ROWS - 1);
+		draw_pipe(p1, '|', '-', 0, NUM_ROWS - 1);
+		draw_pipe(p2, '|', '-', 0, NUM_ROWS - 1);
 		pipe_refresh(&p1);
 		pipe_refresh(&p2);
 
 		draw_flappy(f);
 
-		for (i = 0; i < ROWS; i++) {
-			for (j = 0; j < COLS - 1; j++) {
-				printw("%c", getElem(i, j));
-			}
-			printw("\n");
+		while(head != NULL) {
+			mvprintw(head->row, head->col, "%c", head->ch);
+			tmp = head;
+			head = head->next;
+			free(tmp);
 		}
+		head = NULL;
 		refresh();
+		frame++;
 	}
 
 	endwin();			/* End curses mode		  */
