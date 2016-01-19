@@ -29,11 +29,12 @@
 
 boot_start:
 	# Initialize both data segment and stack segment to be 0, then
-	# set up the top of the stack at 0000:f000.
+	# set up the top of the stack at 0000:f000. 
 	sub	%ax, %ax
 	mov	%ax, %ds
 	mov	%ax, %ss
 	mov	$0xf000, %esp	# Use %esp since we'll be in 32-bit mode later
+						# gives us about 32k before we hit bootloader						
 
 	# Hide the cursor, just to be "prettier."  This will carry over into
 	# protected mode execution too.
@@ -41,16 +42,67 @@ boot_start:
 	mov	$0x2607, %cx	# Set cursor end-row to come before start-row
 	int	$0x10
 
+	mov %dl, %bl 		# Caller saved, need sector value in $dl
+
 	mov	$STR_LOADING, %si
-	call	print_str
+	call	print_str 	
 
-	#---------------------------------------------------------------------
-	# TODO:  Load the remainder of the program into memory using int 13h
-	#        "Extended Read Operation."  If it fails, jump to boot_fail.
-	#
-	#        REMOVE THIS COMMENT BLOCK WHEN YOU WRITE THIS CODE.
-	#---------------------------------------------------------------------
+	# Set up Disk Address Packet on stack			
 
+	# Stack goes from 0x0f000 growing down to 0x00000
+	# Programs expect data[i] to grow UP in memory as we're adding to pointers
+	# Therefore I need to build this data structure in reverse,
+	# and point to it at the very end by remembering the stack pointer
+
+	# dap[0x08-0x0F] = starting index of the sectors to read, using LBA							
+	#  This is 1, as we count from 0. In memory, we have
+	#  	
+	#  0x08 0x09 0x0A 0x0B 0x0C 0x0D 0x0E 0x0F
+	#  ===> going UP in addresses 			therefore this is at the top, 
+	# 										nearest the SP
+	#  Little Endian will push our bytes with the LSB at the lowest address
+	#  or 0x08 with the LSB. 
+	#  So if I write 0x00000000 then 00000001, I will get 
+	#  0x01 0x00 0x00 0x00 0x00 0x00 0x00 0x00
+	#  0x08 0x09 0x0A 0x0B 0x0C 0x0D 0x0E 0x0F
+	#  which is correct.
+	xor %edx, %edx
+	push %edx	
+	mov $0x00000001, %edx
+	push %edx
+
+	# dap[0x04-0x07] = segment:offset of buffer to receive the data
+	# we want address 0x00020000 in actuality
+	# this in segment:offset form is 2000 : 0000. So we need to write:
+	mov $PROGRAM_SEGMENT_ADDR, %dx
+	push %dx
+	mov $PROGRAM_OFFSET_ADDR, %dx
+	push %dx
+	
+	# dap[0x02-0x03] = number of 512-byte sectors to read		
+	# === TO DO ===
+	# Check final demo size, set up to handle multiple contiguous 64kB blocks	
+	
+	# Let's get 128 sectors. In Little Endian, that's 0x80 0x00 at 0x02 0x03
+	mov $0x0080, %dx
+	push %dx
+	
+	# dap[0x00] = size of packet, 16 bytes (0x10) for our purposes
+	# dap[0x01] is unused, should be 0	
+	# we want 0x00 0x01 = 0x10 0x00 so we push 0x0010 relying on Little Endian
+	# and the stack growing downward
+	mov $0x0010, %dx
+	push %dx
+
+	mov %esp, %esi 		# dap[0x00] address in %ds:%si 
+						# as high bits of esi are 0
+	mov %ebx, %edx 		# set %dl to boot disk again
+	mov $0x42, %ah 		# extended read sectors, LBA
+						# %dl is set already by BIOS
+	int $0x13 			# disk access
+	
+	jc boot_fail
+	
 	mov	$STR_LOADED, %si
 	call	print_str
 
@@ -72,15 +124,13 @@ boot_start:
 
 start_protected:
 
-	#---------------------------------------------------------------------
-	# TODO:  Switch from real mode into protected mode.  The process is
-	#        straightforward:
-	#
+	
 	#        1)  Disable interrupts, since any interrupt during this
 	#            process would demolish us.  (We don't turn interrupts
 	#            back on until we are safely in our C program, and have
 	#            set up an Interrupt Descriptor Table.)
-	#
+	cli  											
+
 	#        2)  Set the Global Descriptor Table Register (GDTR) to our
 	#            simple Global Descriptor Table specified at the end of
 	#            the boot-loader.  You will need to write it like this,
@@ -92,7 +142,8 @@ start_protected:
 	#            the GDT descriptor are loaded; default is to load only
 	#            24 bits.  The CPU doesn't need an addr32 prefix but ELF
 	#            doesn't do 16-bit relocations.)
-	#
+	data32 addr32 lgdt gdtdesc
+
 	#        3)  Turn on protected mode by modifying Control Register cr0.
 	#            See IA32 Manual Volume 3A, Section 2.5 for details of
 	#            which bit(s) to set.  Don't turn on paging - we don't
@@ -106,9 +157,10 @@ start_protected:
 	#        See also IA32 Manual Volume 3A, Section 8.9.1 for the general
 	#        overview.  (We only do the parts that are relevant to our
 	#        needs in this project!)
-	#
-	#        REMOVE THIS COMMENT BLOCK WHEN YOU WRITE THIS CODE.  (FEEL
-	#        FREE TO INCORPORATE ANY OF THE ABOVE COMMENTS INTO YOUR CODE!)
+	mov %cr0, %edx
+	or $0x1, %edx
+	mov %edx, %cr0
+
 	#---------------------------------------------------------------------
 
 	# We're now in protected mode, but still in a 16-bit segment.  The
@@ -142,7 +194,7 @@ call_c_entry:
 	movl $0, %ebp		# Null-terminate the program's backtrace
 
 	#---------------------------------------------------------------------
-	# TODO:  Call the entry-point of the C program!  The program is
+	# 		 Call the entry-point of the C program!  The program is
 	#        compiled and linked into an ELF file, so the file's ELF
 	#        header will specify the entry-point into the program.  See
 	#        the e_entry field; it is a 32-bit value.
@@ -150,16 +202,37 @@ call_c_entry:
 	#        The ELF-header is the very first data-structure in the data
 	#        that was loaded by the boot-loader, so the e_entry field
 	#        will be at a fixed offset from the start of the file data.
-	#
+			# From the specification for ELF:
+				# typedef struct {
+				# 	unsigned char[EI_INDENT = 16] 		
+				# 						16 bytes
+				# 	Elf32_Half 			2 bytes
+				# 	Elf32_Half 			2 bytes
+				# 	Elf32_Word 			4 bytes
+				# 	Elf32_Addr 			4 bytes 		<- e_entry
+				# ...
+				# } Elf32_Ehdr;
+			# So the address e_entry is 24 bytes into the header
 	#        You will need to use an indirect call, where the address to
 	#        call is in a register.  The format is:  call *%somereg
-	#
+	mov $PROGRAM_BASE_ADDR, %ebx
+	movl 24(%ebx), %eax
+
 	#        Don't forget that you are calling a C function, so follow
 	#        cdecl!
-	#
-	#        REMOVE THIS COMMENT BLOCK WHEN YOU WRITE THIS CODE.  (FEEL
-	#        FREE TO INCORPORATE ANY OF THE ABOVE COMMENTS INTO YOUR CODE!)
-	#---------------------------------------------------------------------
+	
+	# see wikipedia/X86_calling_conventions
+	# make new call frame
+	push %ebp
+	mov %esp, %ebp
+	
+	call *%eax
+
+	# return old call frame
+	pop %ebp
+
+	#---------------------------------------------------------------------	
+
 
 	#=====================================================================
 	# The rest of this file contains helper functions for the 16-bit
@@ -215,7 +288,7 @@ STR_FAILED:	.string "Failed to load program.\r\n"
 gdt:
 	.quad 0x0000000000000000	# Null segment.  Not used by CPU.
 	.quad 0x00cf9a000000ffff	# Code segment, base 0, limit 4 GB.
-	.quad 0x00cf92000000ffff        # Data segment, base 0, limit 4 GB.
+	.quad 0x00cf92000000ffff    # Data segment, base 0, limit 4 GB.
 
 gdtdesc:
 	.word	gdtdesc - gdt - 1	# Size of the GDT, minus 1 byte.
