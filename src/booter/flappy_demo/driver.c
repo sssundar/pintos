@@ -80,8 +80,8 @@ const int OPENING_WIDTH = 7;
 /** Flappy stays in this column. */
 const int FLAPPY_COL = 10;
 
-/** Aiming for this many frame per second. */
-const float TARGET_FPS = 20;
+/** Aiming for this many frames per second. */
+const float TARGET_FPS = 24;
 
 /** Amount of time the splash screen stays up. */
 const float START_TIME_SEC = 3;
@@ -217,11 +217,13 @@ int get_orow(vpipe p, int top) {
  *
  * @param p
  * @param vch Character for vertical part of pipe
- * @param hch Character for horizontal part of pipe
+ * @param hcht Character for horizontal part of top pipe
+ * @param hchb Character for horizontal part of lower pipe
  * @param ceiling_row Start the pipe just below this
  * @param floor_row Star the pipe jut above this
  */
-void draw_pipe(vpipe p, char vch, char hch, int ceiling_row, int floor_row) {
+void draw_pipe(vpipe p, char vch, char hcht, char hchb,
+		int ceiling_row, int floor_row) {
 	int i, upper_terminus, lower_terminus;
 
 	// Draw vertical part of upper half of pipe.
@@ -241,7 +243,7 @@ void draw_pipe(vpipe p, char vch, char hch, int ceiling_row, int floor_row) {
 	for (i = -PIPE_RADIUS; i <= PIPE_RADIUS; i++) {
 		if ((p.center + i) >= 0 &&
 				(p.center + i) < NUM_COLS - 1) {
-			set_elem(upper_terminus, p.center + i, hch);
+			set_elem(upper_terminus, p.center + i, hcht);
 		}
 	}
 
@@ -262,7 +264,7 @@ void draw_pipe(vpipe p, char vch, char hch, int ceiling_row, int floor_row) {
 	for (i = -PIPE_RADIUS; i <= PIPE_RADIUS; i++) {
 		if ((p.center + i) >= 0 &&
 				(p.center + i) < NUM_COLS - 1) {
-			set_elem(lower_terminus, p.center + i, hch);
+			set_elem(lower_terminus, p.center + i, hchb);
 		}
 	}
 }
@@ -287,11 +289,11 @@ int get_flappy_position(flappy f) {
  * @return 1 if Flappy crashed, 0 otherwise.
  */
 int crashed_into_pipe(flappy f, vpipe p) {
-	if (FLAPPY_COL >= p.center - PIPE_RADIUS &&
-			FLAPPY_COL <= p.center + PIPE_RADIUS) {
+	if (FLAPPY_COL >= p.center - PIPE_RADIUS - 1 &&
+			FLAPPY_COL <= p.center + PIPE_RADIUS + 1) {
 
-		if (get_flappy_position(f) >= get_orow(p, 1) &&
-				get_flappy_position(f) <= get_orow(p, 0)) {
+		if (get_flappy_position(f) >= get_orow(p, 1)  + 1 &&
+				get_flappy_position(f) <= get_orow(p, 0) - 1) {
 			return 0;
 		}
 		else {
@@ -356,7 +358,43 @@ int draw_flappy(flappy f) {
 	}
 
 	// Draw 'v' when going down, '^' when going up.
-	set_elem(h, FLAPPY_COL, GRAV * f.t + V0 > 0 ? 'v' : '^');
+	// set_elem(h, FLAPPY_COL, GRAV * f.t + V0 > 0 ? 'W' : 'M');
+
+	// If going down, don't flap
+	if (GRAV * f.t + V0 > 0) {
+		set_elem(h, FLAPPY_COL - 1, '\\');
+		set_elem(h - 1, FLAPPY_COL - 2, '\\');
+		set_elem(h, FLAPPY_COL, 'O');
+		set_elem(h, FLAPPY_COL + 1, '/');
+		set_elem(h - 1, FLAPPY_COL + 2, '/');
+	}
+
+	// If going up, flap!
+	else {
+		// Left wing
+		if (frame % 6 < 3) {
+			set_elem(h, FLAPPY_COL - 1, '/');
+			set_elem(h + 1, FLAPPY_COL - 2, '/');
+		}
+		else {
+			set_elem(h, FLAPPY_COL - 1, '\\');
+			set_elem(h - 1, FLAPPY_COL - 2, '\\');
+		}
+
+		// Body
+		set_elem(h, FLAPPY_COL, 'O');
+
+		// Right wing
+		if (frame % 6 < 3) {
+			set_elem(h, FLAPPY_COL + 1, '\\');
+			set_elem(h + 1, FLAPPY_COL + 2, '\\');
+		}
+		else {
+			set_elem(h, FLAPPY_COL + 1, '/');
+			set_elem(h - 1, FLAPPY_COL + 2, '/');
+		}
+	}
+
 	return 0;
 }
 
@@ -462,7 +500,13 @@ int main()
 		clear();
 
 		// Print "moving" floor and ceiling
-		draw_floor_and_ceiling(0, NUM_ROWS - 1, '/', 2, frame % 2);
+		draw_floor_and_ceiling(0, NUM_ROWS - 1, '/', 3, frame % 3);
+
+		// Update pipe locations and draw them.
+		draw_pipe(p1, '|', '=', '=', 0, NUM_ROWS - 1);
+		draw_pipe(p2, '|', '=', '=', 0, NUM_ROWS - 1);
+		pipe_refresh(&p1);
+		pipe_refresh(&p2);
 
 		// Draw Flappy. If Flappy crashed and user wants a restart...
 		if(draw_flappy(f)) {
@@ -470,12 +514,6 @@ int main()
 			free_window();
 			continue; // ...then restart the game.
 		}
-
-		// Update pipe locations and draw them.
-		draw_pipe(p1, '|', '-', 0, NUM_ROWS - 1);
-		draw_pipe(p2, '|', '-', 0, NUM_ROWS - 1);
-		pipe_refresh(&p1);
-		pipe_refresh(&p2);
 
 		mvprintw(0, SCORE_START_COL - bdigs - sdigs,
 				" Score: %d  Best: %d", score, best_score);
