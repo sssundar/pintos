@@ -26,6 +26,9 @@
  *        position, or any other details you might want to keep track of!
  */
 
+#define VIDEO_CURRENT_CHAR *0xB8000
+#define VIDEO_FOREGROUND 0xB8000 & 0x0F
+#define VIDEO_BACKGROUND 0xB8000 & 0xF0
 
 void init_video(void) {
     /* TODO:  Do any video display initialization you might want to do, such
