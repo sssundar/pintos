@@ -32,4 +32,3 @@ void init_video(void) {
      *        as clearing the screen, initializing static variable state, etc.
      */
 }
-

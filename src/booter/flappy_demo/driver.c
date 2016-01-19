@@ -8,9 +8,7 @@
 
 #include <ncurses.h>
 #include <unistd.h>
-#include <signal.h>
 #include <stdio.h>
-#include <sys/time.h>
 #include <stdlib.h>
 #include <time.h>
 #include <assert.h>
@@ -46,16 +44,6 @@ typedef struct flappy {
 	/* Time since last up arrow pressed. */
 	int t;
 } flappy;
-
-/**
- * Represents a character at a particular location in a window. These are
- * intended to be chained together in a singly-linked list.
- */
-typedef struct tpixel {
-	char ch;
-	int row, col;
-	struct tpixel *next;
-} tpixel;
 
 //------------------------------ Global Constants -----------------------------
 
@@ -99,9 +87,6 @@ const int SCORE_START_COL = 62;
 /** Frame number. */
 int frame = 0;
 
-/** Linked list of "text pixels" in the current frame. */
-tpixel *head = NULL;
-
 /** Number of pipes that have been passed. */
 int score = 0;
 
@@ -120,38 +105,15 @@ vpipe p1, p2;
 //---------------------------------- Functions --------------------------------
 
 /**
- * Set the element at window position [i][j] to the given char.
+ * Converts the given char into a string.
  *
- * @param i row
- * @param j col
- * @param c Char to set
+ * @param ch Char to convert to a string.
+ * @param[out] str Receives 'ch' into a null-terminated C string. Assumes
+ * str had 2 bytes allocated.
  */
-void set_elem(int i, int j, char c) {
-	tpixel *tmp;
-
-	assert(i >= 0 && i < NUM_ROWS);
-	assert(j >= 0 && j < NUM_COLS - 1);
-
-	if (head == NULL) {
-		head = (tpixel *) malloc(sizeof(tpixel));
-		if (head == NULL) {
-			perror("Malloc failed.");
-			exit(1);
-		}
-		head->next = NULL;
-	}
-	else {
-		tmp = (tpixel *) malloc(sizeof(tpixel));
-		if (tmp == NULL) {
-			perror("Malloc failed.");
-			exit(1);
-		}
-		tmp->next= head;
-		head = tmp;
-	}
-	head->ch = c;
-	head->row = i;
-	head->col = j;
+void chtostr(char ch, char *str) {
+	str[0] = ch;
+	str[1] = '\0';
 }
 
 /**
@@ -166,11 +128,13 @@ void set_elem(int i, int j, char c) {
  */
 void draw_floor_and_ceiling(int ceiling_row, int floor_row,
 		char ch, int spacing, int col_start) {
+	char c[2];
+	chtostr(ch, c);
 	int i;
 	for (i = col_start; i < NUM_COLS - 1; i += spacing) {
 		if (i < SCORE_START_COL - sdigs - bdigs)
-			set_elem(ceiling_row, i, ch);
-		set_elem(floor_row, i, ch);
+			mvprintw(ceiling_row, i, c);
+		mvprintw(floor_row, i, c);
 	}
 }
 
@@ -225,16 +189,19 @@ int get_orow(vpipe p, int top) {
 void draw_pipe(vpipe p, char vch, char hcht, char hchb,
 		int ceiling_row, int floor_row) {
 	int i, upper_terminus, lower_terminus;
+	char c[2];
 
 	// Draw vertical part of upper half of pipe.
 	for(i = ceiling_row + 1; i < get_orow(p, 1); i++) {
 		if ((p.center - PIPE_RADIUS) >= 0 &&
 				(p.center - PIPE_RADIUS) < NUM_COLS - 1) {
-			set_elem(i, p.center - PIPE_RADIUS, vch);
+			chtostr(vch, c);
+			mvprintw(i, p.center - PIPE_RADIUS, c);
 		}
 		if ((p.center + PIPE_RADIUS) >= 0 &&
 				(p.center + PIPE_RADIUS) < NUM_COLS - 1) {
-			set_elem(i, p.center + PIPE_RADIUS, vch);
+			chtostr(vch, c);
+			mvprintw(i, p.center + PIPE_RADIUS, c);
 		}
 	}
 	upper_terminus = i;
@@ -243,7 +210,8 @@ void draw_pipe(vpipe p, char vch, char hcht, char hchb,
 	for (i = -PIPE_RADIUS; i <= PIPE_RADIUS; i++) {
 		if ((p.center + i) >= 0 &&
 				(p.center + i) < NUM_COLS - 1) {
-			set_elem(upper_terminus, p.center + i, hcht);
+			chtostr(hcht, c);
+			mvprintw(upper_terminus, p.center + i, c);
 		}
 	}
 
@@ -251,11 +219,13 @@ void draw_pipe(vpipe p, char vch, char hcht, char hchb,
 	for(i = floor_row - 1; i > get_orow(p, 0); i--) {
 		if ((p.center - PIPE_RADIUS) >= 0 &&
 				(p.center - PIPE_RADIUS) < NUM_COLS - 1) {
-			set_elem(i, p.center - PIPE_RADIUS, vch);
+			chtostr(vch, c);
+			mvprintw(i, p.center - PIPE_RADIUS, c);
 		}
 		if ((p.center + PIPE_RADIUS) >= 0 &&
 				(p.center + PIPE_RADIUS) < NUM_COLS - 1) {
-			set_elem(i, p.center + PIPE_RADIUS, vch);
+			chtostr(vch, c);
+			mvprintw(i, p.center + PIPE_RADIUS, c);
 		}
 	}
 	lower_terminus = i;
@@ -264,7 +234,8 @@ void draw_pipe(vpipe p, char vch, char hcht, char hchb,
 	for (i = -PIPE_RADIUS; i <= PIPE_RADIUS; i++) {
 		if ((p.center + i) >= 0 &&
 				(p.center + i) < NUM_COLS - 1) {
-			set_elem(lower_terminus, p.center + i, hchb);
+			chtostr(hchb, c);
+			mvprintw(lower_terminus, p.center + i, c);
 		}
 	}
 }
@@ -346,6 +317,7 @@ int failure_screen() {
  * @return 0 if Flappy was drawn as expected, 1 if the game should restart.
  */
 int draw_flappy(flappy f) {
+	char c[2];
 	int h = get_flappy_position(f);
 
 	// If Flappy crashed into the ceiling or the floor...
@@ -357,41 +329,46 @@ int draw_flappy(flappy f) {
 		return failure_screen();
 	}
 
-	// Draw 'v' when going down, '^' when going up.
-	// set_elem(h, FLAPPY_COL, GRAV * f.t + V0 > 0 ? 'W' : 'M');
-
 	// If going down, don't flap
 	if (GRAV * f.t + V0 > 0) {
-		set_elem(h, FLAPPY_COL - 1, '\\');
-		set_elem(h - 1, FLAPPY_COL - 2, '\\');
-		set_elem(h, FLAPPY_COL, 'O');
-		set_elem(h, FLAPPY_COL + 1, '/');
-		set_elem(h - 1, FLAPPY_COL + 2, '/');
+		chtostr('\\', c);
+		mvprintw(h, FLAPPY_COL - 1, c);
+		mvprintw(h - 1, FLAPPY_COL - 2, c);
+		chtostr('0', c);
+		mvprintw(h, FLAPPY_COL, c);
+		chtostr('/', c);
+		mvprintw(h, FLAPPY_COL + 1, c);
+		mvprintw(h - 1, FLAPPY_COL + 2, c);
 	}
 
 	// If going up, flap!
 	else {
 		// Left wing
 		if (frame % 6 < 3) {
-			set_elem(h, FLAPPY_COL - 1, '/');
-			set_elem(h + 1, FLAPPY_COL - 2, '/');
+			chtostr('/', c);
+			mvprintw(h, FLAPPY_COL - 1, c);
+			mvprintw(h + 1, FLAPPY_COL - 2, c);
 		}
 		else {
-			set_elem(h, FLAPPY_COL - 1, '\\');
-			set_elem(h - 1, FLAPPY_COL - 2, '\\');
+			chtostr('\\', c);
+			mvprintw(h, FLAPPY_COL - 1, c);
+			mvprintw(h - 1, FLAPPY_COL - 2, c);
 		}
 
 		// Body
-		set_elem(h, FLAPPY_COL, 'O');
+		chtostr('0', c);
+		mvprintw(h, FLAPPY_COL, c);
 
 		// Right wing
 		if (frame % 6 < 3) {
-			set_elem(h, FLAPPY_COL + 1, '\\');
-			set_elem(h + 1, FLAPPY_COL + 2, '\\');
+			chtostr('\\', c);
+			mvprintw(h, FLAPPY_COL + 1, c);
+			mvprintw(h + 1, FLAPPY_COL + 2, c);
 		}
 		else {
-			set_elem(h, FLAPPY_COL + 1, '/');
-			set_elem(h - 1, FLAPPY_COL + 2, '/');
+			chtostr('/', c);
+			mvprintw(h, FLAPPY_COL + 1, c);
+			mvprintw(h - 1, FLAPPY_COL + 2, c);
 		}
 	}
 
@@ -413,7 +390,7 @@ void splash_screen() {
 	mvprintw(r + 2, c, "| _|| / _` | '_ \\ '_ \\ || | | _ \\ | '_/ _` |");
 	mvprintw(r + 3, c, "|_| |_\\__,_| .__/ .__/\\_, | |___/_|_| \\__,_|");
 	mvprintw(r + 4, c, "           |_|  |_|   |__/                  ");
-	mvprintw(NUM_ROWS / 2 + 1, NUM_COLS / 2 - 9,
+	mvprintw(NUM_ROWS / 2 + 1, NUM_COLS / 2 - 10,
 			"Press <up> to flap!");
 
 	// Print the progress bar.
@@ -428,18 +405,6 @@ void splash_screen() {
 	usleep(1000000 * 0.5);
 }
 
-/**
- * Frees the "text pixel" list.
- */
-void free_window() {
-	tpixel *tmp;
-	while (head != NULL) {
-		tmp = head;
-		head = head->next;
-		free(tmp);
-	}
-}
-
 //------------------------------------ Main -----------------------------------
 
 int main()
@@ -447,16 +412,16 @@ int main()
 	int leave_loop = 0;
 	int ch;
 	flappy f;
-	tpixel *tmp;
 	int restart = 1;
 
 	srand(time(NULL));
 
-	// Initialize ncurses window.
-	initscr();			/* Start curses mode 		*/
-	raw();				/* Line buffering disabled	*/
-	keypad(stdscr, TRUE);		/* We get F1, F2 etc..		*/
-	noecho();			/* Don't echo() while we do getch */
+	// Initialize ncurses
+	initscr();
+	raw();					// Disable line buffering
+	keypad(stdscr, TRUE);
+	noecho();				// Don't echo() for getch
+	curs_set(0);
 	timeout(0);
 
 	splash_screen();
@@ -511,7 +476,6 @@ int main()
 		// Draw Flappy. If Flappy crashed and user wants a restart...
 		if(draw_flappy(f)) {
 			restart = 1;
-			free_window();
 			continue; // ...then restart the game.
 		}
 
@@ -519,12 +483,6 @@ int main()
 				" Score: %d  Best: %d", score, best_score);
 
 		// Display all the chars for this frame.
-		while(head != NULL) {
-			mvprintw(head->row, head->col, "%c", head->ch);
-			tmp = head;
-			head = head->next;
-			free(tmp);
-		}
 		refresh();
 		frame++;
 	}
