@@ -26,7 +26,12 @@
 #define NROWS 		  25
 #define NCOLS 		  80
 
-// TODO comment
+/**
+ * Sets the background color that displays after a clear_screen and
+ * refresh_screen.
+ *
+ * @param bkgcol Background color, should come from the constants in video.h.
+ */
 void set_bkg(uint8_t bkgcol);
 
 /** Clears the screen to the given background color. */
@@ -44,7 +49,9 @@ void clear_screen();
 void mvprintfcol(uint8_t r, uint8_t c, uint8_t bkgcol, uint8_t txtcol,
 		const char *str);
 
-// TODO comment
+/**
+ * Copies the second page from the video buffer in the primary, display page.
+ */
 void refresh_screen();
 
 #endif /* VIDEO_H */
