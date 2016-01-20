@@ -1,34 +1,47 @@
 #include "video.h"
 
-/* This is the address of the VGA text-mode video buffer.  Note that this
+/**
+ * This is the address of the VGA text-mode video buffer.  Note that this
  * buffer actually holds 8 pages of text, but only the first page (page 0)
  * will be displayed.
- *
- * Individual characters in text-mode VGA are represented as two adjacent
- * bytes:
- *     Byte 0 = the character value
- *     Byte 1 = the color of the character:  the high nibble is the background
- *              color, and the low nibble is the foreground color
- *
- * See http://wiki.osdev.org/Printing_to_Screen for more details.
- *
- * Also, if you decide to use a graphical video mode, the active video buffer
- * may reside at another address, and the data will definitely be in another
- * format.  It's a complicated topic.  If you are really intent on learning
- * more about this topic, go to http://wiki.osdev.org/Main_Page and look at
- * the VGA links in the "Video" section.
  */
-#define VIDEO_BUFFER ((void *) 0xB8000)
+const char *VIDEO_BUFFER = (char *) 0xB8000;
 
+// TODO comment
+const char *PAGETWO = (char *) (0xB8000 + NROWS * NCOLS * 2);
 
-/* TODO:  You can create static variables here to hold video display state,
- *        such as the current foreground and background color, a cursor
- *        position, or any other details you might want to keep track of!
- */
+// TODO comment
+uint8_t defbkgcol = BLACK;
 
+void set_bkg(uint8_t bkgcol) {
+	defbkgcol = bkgcol;
+}
 
-void init_video(void) {
-    /* TODO:  Do any video display initialization you might want to do, such
-     *        as clearing the screen, initializing static variable state, etc.
-     */
+void clear_screen() {
+	int i;
+	volatile char *vbuf = (volatile char *) PAGETWO;
+	for (i = 0; i < NROWS * NCOLS * 2; i++) {
+		*vbuf++ = ' '; // TODO change?
+		*vbuf++ = defbkgcol << 4;
+	}
+}
+
+void mvprintfcol(uint8_t r, uint8_t c, uint8_t bkgcol, uint8_t txtcol,
+		const char *str) {
+	unsigned char color = (bkgcol << 4) + txtcol;
+	volatile char *vbuf = (volatile char *) PAGETWO;
+	vbuf += 2 * (r * NCOLS + c);
+	while (*str != '\0') {
+		*vbuf++ = *str++;
+		*vbuf++ = color;
+	}
+}
+
+void refresh_screen() {
+	int i;
+	volatile char *vbuf = (volatile char *) VIDEO_BUFFER;
+	volatile char *pagetwo = (volatile char *) PAGETWO;
+	for (i = 0; i < NCOLS * NROWS * 2; i++) {
+		*vbuf++ = *pagetwo++;
+	}
 }

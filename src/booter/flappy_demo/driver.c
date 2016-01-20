@@ -90,19 +90,31 @@ int frame = 0;
 /** Number of pipes that have been passed. */
 int score = 0;
 
-/** Number of digits in the score. */
-int sdigs = 1;
-
 /** Best score so far. */
 int best_score = 0;
-
-/** Number of digits in the best score. */
-int bdigs = 1;
 
 /** The vertical pipe obstacles. */
 vpipe p1, p2;
 
 //---------------------------------- Functions --------------------------------
+
+/**
+ * Gets the number of digits in the integer argument.
+ *
+ * @param x Find the number of digits in this number.
+ *
+ * @return Number of digits in 'x'.
+ */
+int num_digits(int x) {
+	int digs = 0;
+	if (x == 0)
+		return 1;
+	while(x != 0) {
+		x /= 10;
+		digs++;
+	}
+	return digs;
+}
 
 /**
  * Converts the given char into a string.
@@ -132,7 +144,7 @@ void draw_floor_and_ceiling(int ceiling_row, int floor_row,
 	chtostr(ch, c);
 	int i;
 	for (i = col_start; i < NUM_COLS - 1; i += spacing) {
-		if (i < SCORE_START_COL - sdigs - bdigs)
+		if (i < SCORE_START_COL - num_digits(score) - num_digits(best_score))
 			mvprintw(ceiling_row, i, c);
 		mvprintw(floor_row, i, c);
 	}
@@ -153,10 +165,6 @@ void pipe_refresh(vpipe *p) {
 		// Get an opening height fraction.
 		p->opening_height = rand() / ((float) INT_MAX) * 0.5 + 0.25;
 		score++;
-		if(sdigs == 1 && score > 9)
-			sdigs++;
-		else if(sdigs == 2 && score > 99)
-			sdigs++;
 	}
 	p->center--;
 }
@@ -295,12 +303,7 @@ int failure_screen() {
 	default:
 		if (score > best_score)
 			best_score = score;
-		if (bdigs == 1 && best_score > 9)
-			bdigs++;
-		else if(bdigs == 2 && best_score > 99)
-			bdigs++;
 		score = 0;
-		sdigs = 1;
 		return 1; // Restart game.
 	}
 	endwin();
@@ -405,6 +408,51 @@ void splash_screen() {
 	usleep(1000000 * 0.5);
 }
 
+/**
+ * Gets the length of its string argument.
+ *
+ * @param str
+ *
+ * @return Length of 'str'.
+ */
+int mystrlen(const char *str) {
+	int i = 0;
+	while (str[i++] != '\0');
+	return i - 1;
+}
+
+// TODO test
+void print_score_to_str(char *str) {
+	char *tmp1 = " Score: ", *tmp2 = "  Best: ";
+	int i, j, k, btmp = best_score, stmp = score;
+
+	// Put the " Score: " part of the string in.
+	for (i = 0; i < mystrlen(tmp1); i++) {
+		str[i] = tmp1[i];
+	}
+
+	// Put the actual score in.
+	for(j = num_digits(score) - 1; j >= 0; j--) {
+		str[i + j] = (stmp % 10 + '0');
+		stmp /= 10;
+	}
+	i += num_digits(score);
+
+	// Put the " Best: " part of the string in.
+	for (k = 0; k < mystrlen(tmp2); k++) {
+		str[i++] = tmp2[k];
+	}
+
+	// Put the actual score in.
+	for(j = num_digits(best_score) - 1; j >= 0; j--) {
+		str[i + j] = (btmp % 10 + '0');
+		btmp /= 10;
+	}
+	i+= num_digits(best_score);
+
+	str[i] = '\0';
+}
+
 //------------------------------------ Main -----------------------------------
 
 int main()
@@ -413,6 +461,8 @@ int main()
 	int ch;
 	flappy f;
 	int restart = 1;
+	char score_str[22]; // 22 is the max length of the score string, assuming
+					    // 3-digit scores only.
 
 	srand(time(NULL));
 
@@ -479,8 +529,9 @@ int main()
 			continue; // ...then restart the game.
 		}
 
-		mvprintw(0, SCORE_START_COL - bdigs - sdigs,
-				" Score: %d  Best: %d", score, best_score);
+		print_score_to_str(score_str);
+		mvprintw(0, SCORE_START_COL -
+				num_digits(score) - num_digits(best_score), score_str);
 
 		// Display all the chars for this frame.
 		refresh();
