@@ -1,7 +1,6 @@
 #ifndef INTERRUPTS_H
 #define INTERRUPTS_H
 
-
 /* These are the interrupt numbers that the timer and keyboard will
  * generate when they fire.  Confusingly, the timer interrupt is IRQ0
  * on the Programmable Interrupt Controller, and the keyboard interrupt

@@ -44,10 +44,10 @@ void init_keyboard(void) {
     /* TODO:  You might want to install your keyboard interrupt handler
      *        here as well.
      */
-    install_interrupt_handler(0x1, irq1_handler) {
+    install_interrupt_handler(0x1, irq1_handler);
 }
 
-void keyboard_handler(void) {	
+void keyboard_handler(void) {		
 }
 
 // char getch(int flag) {

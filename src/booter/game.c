@@ -1,3 +1,7 @@
+#include "interrupts.h"
+#include "video.h"
+#include "timer.h"
+
 /* This is the entry-point for the game! */
 void c_start(void) {
     /* TODO:  You will need to initialize various subsystems here.  This
@@ -8,7 +12,7 @@ void c_start(void) {
      */
 
     init_interrupts(); // Masks all interrupts, clears IDT, installs it.
-	// install_interrupt_handler(0, (void *) &c_start);    Sets up IDT entry in the location/way I expect
+	init_timer();
 
 	// Now, let me set up a handler in assembly for the keyboard.
 	// I need to point to a function (following cdecl) in keyboard.c, .h
@@ -24,6 +28,16 @@ void c_start(void) {
 	// then here I need to allow interrupts.
 
     /* Loop forever, so that we don't fall back into the bootloader code. */    
-    while (1) {}
-}
+  
+  /* Loop forever, so that we don't fall back into the bootloader code. */
+  set_bkg(GREEN);
 
+  clear_screen();
+  mvprintfcol(10, 10, RED, BLUE, "hello");
+  refresh_screen();
+
+  IRQ_clear_mask(0); // timer unmasked
+  enable_interrupts();
+  
+  while (1) { }
+}

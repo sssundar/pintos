@@ -261,5 +261,5 @@ void install_interrupt_handler(int num, void *handler) {
      idtd->offset_31_16 = (uint16_t) (((int) handler & 0xFFFF0000) >> 16);     
      idtd->selector = (uint16_t) SEL_CODESEG;
      idtd->zero = (uint8_t) 0x0;
-     idtd->type_attr = (uint8_t) 0x0;     
+     idtd->type_attr = (uint8_t) 0x8E; // 32 bit interrupt gate        
 }
