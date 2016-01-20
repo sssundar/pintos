@@ -202,17 +202,18 @@ call_c_entry:
 	#        The ELF-header is the very first data-structure in the data
 	#        that was loaded by the boot-loader, so the e_entry field
 	#        will be at a fixed offset from the start of the file data.
-			# From the specification for ELF:
-				# typedef struct {
-				# 	unsigned char[EI_INDENT = 16] 		
-				# 						16 bytes
-				# 	Elf32_Half 			2 bytes
-				# 	Elf32_Half 			2 bytes
-				# 	Elf32_Word 			4 bytes
-				# 	Elf32_Addr 			4 bytes 		<- e_entry
-				# ...
-				# } Elf32_Ehdr;
-			# So the address e_entry is 24 bytes into the header
+	#
+	#        From the specification for ELF:
+	#          typedef struct {
+	# 	         unsigned char[EI_INDENT = 16]   16 bytes
+	# 	         Elf32_Half 			          2 bytes
+	# 	         Elf32_Half 			          2 bytes
+	# 	         Elf32_Word 			          4 bytes
+	# 	         Elf32_Addr 			          4 bytes    <- e_entry
+	#            ...
+	#          } Elf32_Ehdr;
+	#
+	#        So the address e_entry is 24 bytes into the header
 	#        You will need to use an indirect call, where the address to
 	#        call is in a register.  The format is:  call *%somereg
 	mov $PROGRAM_BASE_ADDR, %ebx
