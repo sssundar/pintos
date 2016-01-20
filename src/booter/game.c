@@ -1,3 +1,4 @@
+#include "interrupts.h"
 #include "video.h"
 
 /* This is the entry-point for the game! */
@@ -10,5 +11,11 @@ void c_start(void) {
      */
 
     /* Loop forever, so that we don't fall back into the bootloader code. */
+  set_bkg(GREEN);
+
+  clear_screen();
+  mvprintfcol(10, 10, RED, BLUE, "hello");
+  refresh_screen();
+
     while (1) { }
 }

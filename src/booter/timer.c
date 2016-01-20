@@ -1,5 +1,9 @@
 #include "timer.h"
 #include "ports.h"
+#include "interrupts.h"
+#include "game.h"
+
+extern volatile int counter;
 
 /*============================================================================
  * PROGRAMMABLE INTERVAL TIMER
@@ -39,31 +43,35 @@
 #define PIT_CHAN2_DATA 0x42
 #define PIT_MODE_CMD   0x43
 
-
-/* TODO:  You can create static variables here to hold timer state.
+/*        You can create static variables here to hold timer state.
  *
  *        You should probably declare variables "volatile" so that the
  *        compiler knows they can be changed by exceptional control flow.
  */
-
 
 void init_timer(void) {
 
     /* Turn on timer channel 0 for generating interrupts. */
     outb(PIT_MODE_CMD, 0x36);               /* 00 11 011 0 */
 
-    /* Tell channel 0 to trigger 100 times per second.  The value we load
-     * here is a divider for the 1193182 Hz timer.  1193182 / 100 ~= 11932.
-     * 11932 = 0x2e9c.
+    /* Tell channel 0 to trigger 1000 times per second.  The value we load
+     * here is a divider for the 1193182 Hz timer.  1193182 / 1000 ~= 1193.
+     * 1193 = 0x04A9.
      *
      * Always write the low byte first, then high byte second.
      */
-    outb(PIT_CHAN0_DATA, 0x9c);
-    outb(PIT_CHAN0_DATA, 0x2e);
+    outb(PIT_CHAN0_DATA, 0xA9);
+    outb(PIT_CHAN0_DATA, 0x04);
 
-    /* TODO:  Initialize other timer state here. */
+    /*  Install timer interrupt handler here. */
+    install_interrupt_handler(0, &irq0_handler);
+}
 
-    /* TODO:  You might want to install your timer interrupt handler
-     *        here as well.
-     */
+void mytime(void){
+  counter++;
+}
+
+void mysleep(int ms){
+  int initial = counter;
+  while(counter - initial < ms){}
 }
