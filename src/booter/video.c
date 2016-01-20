@@ -7,10 +7,14 @@
  */
 const char *VIDEO_BUFFER = (char *) 0xB8000;
 
-// TODO comment
+/**
+ * Pointer to the start of the second page, which is the buffering page.
+ */
 const char *PAGETWO = (char *) (0xB8000 + NROWS * NCOLS * 2);
 
-// TODO comment
+/**
+ * Default color which is displayed after a clear and refresh.
+ */
 uint8_t defbkgcol = BLACK;
 
 void set_bkg(uint8_t bkgcol) {
@@ -21,7 +25,7 @@ void clear_screen() {
 	int i;
 	volatile char *vbuf = (volatile char *) PAGETWO;
 	for (i = 0; i < NROWS * NCOLS * 2; i++) {
-		*vbuf++ = ' '; // TODO change?
+		*vbuf++ = 0;
 		*vbuf++ = defbkgcol << 4;
 	}
 }

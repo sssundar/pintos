@@ -30,7 +30,7 @@ static inline int are_interrupts_enabled() {
  */
 static inline int disable_interrupts(void) {
     int enabled = are_interrupts_enabled();
-    asm ( "cli" );
+    asm ( "cli" );    
 }
 
 
