@@ -21,7 +21,7 @@ typedef struct IDT_Descriptor {
     uint16_t offset_15_0;      // offset bits 0..15
     uint16_t selector;         // a code segment selector in GDT or LDT
     uint8_t zero;              // unused, set to 0
-    uint8_t type_attr;         // descriptor type and attributes
+    uint8_t type_attr;         // descriptor type and attributes    
     uint16_t offset_31_16;     // offset bits 16..31
 } IDT_Descriptor;
 
@@ -48,7 +48,6 @@ static inline void lidt(void* base, uint16_t size) {
     // let the compiler choose an addressing mode
     asm ( "lidt %0" : : "m"(IDTR) );
 }
-
 
 /*============================================================================
  * 8259 PROGRAMMABLE INTERRUPT CONTROLLER
@@ -87,7 +86,11 @@ static inline void lidt(void* base, uint16_t size) {
 #define ICW4_BUF_SLAVE  0x08        /* Buffered mode/slave */
 #define ICW4_BUF_MASTER 0x0C        /* Buffered mode/master */
 #define ICW4_SFNM       0x10        /* Special fully nested (not) */
- 
+
+#define PIC_EOI     0x20        /* End-of-interrupt command code 
+                                directly from wiki.osdev.org/PIC */
+
+
 /* Remap the interrupts that the PIC generates.  The default interrupt
  * mapping conflicts with the IA32 protected-mode interrupts for indicating
  * hardware/software exceptions, so we need to map them elsewhere.
@@ -167,16 +170,23 @@ void IRQ_clear_mask(unsigned char IRQline) {
 
 
 /* Initialize interrupts */
-void init_interrupts(void) {
-    /* TODO:  INITIALIZE AND LOAD THE INTERRUPT DESCRIPTOR TABLE.
+void init_interrupts(void) {    
+    /* INITIALIZE AND LOAD THE INTERRUPT DESCRIPTOR TABLE.
      *
-     *        The entire Interrupt Descriptor Table should be zeroed out.
-     *        (Unfortunately you have to do this yourself since you don't
-     *        have the C Standard Library to use...)
-     *
+     *        The entire Interrupt Descriptor Table is zeroed out.     
      *        Once the entire IDT has been cleared, use the lidt() function
      *        defined above to install our IDT.
      */
+
+    int i;
+    long *clearAddr = (long *) &interrupt_descriptor_table;
+    for (i = 0; i < NUM_INTERRUPTS; i++) {
+        *clearAddr = 0;
+        clearAddr += 1;
+    }
+
+    lidt((void*) &interrupt_descriptor_table, 
+        NUM_INTERRUPTS*sizeof(IDT_Descriptor));    
 
     /* Remap the Programmable Interrupt Controller to deliver its interrupts
      * to 0x20-0x33 (32-45), so that they don't conflict with the IA32 built-
@@ -186,15 +196,42 @@ void init_interrupts(void) {
      * second number says where to map the Slave PIC's IRQs.)
      */
     PIC_remap(0x20, 0x27);
-}
+    /*
+    From oopweb.com/Assembly/Documents/ArtOfAssembly/
+                                    Volume/Chapter_17/CH17-3.html
+    Input on 8259   80x86 INT   Device
+    IRQ 0   8   Timer chip
+    IRQ 1   9   Keyboard
+    IRQ 2   0Ah Cascade for controller 2 (IRQ 8-15)
+    IRQ 3   0Bh Serial port 2
+    IRQ 4   0Ch Serial port 1
+    IRQ 5   0Dh Parallel port 2 in AT reserved in PS/2 systems
+    IRQ 6   0Eh Diskette drive
+    IRQ 7   0Fh Parallel port 1
+    IRQ 8/0 70h Real-time clock
+    IRQ 9/1 71h CGA vertical retrace (and other IRQ 2 devices)
+    IRQ 10/2    72h Reserved
+    IRQ 11/3    73h Reserved
+    IRQ 12/4    74h Reserved in AT auxiliary device on PS/2 systems
+    IRQ 13/5    75h FPU interrupt
+    IRQ 14/6    76h Hard disk controller
+    IRQ 15/7    77h Reserved
 
+    So it seems I ought to mask everything in bank 2. In fact I ought
+    to mask all of them and only clear masks on those I know I need.
+    */
+    unsigned char k;
+    for (k = 0; k < 16; k++) {
+        IRQ_set_mask(k);    
+    } 
+}
 
 /* Installs an interrupt handler into the Interrupt Descriptor Table.
  * The handler is expected to be an assembly language handler function,
  * not a C function, although the handler might call a C function.
  */
 void install_interrupt_handler(int num, void *handler) {
-    /* TODO:  IMPLEMENT.  See IA32 Manual, Volume 3A, Section 5.11 for an
+    /*        See IA32 Manual, Volume 3A, Section 5.11 for an
      *        overview of the contents of IDT Descriptors.  These are
      *        Interrupt Gates.
      *
@@ -208,11 +245,21 @@ void install_interrupt_handler(int num, void *handler) {
      *        The DPL component of the "type_attr" field specifies the
      *        required privilege level to invoke the interrupt.  You can
      *        set this to 0 (which allows anything to invoke the interrupt),
-     *        but its value isn't really relevant to us.
+     *        but its value isn't really relevant to us.     
      *
-     *        REMOVE THIS COMMENT WHEN YOU WRITE THE CODE.  (FEEL FREE TO
-     *        INCORPORATE THE ABOVE COMMENTS IF YOU WISH.)
-     */
+     *        When an exception occurs we get a vector from the PIC
+     *        this might be 0x20 - 0x2F the way we've configured things.
+     *        this vector needs to be our index into the IDT. So
+     *        to handle 0x20 (IRQ0), we would place the interrupt handler
+     *        in the IDT at index 0x20 = 0x20 + num
+     *          
+     *        For correct operation num must be in 0-15.
+     */     
+     IDT_Descriptor *idtd = ((IDT_Descriptor *) interrupt_descriptor_table) 
+                            + (0x20+num);     
+     idtd->offset_15_0 = (uint16_t) (((int) handler) & 0x0000FFFF);     
+     idtd->offset_31_16 = (uint16_t) (((int) handler & 0xFFFF0000) >> 16);     
+     idtd->selector = (uint16_t) SEL_CODESEG;
+     idtd->zero = (uint8_t) 0x0;
+     idtd->type_attr = (uint8_t) 0x0;     
 }
-
-

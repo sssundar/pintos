@@ -2,6 +2,7 @@
 #define KEYBOARD_H
 
 void init_keyboard(void);
+void keyboard_handler(void);
 
 #endif /* KEYBOARD_H */
 
