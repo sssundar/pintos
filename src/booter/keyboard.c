@@ -56,14 +56,20 @@ static volatile int end;
  * @param scode One byte of a scan code.
  */
 void enqueue(uint8_t scode) {
-	kbuf[end] = scode;
-	// Full queue case: overwrite the item that was enqueued longest ago by
-	// writing over the element at "start". Increase "end" and "start" by 1
-	// modulo n.
-	if ((end + 1) % KEYBUFLEN == start) {
-		start = (start + 1) % KEYBUFLEN;
-	}
-	end = (end + 1) % KEYBUFLEN;
+  // Disable interrupts:
+  asm volatile('cli'::);
+  
+  kbuf[end] = scode;
+  // Full queue case: overwrite the item that was enqueued longest ago by
+  // writing over the element at "start". Increase "end" and "start" by 1
+  // modulo n.
+  if ((end + 1) % KEYBUFLEN == start) {
+    start = (start + 1) % KEYBUFLEN;
+  }
+  end = (end + 1) % KEYBUFLEN;
+
+  // Enable interrupts:
+  asm volatile('sti'::);
 }
 
 /**
@@ -73,30 +79,33 @@ void enqueue(uint8_t scode) {
  * buffer is empty.
  */
 uint8_t dequeue() {
-	uint8_t rtn;
-	// Empty queue case:
-	if (start == end) {
-		rtn = 0;
-	}
-	// Non-empty queue case:
-	else {
-		rtn = kbuf[start];
-                kbuf[start] = 0;
-		start = (start + 1) % KEYBUFLEN;
-	}
-	return rtn;
+  // Disable interrupts:
+  asm volatile('cli'::);
+
+  uint8_t rtn;
+  // Empty queue case:
+  if (start == end) {
+    rtn = 0;
+  }
+  // Non-empty queue case:
+  else {
+    rtn = kbuf[start];
+    kbuf[start] = 0;
+    start = (start + 1) % KEYBUFLEN;
+  }
+  return rtn;
+
+  // Enable interrupts:
+  asm volatile('sti'::);
 }
 
 void init_keyboard(void) {
-    /* TODO:  Initialize any state required by the keyboard handler. */
+    /* Initialize any state required by the keyboard handler. */
 	start = 0;
 	end = 0;
 
-    /* TODO:  You might want to install your keyboard interrupt handler
+    /*        You might want to install your keyboard interrupt handler
      *        here as well.
      */
+	install_interrupt_handler(1, irq1_handler);
 }
-
-
-
-
