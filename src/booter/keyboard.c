@@ -97,9 +97,10 @@ void init_keyboard(void) {
   install_interrupt_handler(KEYBOARD_INTERRUPT, irq1_handler);  
 }
 
-/*
- * function keyboard_handler enqueues scan code of key pressed.
- */
+/**
+  * Simply enqueue whatever scan-code we were interrupted to get.
+  *
+  */ 
 
 void keyboard_handler(void) {		    
   enqueue((uint8_t) inb(KEYBOARD_PORT));  

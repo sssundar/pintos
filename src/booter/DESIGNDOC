@@ -201,7 +201,7 @@ characters * 2, then prints the chars in the given string in order.
 
 Video buffer is 80x25x2chars long. The actual buffer itself, allocated by
 BIOS or whatever is 8x that space. So we write to page 2 of the video buffer,
-and when we call refresh_screen() it writes it directly to page 1. 
+and when we call refresh_screen() it writes it directly to page 1.
 
 ---- ALGORITHMS ----
 

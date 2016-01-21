@@ -79,10 +79,7 @@ boot_start:
 	mov $PROGRAM_OFFSET_ADDR, %dx
 	push %dx
 	
-	# dap[0x02-0x03] = number of 512-byte sectors to read		
-	# === TO DO ===
-	# Check final demo size, set up to handle multiple contiguous 64kB blocks	
-	
+	# dap[0x02-0x03] = number of 512-byte sectors to read			
 	# Let's get 128 sectors. In Little Endian, that's 0x80 0x00 at 0x02 0x03
 	mov $0x0080, %dx
 	push %dx
@@ -105,17 +102,7 @@ boot_start:
 	
 	mov	$STR_LOADED, %si
 	call	print_str
-
-	#---------------------------------------------------------------------
-	# TODO:  If you want to do anything else with the computer hardware
-	#        using the BIOS, here is the place to do it.  After this we
-	#        will transition into 32-bit protected mode, and the BIOS will
-	#        no longer be available to use.
-	#
-	#        REMOVE THIS COMMENT BLOCK WHEN YOU WRITE THIS CODE.
-	#        (OR IF YOU DECIDE YOU DON'T WANT TO PUT ANYTHING HERE.)
-	#---------------------------------------------------------------------
-
+	
 	#=====================================================================
 	# Next, set up for transition from 16-bit real mode to 32-bit
 	# protected mode.  All we strictly need for this is a Global
