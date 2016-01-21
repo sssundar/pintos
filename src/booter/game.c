@@ -616,4 +616,3 @@ void c_start(void) {
   /* Loop forever, so that we don't fall back into the bootloader code. */
   while (1) {}
 }
-

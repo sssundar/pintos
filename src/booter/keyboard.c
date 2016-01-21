@@ -183,8 +183,34 @@ void keyboard_handler(void) {
   }
 }
 
-// char getch(int flag) {
-// 	if argument is 1: block till something in queue
-// 	else if 0, something in qeuue, return it, otherwise, return 0 "sentinal value"
-// 	only consider lowercase f and lowercase q. return ascii codes, 'f', 'q', 0.
-// }
+uint8_t getch(int flag) {
+  // if the flag is 1, keep dequeueing until recognize
+  // code 'f' or 'q', otherwise keep looping.
+  // if flag is 0, return 0 when reach end of queue.
+  // f scan code 2: 0x2B
+  // q scan code 2: 0x15
+
+  uint8_t scan_code;
+
+  while(1){
+    if (flag != 0 && flag != 1){
+      fprintf("Error: Received invalid getch flag.");
+      exit(1);
+    }
+    else{
+      scan_code = dequeue();
+
+      if(scan_code == 0x2B){
+	return 'f';
+      }
+      if(scan_code == 0x15){
+	return 'q';
+      }
+
+      if(flag == 0 && scan_code == 0){
+	return 0;
+      }
+    }
+  }
+}
+

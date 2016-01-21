@@ -19,5 +19,7 @@ void enqueue(uint8_t scode);
  */
 uint8_t dequeue();
 
+uint8_t getch(int flag);
+
 #endif /* KEYBOARD_H */
 
