@@ -61,7 +61,7 @@ const int OPENING_WIDTH = 7;
 const int FLAPPY_COL = 10;
 
 /** Aiming for this many frames per second. */
-const float TARGET_FPS = 24;
+const float TARGET_FPS = 40;
 
 /** Amount of time the splash screen stays up. */
 const float START_TIME_SEC = 3;
@@ -72,7 +72,17 @@ const int PROG_BAR_LEN = 76;
 /** Row number at which the progress bar will show. */
 const int PROG_BAR_ROW = 22;
 
+/** Starts the score ticker at this column number. */
 const int SCORE_START_COL = 62;
+
+/** Helper value for our rand implementation. */
+const int RANDV = 97;
+
+/** Helper value for our rand implementation. */
+const int RANDW = 31;
+
+/** Number of milliseconds per second. */
+const int MS_PER_SEC = 1000;
 
 //----------------------------- Utility Functions -----------------------------
 
@@ -119,7 +129,7 @@ int randintp(int prime, int *seed) {
   if (*seed == 0) {
     *seed = 1;
   }
-  return (*seed = (31 * *seed) % prime);
+  return (*seed = (RANDW * *seed) % prime);
 }
 
 /**
@@ -241,7 +251,8 @@ void pipe_refresh(vpipe *p, int *seed, int *score) {
 		p->center = NUM_COLS + PIPE_RADIUS;
 
 		// Get an opening height fraction.
-		p->opening_height = randintp(97, seed) / 97.0 * 0.5 + 0.25;
+		p->opening_height =
+				randintp(RANDV, seed) / ((float) RANDV) * 0.5 + 0.25;
 		(*score)++;
 	}
 	p->center--;
@@ -279,12 +290,11 @@ void draw_splash_screen() {
 			BLACK, WHITE, "]");
 	refresh_screen();
 	for(i = 0; i < PROG_BAR_LEN; i++) {
-		mysleep(1000 * START_TIME_SEC / (float) PROG_BAR_LEN);
+		mysleep(MS_PER_SEC * START_TIME_SEC / (float) PROG_BAR_LEN);
 		mvprintfcol(PROG_BAR_ROW, NUM_COLS / 2 - PROG_BAR_LEN / 2 + i,
 				BLACK, WHITE, "=");
 		refresh_screen();
 	}
-	mysleep(1000 * 0.45);
 }
 
 /**
@@ -293,8 +303,7 @@ void draw_splash_screen() {
  * @param[out] score
  * @param[out] best_score
  *
- * @return 1 if the user wants to play again. Returns 0 if the game should
- * exit.
+ * @return 0 if the user wants to play again, -1 if the game should exit.
  */
 int draw_failure_screen(int *score, int *best_score) {
 	char ch;
@@ -302,7 +311,7 @@ int draw_failure_screen(int *score, int *best_score) {
 	mvprintfcol(NUM_ROWS / 2 - 1, NUM_COLS / 2 - 22, BLACK, WHITE,
 			"Flappy died :-(. 'f' to flap, 'q' to quit.\n");
 	refresh_screen();
-	ch = -1; // TODO block here = getch();
+	ch = getch(1); // Block on input here.
 	switch(ch) {
 	case 'q': // Quit.
 		return -1;
@@ -312,7 +321,7 @@ int draw_failure_screen(int *score, int *best_score) {
 			best_score = score;
 		score = 0;
 	}
-	return 0; // Restart game.
+	return 1; // Restart game.
 }
 
 /**
@@ -432,7 +441,7 @@ int draw_flappy(flappy f, int *score, int *best_score, vpipe p1, vpipe p2,
 
 	// If Flappy crashed into a pipe...
 	if (crashed_into_pipe(f, p1) || crashed_into_pipe(f, p2)) {
-		// TODO uncomment!!! draw_failure_screen(score, best_score);
+		return draw_failure_screen(score, best_score);
 	}
 
 	// If going down, don't flap
@@ -481,10 +490,11 @@ int draw_flappy(flappy f, int *score, int *best_score, vpipe p1, vpipe p2,
 	return 0;
 }
 
-//----------------------------------- Driver ----------------------------------
+//-------------------------------- Entry point! -------------------------------
 
-/* This is the entry-point for the game! */
 void c_start(void) {
+
+	// "Global" variables.
 	int frame = 0;        // Current frame number.
 	int score = 0;        // Current score.
 	int best_score = 0;   // Best score so far.
@@ -497,6 +507,7 @@ void c_start(void) {
 	int restart = 1;
 	char score_str[50];
   	
+	// Interrupt handling.
 	init_interrupts(); // Masks all interrupts, clears IDT, installs it.
 	init_timer();
 	init_keyboard(); 			
@@ -504,33 +515,29 @@ void c_start(void) {
 	IRQ_clear_mask(1); // keyboard unmasked
 	enable_interrupts();
 	
-	/* ----------------------------------------------------------------------*/
+	//-------------------- Flappy bird code starts here -----------------------
 
-	/* Flappy bird code starts here */
-
-	seed = currtime();
-
-	// Initialize video
 	set_bkg(BLACK);
-	// TODO make sure line buffering is disabled.
-	// TODO make sure arrow and 2-scan-code keys are enabled.
-	// TODO make sure getch doesn't echo ever
-	// TODO make sure cursor doesn't blink
-	// TODO make sure getch doens't block except at death screen
-
 	draw_splash_screen();
+
+	// Wait for the user to enter 'f' to start the game.
+	while (getch(1) != 'f') { }
+	seed = currtime();
 
 	while(!leave_loop) {
 
 		// If we're just starting a game then do some initializations.
 		if (restart) {
+
 			// Start the pipes just out of view on the right. We get a random
 			// number in [0.25, 0.75] so the pipe openings won't be too low
 			// or too high.
 			p1.center = (int)(1.2 * (NUM_COLS - 1));
-			p1.opening_height = randintp(97, &seed) / 97.0 * 0.5 + 0.25;
+			p1.opening_height =
+					randintp(RANDV, &seed) / ((float) RANDV) * 0.5 + 0.25;
 			p2.center = (int)(1.75 * (NUM_COLS - 1));
-			p2.opening_height = randintp(97, &seed) / 97.0 * 0.5 + 0.25;
+			p2.opening_height =
+					randintp(RANDV, &seed) / ((float) RANDV) * 0.5 + 0.25;
 
 			// Initialize flappy
 			f.h0 = NUM_ROWS / 2;
@@ -538,10 +545,11 @@ void c_start(void) {
 			restart = 0;
 		}
 
-		mysleep((unsigned int) (1000 / TARGET_FPS));
+		// Sleep this much between frames.
+		mysleep((unsigned int) (MS_PER_SEC / TARGET_FPS));
 
-		// Process keystrokes.			
-		ch = 0; // TODO = getch(0); // Don't block on input.
+		// Process keystrokes without blocking on input.
+		ch = getch(0);
 		switch (ch) {
 		case 'q': // Quit.
 			leave_loop = 1;
@@ -551,8 +559,7 @@ void c_start(void) {
 			f.t = 0;
 			break;
 		default: // Let Flappy fall along his parabola.
-		// TODO UNDO!!!!!!!!JN!KEJ!EJEKEH  f.t++;
-			f.t = 0;
+			f.t++;
 		}
 
 		if (leave_loop)
@@ -579,8 +586,7 @@ void c_start(void) {
 		else if (tmp == 0) { // Flappy didn't crash.
 			// Do nothing.
 		}
-		else {
-			// Flappy crashed and user wants to exit program.
+		else {				 // Flappy crashed and user wants to exit program.
 			leave_loop = 1;
 			break;
 		}
@@ -597,7 +603,7 @@ void c_start(void) {
 	clear_screen();
 	refresh_screen();
 
-	/* Flappy bird code ends here */
+	//--------------------- Flappy bird code ends here ------------------------
 
   /* Loop forever, so that we don't fall back into the bootloader code. */
   while (1) {}
