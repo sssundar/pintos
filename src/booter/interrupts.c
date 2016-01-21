@@ -251,12 +251,12 @@ void install_interrupt_handler(int num, void *handler) {
      *        this might be 0x20 - 0x2F the way we've configured things.
      *        this vector needs to be our index into the IDT. So
      *        to handle 0x20 (IRQ0), we would place the interrupt handler
-     *        in the IDT at index 0x20 = 0x20 + num
+     *        in the IDT at index 0x20
      *          
-     *        For correct operation num must be in 0-15.
+     *        For correct operation num must be in 0x20-0x2F.
      */     
      IDT_Descriptor *idtd = ((IDT_Descriptor *) interrupt_descriptor_table) 
-                            + (0x20+num);     
+                            + num;     
      idtd->offset_15_0 = (uint16_t) (((int) handler) & 0x0000FFFF);     
      idtd->offset_31_16 = (uint16_t) (((int) handler & 0xFFFF0000) >> 16);     
      idtd->selector = (uint16_t) SEL_CODESEG;

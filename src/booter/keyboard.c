@@ -85,64 +85,17 @@ uint8_t dequeue() {
   enable_interrupts();
 }
 
-#define COM_RESET 0xFF
-#define COM_DEFAU 0xF6
-#define COM_SCANC 0xF0
-#define COM_SCANE 0xF4 
-#define COM_IGNOR 0xE0
-
-// Either
-#define KEY_ERROR_1 0x00  //Key detection error or internal buffer overrun
-#define KEY_ERROR_2 0xFF  //Key detection error or internal buffer overrun
-
-#define KEY_RESET_OK 0xAA  // Self test passed 
-// Either
-#define KEY_RESET_FAIL_1 0xFC // Self test failed
-#define KEY_RESET_FAIL_2 0xFD // Self test failed
-
-#define KEY_ACK 0xFA  //Command acknowledged (ACK)
-
-#define KEY_RESEND 0xFE // Resend 
-
 // This call cannot be interrupted.
-int init_keyboard(void) {  
+void init_keyboard(void) {  
   // Reset Queue Tail/Head Indices for command and key buffers
   start = 0;
   end = 0;
 
-  // Re-Initialize & Set Up Keyboard  
-  unsigned char response;
-  uint8_t command;
-    
-  // outb(KEYBOARD_PORT, COM_RESET);
-  // io_wait();          
-  // response = inb(KEYBOARD_PORT);
-  // io_wait();    
-  
-  // if (response == KEY_ACK) {
-  //   // wait for self-test OK        
-  //   response = inb(KEYBOARD_PORT);
-  //   io_wait();
-  //   if (response != KEY_RESET_OK) {
-  //     return 0;
-  //   }       
-  // } else {
-  //   return 0;
-  // }  
-
-  install_interrupt_handler(1, irq1_handler);
-  return 1;
+  install_interrupt_handler(KEYBOARD_INTERRUPT, irq1_handler);  
 }
 
-void keyboard_handler(void) {		
-  // enqueue key if not keyerror into key buffer
-  // ignore keyerrors (realistically if your keyboard is broken you'll find out
-  // some other way than playing a game).
-  unsigned char scan_code = KEY_ERROR_1;
-  scan_code = inb(KEYBOARD_PORT);  
-  if ((scan_code != KEY_ERROR_1) && (scan_code != KEY_ERROR_2)) {
-    enqueue((uint8_t) scan_code);
-  }
+void keyboard_handler(void) {		    
+  enqueue((uint8_t) inb(KEYBOARD_PORT));  
 }
 
 uint8_t getch(int flag) {
