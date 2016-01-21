@@ -83,8 +83,12 @@ inline uint8_t dequeue() {
   return rtn;
 }
 
-// This call cannot be interrupted.
-// Keyboard for QEMU is Scan Set 1 by default.
+/*
+ * init_keyboard function initializes keyboard and installs the 
+ * keyboard interrupt handler.
+ * This call cannot be interrupted.
+ * Keyboard for QEMU is Scan Set 1 by default.
+*/
 void init_keyboard(void) {  
   // Reset Queue Tail/Head Indices for command and key buffers
   start = 0;
@@ -93,9 +97,21 @@ void init_keyboard(void) {
   install_interrupt_handler(KEYBOARD_INTERRUPT, irq1_handler);  
 }
 
+/*
+ * function keyboard_handler enqueues scan code of key pressed.
+ */
+
 void keyboard_handler(void) {		    
   enqueue((uint8_t) inb(KEYBOARD_PORT));  
 }
+
+/*
+ * function getch dequeues the queue
+ * @param int block: a flag that tells us whether to return 0 or not when 
+ *                  block flag is set.
+ * @return uint8_t: returns 'f' if 'f' is pressed, 'q' if 'q' is pressed.
+ *                  returns 0 if block is not 0.
+ */
 
 uint8_t getch(int block) {
 
@@ -104,11 +120,11 @@ uint8_t getch(int block) {
   while(1) {
     scan_code = dequeue();
 
-    if (scan_code == 0x21) { // TODO correct scan code?
+    if (scan_code == 0x21) {
       return 'f';
     }
 
-    if (scan_code == 0x10) { // TODO correct scan code?
+    if (scan_code == 0x10) {
       return 'q';
     }
 
