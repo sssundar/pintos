@@ -317,9 +317,9 @@ int draw_failure_screen(int *score, int *best_score) {
 		return -1;
 		break;
 	default:
-		if (score > best_score)
-			best_score = score;
-		score = 0;
+		if (*score > *best_score)
+			*best_score = *score;
+		*score = 0;
 	}
 	return 1; // Restart game.
 }
