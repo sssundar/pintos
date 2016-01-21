@@ -208,7 +208,15 @@ and when we call refresh() it writes it directly to page 1.
 >> C3: What abstraction does your video code present to your main program?
 >> Briefly describe the higher-level operations you decided to implement.
 
-HAMIK
+We implemented set_bkg, clear_screen, mvprintfcol, and refresh_screen. They
+will usually be used in that order. set_bkg sets the default background color
+that will be used when clear_screen is called, which walks through the entire 
+second page of video memory and sets all the background colors to the default.
+mvprintfcol stands for "move, printf, color" and does what it sounds like:
+given an x, y coordinate, a background color, a foreground color, and a string
+it prints the string to the given coordinates. refresh_screen then copies all
+the data from the second page into the first page (the user has to call
+clear_screen to get rid of the contents of the second screen).
 
 ---- RATIONALE ----
 
@@ -216,7 +224,8 @@ HAMIK
 >> program's display output?  For example, using Extended ASCII Codes, or
 >> choosing specific colors to represent different things?
 
-HAMIK
+We support different colors through the mvprintfcol function but found a 
+WHITE on BLACK display most appealing.
 
 			  TIMER SUBSYSTEM
 			  ===============
@@ -331,7 +340,14 @@ don't correspond to 'f' or 'q'.
 
 We used a circular queue as a fixed array to store the scan codes. 
 This is faster than using a linked list implementation of a circular 
-queue because there is less fragmentation. 
+queue because there is better cache utilization with a linear array than
+with a linked node data structure, but of course the efficiency gains for
+us are negligible. The array implementation of a circular queue is
+simpler than a linked list one. Circular array-based queues and linked
+list-based queues both have O(1) insertion and removal, but linked list
+versions have the benefit of never needing an expensive resize operation.
+We didn't need that benefit though because it's reasonable to expect there
+will never be many unprocessed key presses in the key buffer.
 
 
 			  SURVEY QUESTIONS
