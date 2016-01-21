@@ -44,12 +44,9 @@ extern volatile int counter;
 #define PIT_CHAN2_DATA 0x42
 #define PIT_MODE_CMD   0x43 
 
-/*        You can create static variables here to hold timer state.
- *
- *        You should probably declare variables "volatile" so that the
- *        compiler knows they can be changed by exceptional control flow.
+/*
+ * init_timer initialized here. timer interrupt handler installed here.
  */
-
 void init_timer(void) {
 
     /* Turn on timer channel 0 for generating interrupts. */
@@ -68,13 +65,28 @@ void init_timer(void) {
     install_interrupt_handler(TIMER_INTERRUPT, irq0_handler);
 }
 
+/*
+ * function timer_handler
+ * A simple function that just increments the counter by one.
+ */
 void timer_handler (void){
   counter++;
 }
 
+/*
+ * function currtime() fetches the current time.
+ * @return the counter (long).
+ */
+
 long currtime() {
 	return counter;
 }
+
+/*
+ * function mysleep sleeps for some time.
+ * @param ms (int) milliseconds to sleep for.
+ * We halt, i.e. sleep, until ms has elapsed.
+ */
 
 inline void mysleep(int ms) {
   int initial = counter;
