@@ -1,4 +1,4 @@
-+-----------------------+
+			+-----------------------+
 			|         CS 124        |
 			| PROJECT 2: BOOTLOADER |
 			|    DESIGN DOCUMENT    |
@@ -265,17 +265,37 @@ the keyboard buffer far faster than the user can fill it up.
 >> E1: What state does your keyboard subsystem manage?  Describe the variables
 >> or data structures that it maintains, and how they are used.
 
+It manages no state. We do not initialize the keypad; we keep the Set 1 that
+the BIOS initialized for us. We maintain a circular queue with an interrupt
+safe dequeue accessor and an interrupt-only enqueue accessor to keep
+any scan codes the keypad chooses to send over, without any kind of parsing.
+
 >> E2: How do your data structures handle keys with multi-byte scan-codes?
+
+We don't - we only needed two keys for our game (f,q) and so we ignore
+anything else - even errors. The user shouldn't be using Flappy Bird to
+figure out their keypad is broken.
 
 ---- ALGORITHMS ----
 
 >> E3: What abstraction does your keyboard code present to your main program?
 >> Briefly describe the higher-level operations you decided to implement.
 
+It presents a dequeue that always returns quickly, even if the queue is empty.
+
+It presents getch(int blockFlag) wrapper for dequeue which can be set up to 
+keep trying to dequeue until it finds a valid scan-code (f,q) or, alternatively,
+to return 0 on reaching the end of the queue without finding an appropriate 
+code. This allows us to ignore the details of scan codes in the main program.
+
 >> E4: Does your keyboard subsystem expose scan-codes directly to your main
 >> program, or does it preprocess them and expose other information to your
 >> main program?  If scan-code data is preprocessed, briefly describe what
 >> information is actually exposed, and how it is derived from scan-codes.
+
+It preprocesses them into "f" or "q" through getch(), using set-1 scan codes
+which are the default with QEMU to map 'f' and 'q' key press (not release)
+into 'f' and' q' characters.
 
 ---- SYNCHRONIZATION ----
 
@@ -284,16 +304,35 @@ the keyboard buffer far faster than the user can fill it up.
 >> internal state?  If so, what steps did you take to ensure that such
 >> situations cannot occur?
 
+No. We made dequeue interrupt safe by wrapping in cli/sti. 
+Enqueue is only called by the interrupt handler and we don't enable
+nested interrupts so there's no issue there.
+
+We also know we can process the keyboard's internal buffer way faster 
+than the user can generate keypad events.
+
 >> E6: Given how your program handles keyboard events, is there any
 >> potential for keyboard interrupts to generate race conditions in updating
 >> your program's global state?  If so, what steps did you take to ensure
 >> that such situations cannot occur?
+
+No. 
 
 ---- RATIONALE ----
 
 >> E7: Why did you choose the design and data representation that your
 >> keyboard subsystem uses?  How is it suited to your program's overall
 >> operation?
+
+We chose to only accept presses of 'f' to move flappy up and 'q' to quit 
+the game. These key presses are only one byte scan codes, so we don't have 
+to worry about two byte scan codes; i.e. we discard any scan codes that 
+don't correspond to 'f' or 'q'. 
+
+We used a circular queue as a fixed array to store the scan codes. 
+This is faster than using a linked list implementation of a circular 
+queue because there is less fragmentation. 
+
 
 			  SURVEY QUESTIONS
 			  ================
@@ -320,15 +359,42 @@ HARD, it was just.. a debugging experience. Better now than later!
 >> Did you find that working on a particular part of the assignment gave
 >> you greater insight into some aspect of OS design?
 
+The bootloader process was very worthwhile. We've gotta get comfortable
+with assembly and hardware instead of seeing these as abstractions we can
+usually avoid with C. This was the first time I've seen things I 
+"needed" to write in assembly.
+
+Working on the timer gave better perspective on the flow between how the 
+clock can be used for periodic interrupts, and how interrupts from the 
+keyboard can be handled.
+
 >> Were there any parts of the assignment that you felt were unnecessarily
 >> tedious or pointless?
+
+No. It was all worthwhile; there's no other way to force it to sink in 
+and wrapping it in a fun game was icing on the cake.
 
 >> Is there some particular fact or hint we should give students in
 >> future quarters to help them solve the problems?  Conversely, did you
 >> find any of our guidance to be misleading?
 
+The 3 DPL bits are NOT the only bits to set in that IDT byte.
+
+Set architecture to i386 or just keep the default architecture, instead of
+i8086, when you debug 32 bit protected code, or addresses will be funky 
+in your compiled assembly code.
+
 >> Do you have any suggestions for the instructor and/or TAs to more
 >> effectively assist students, either for future quarters or the remaining
 >> projects?
 
+I loved/hated Glen's 119 series because he gave zero code. We had to design
+from scratch. Things took WAY longer, but the design experience is really
+important too. Especially down there; we're all comfortable with design
+in high level languages, but throw assembly and the discomfort with what
+we're supposed to be doing in the first place.. it's a toss up. If you were
+going to do that, we'd need dedicated TA support.
+
 >> Any other comments?
+
+No.

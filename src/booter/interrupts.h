@@ -10,11 +10,12 @@
 #define TIMER_INTERRUPT 0x20
 #define KEYBOARD_INTERRUPT 0x21
 
-
+// Functions to install interrupt handlers in the IDT and 
+// initialize the IDT to begin with.
 void init_interrupts(void);
 void install_interrupt_handler(int num, void *handler);
 
-
+// Expose these, just in case
 void IRQ_set_mask(unsigned char IRQline);
 void IRQ_clear_mask(unsigned char IRQline);
 

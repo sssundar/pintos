@@ -84,7 +84,7 @@ inline uint8_t dequeue() {
 }
 
 // This call cannot be interrupted.
-// Keyboard for QEMU is Scan Set 1 by default.
+// Keyboard for QEMU is Scan Set 1 by default. We do not re-initialize.
 void init_keyboard(void) {  
   // Reset Queue Tail/Head Indices for command and key buffers
   start = 0;
@@ -93,6 +93,10 @@ void init_keyboard(void) {
   install_interrupt_handler(KEYBOARD_INTERRUPT, irq1_handler);  
 }
 
+/**
+  * Simply enqueue whatever scan-code we were interrupted to get.
+  *
+  */ 
 void keyboard_handler(void) {		    
   enqueue((uint8_t) inb(KEYBOARD_PORT));  
 }
