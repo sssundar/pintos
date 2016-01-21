@@ -1,6 +1,7 @@
 #include "game.h"
 #include "timer.h"
 #include "handlers.h"
+#include "interrupts.h"
 #include "ports.h"
 
 extern volatile int counter;
@@ -64,7 +65,7 @@ void init_timer(void) {
     outb(PIT_CHAN0_DATA, 0x04);
 
     /*  Install timer interrupt handler here. */
-    install_interrupt_handler(0, irq0_handler);
+    install_interrupt_handler(TIMER_INTERRUPT, irq0_handler);
 }
 
 void timer_handler (void){
