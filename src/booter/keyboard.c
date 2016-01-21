@@ -64,10 +64,9 @@ void enqueue(uint8_t scode) {
  * @return The scan code from the tail of the circular buffer or zero if the
  * buffer is empty.
  */
-uint8_t dequeue() {
-  // Disable interrupts: don't save return value as we ALWAYS have them enabled
+inline uint8_t dequeue() {
+  // Disable interrupts: don't save return value as we ALWAYS have them enabled  
   disable_interrupts();
-
   uint8_t rtn;
   // Empty queue case:
   if (start == end) {
@@ -79,13 +78,13 @@ uint8_t dequeue() {
     kbuf[start] = 0;
     start = (start + 1) % KEYBUFLEN;
   }
-  return rtn;
-
-  // Enable interrupts
+  // Enable interrupts  
   enable_interrupts();
+  return rtn;
 }
 
 // This call cannot be interrupted.
+// Keyboard for QEMU is Scan Set 1 by default.
 void init_keyboard(void) {  
   // Reset Queue Tail/Head Indices for command and key buffers
   start = 0;

@@ -58,7 +58,7 @@ void init_timer(void) {
     /* Tell channel 0 to trigger 1000 times per second.  The value we load
      * here is a divider for the 1193182 Hz timer.  1193182 / 1000 ~= 1193.
      * 1193 = 0x04A9.
-     *
+     * 
      * Always write the low byte first, then high byte second.
      */
     outb(PIT_CHAN0_DATA, 0xA9);

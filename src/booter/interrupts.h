@@ -15,6 +15,9 @@ void init_interrupts(void);
 void install_interrupt_handler(int num, void *handler);
 
 
+void IRQ_set_mask(unsigned char IRQline);
+void IRQ_clear_mask(unsigned char IRQline);
+
 /* Returns true if interrupts are currently enabled, false otherwise. */
 static inline int are_interrupts_enabled() {
     unsigned long flags;

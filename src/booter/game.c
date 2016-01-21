@@ -2,6 +2,7 @@
 #include "video.h"
 #include "timer.h"
 #include "keyboard.h"
+#include "ports.h"
 
 //-------------------------------- Definitions --------------------------------
 
@@ -501,12 +502,13 @@ void c_start(void) {
 	long i = 0; // TODO remove
 	char score_str[50];  // 22 is the max length of the score string, assuming
 						 // 3-digit scores only.
-  	
+  	char teststr[2];
+
 	init_interrupts(); // Masks all interrupts, clears IDT, installs it.	
 	init_timer();			
 	init_keyboard(); 			
 	IRQ_clear_mask(0); // timer unmasked		
-	IRQ_clear_mask(1); // keyboard unmasked
+	IRQ_clear_mask(1); // keyboard unmasked	
 	enable_interrupts();
 	
 	/* ----------------------------------------------------------------------*/
