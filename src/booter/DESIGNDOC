@@ -1,8 +1,8 @@
 +-----------------------+
-			|         CS 124        |
-			| PROJECT 2: BOOTLOADER |
-			|    DESIGN DOCUMENT    |
-			+-----------------------+
+|         CS 124        |
+| PROJECT 2: BOOTLOADER |
+|    DESIGN DOCUMENT    |
++-----------------------+
 
 ---- GROUP ----
 
@@ -47,7 +47,7 @@ which parts.
    Make sure that each member's total time is listed.
    
    Sushant: 23
-   David: 8
+   David: 20
    Hamik: 25
 
 >> L2: What did each team member focus on for this assignment?  Keep
@@ -55,7 +55,7 @@ which parts.
 
    Hamik: flappy bird game, keyboard, video
    Sushant: bootloader assembly code, interrupts, handlers
-   Dave: timer, keyboard
+   Dave: timer, keyboard, debugging WIZARD
 
 Note that this design document is a bit long.  Most of the questions can be
 answered pretty briefly.  Don't feel a need to write a long answer if it is
@@ -68,7 +68,9 @@ not required by the question.
 
 >> A1: In 25-30 words or less, what does your PC booter do?
 
-Sushant TODO
+It gets the program binary from the emulated floppy into a specific location,
+sets up the GDT, and transitions segment registers into 32-bit protected mode,
+disabling interrupts.
 
 >> A2: In 25-30 words or less, how does the user interact with the program?
 >> What are the controls?  What should the user try to do?
@@ -101,12 +103,17 @@ Our program is pretty simple... it just keeps track of:
 >> Similarly, when a keyboard interrupt occurs, what does your program do
 >> in response?
 
-Sushant
+A timer interrupt simply updates a global counter. The main loop accesses
+this counter through sleep-like functions to wait with less needless looping.
+
+The keyboard interrupts simply enqueue the raw input from the keyboard 
+controller into a circular buffer. 
 
 >> A5: Would you say your program relies on polling or busy-waiting anywhere
 >> to accomplish its tasks?  If so, what tasks?
 
-Sushant
+We only do this in getch() with flag=1 to block until we receive user input.
+We could have done this with a halt.
 
 ---- RATIONALE ----
 
@@ -147,23 +154,30 @@ first key press.
 >> memory occupied by the DAP get reclaimed after it is used?  If not,
 >> why not?
 
-Sushant
+I stored it on the stack. The stack pointer is not changed after we switch
+to 32-bit protected mode, and our boot function never cleans up its own stack.
+There was no reason to; we have >48 kB stack from 0xf000 to 0x7e00; more
+if we were willing to overwrite out bootloader (no issue) and we
+never use more than a fraction of it for flappy.
 
 >> B2: Does your bootloader pass any information to the main program?
 >> (If not, just say no.)  If so, what information is passed, and how
 >> is it passed?
 
-Sushant (no?)
+No. The GDT is a static data structure and the higher level code takes it
+for granted.
 
 ---- ALGORITHMS ----
 
 >> B3: Briefly describe how your bootloader brings your program into
 >> memory.  Does it perform one large load, or multiple smaller loads?
 
-Sushant
+One large load of 64kB.
 
 >> B4: Did you add any BIOS calls to your bootloader to prepare for your
 >> main program?  (i.e. things that aren't available in protected mode)
+
+Other than the int 0x13 and int 0x10 that you spec'd out for us, no.
 
 			  VIDEO SUBSYSTEM
 			  ===============
@@ -184,6 +198,10 @@ characters * 2, then prints the chars in the given string in order.
 >> C2: Does your video code maintain any variables or data structures to
 >> facilitate video output?  Briefly describe these values and their
 >> purposes here.
+
+Video buffer is 80x25x2chars long. The actual buffer itself, allocated by
+BIOS or whatever is 8x that space. So we write to page 2 of the video buffer,
+and when we call refresh_screen() it writes it directly to page 1. 
 
 ---- ALGORITHMS ----
 
@@ -217,13 +235,23 @@ WHITE on BLACK display most appealing.
 >> D1: What state does your timer subsystem manage?  Describe the variables
 >> or data structures that it maintains, and how they are used.
 
+It maintains one global integer counter used to count milliseconds (we 
+interrupt at 1kHz) for setting variable frame rate.
+
 ---- ALGORITHMS ----
 
 >> D2: What abstraction does your timer code present to your main program?
 >> Briefly describe the higher-level operations you decided to implement.
 
+It presents a currtime() accessor to the counter, and mysleep(int ms) 
+which lets you sleep for a specified integer millesecond count.
+
 >> D3: Did you change the timer frequency from 100Hz?  If so, what did you
 >> change it to, and why?
+
+Yes, to 1kHz, so we could make frame rate variable without having to keep
+recalculate timer configuration. It was for convenience, and at 1 MHz we
+were in no danger of missing other interrupts. 
 
 ---- SYNCHRONIZATION ----
 
@@ -231,6 +259,12 @@ WHITE on BLACK display most appealing.
 >> for timer interrupts to generate race conditions in updating your
 >> program's global state?  If so, what steps did you take to ensure that
 >> such situations cannot occur?
+
+We read the counter value, but we rarely care what it actually is with
+ms precision. There is a possibility that timers cause momentary 
+keypress interrupt misses, due to priority, but the keyboard has a buffer 
+and the user has a limit to how quickly they can press keys. We can clear 
+the keyboard buffer far faster than the user can fill it up.
 
 			KEYBOARD SUBSYSTEM
 			==================
@@ -240,17 +274,37 @@ WHITE on BLACK display most appealing.
 >> E1: What state does your keyboard subsystem manage?  Describe the variables
 >> or data structures that it maintains, and how they are used.
 
+It manages no state. We do not initialize the keypad; we keep the Set 1 that
+the BIOS initialized for us. We maintain a circular queue with an interrupt
+safe dequeue accessor and an interrupt-only enqueue accessor to keep
+any scan codes the keypad chooses to send over, without any kind of parsing.
+
 >> E2: How do your data structures handle keys with multi-byte scan-codes?
+
+We don't - we only needed two keys for our game (f,q) and so we ignore
+anything else - even errors. The user shouldn't be using Flappy Bird to
+figure out their keypad is broken.
 
 ---- ALGORITHMS ----
 
 >> E3: What abstraction does your keyboard code present to your main program?
 >> Briefly describe the higher-level operations you decided to implement.
 
+It presents a dequeue that always returns quickly, even if the queue is empty.
+
+It presents getch(int blockFlag) wrapper for dequeue which can be set up to 
+keep trying to dequeue until it finds a valid scan-code (f,q) or, alternatively,
+to return 0 on reaching the end of the queue without finding an appropriate 
+code. This allows us to ignore the details of scan codes in the main program.
+
 >> E4: Does your keyboard subsystem expose scan-codes directly to your main
 >> program, or does it preprocess them and expose other information to your
 >> main program?  If scan-code data is preprocessed, briefly describe what
 >> information is actually exposed, and how it is derived from scan-codes.
+
+It preprocesses them into "f" or "q" through getch(), using set-1 scan codes
+which are the default with QEMU to map 'f' and 'q' key press (not release)
+into 'f' and' q' characters.
 
 ---- SYNCHRONIZATION ----
 
@@ -259,10 +313,19 @@ WHITE on BLACK display most appealing.
 >> internal state?  If so, what steps did you take to ensure that such
 >> situations cannot occur?
 
+No. We made dequeue interrupt safe by wrapping in cli/sti. 
+Enqueue is only called by the interrupt handler and we don't enable
+nested interrupts so there's no issue there.
+
+We also know we can process the keyboard's internal buffer way faster 
+than the user can generate keypad events.
+
 >> E6: Given how your program handles keyboard events, is there any
 >> potential for keyboard interrupts to generate race conditions in updating
 >> your program's global state?  If so, what steps did you take to ensure
 >> that such situations cannot occur?
+
+No. 
 
 ---- RATIONALE ----
 
@@ -299,11 +362,23 @@ penalized.  We can't fix things until we know about them.  :-)
 >> In your opinion, was this assignment, or any of the parts of it, too
 >> easy or too hard?  Did it take too long or too little time?
 
-Debugging took the most time, actually writing the functions didn't take
-too long. It was difficult to find the values stored in emulated registers.
+It took us forever to do the bootloader, but it was very easy, in retrospect,
+because you did everything for us. If you hadn't given us the meaty skeleton
+I suspect we'd have cried ourselves to sleep every night, which says something.
+We'd probably have the structure of the code sink in more if there were many 
+TAs and we had to write it from scratch, but this way we saw the birds eye view
+and had the super cool experience of making a game without an OS. 
+
+It took us way longer than most, I think, and I don't know why. It wasn't 
+HARD, it was just.. a debugging experience. Better now than later!
 
 >> Did you find that working on a particular part of the assignment gave
 >> you greater insight into some aspect of OS design?
+
+The bootloader process was very worthwhile. We've gotta get comfortable
+with assembly and hardware instead of seeing these as abstractions we can
+usually avoid with C. This was the first time I've seen things I 
+"needed" to write in assembly.
 
 Working on the timer gave better perspective on the flow between how the 
 clock can be used for periodic interrupts, and how interrupts from the 
@@ -312,12 +387,30 @@ keyboard can be handled.
 >> Were there any parts of the assignment that you felt were unnecessarily
 >> tedious or pointless?
 
+No. It was all worthwhile; there's no other way to force it to sink in 
+and wrapping it in a fun game was icing on the cake.
+
 >> Is there some particular fact or hint we should give students in
 >> future quarters to help them solve the problems?  Conversely, did you
 >> find any of our guidance to be misleading?
+
+The 3 DPL bits are NOT the only bits to set in that IDT byte.
+
+Set architecture to i386 or just keep the default architecture, instead of
+i8086, when you debug 32 bit protected code, or addresses will be funky 
+in your compiled assembly code.
 
 >> Do you have any suggestions for the instructor and/or TAs to more
 >> effectively assist students, either for future quarters or the remaining
 >> projects?
 
+I loved/hated Glen's 119 series because he gave zero code. We had to design
+from scratch. Things took WAY longer, but the design experience is really
+important too. Especially down there; we're all comfortable with design
+in high level languages, but throw assembly and the discomfort with what
+we're supposed to be doing in the first place.. it's a toss up. If you were
+going to do that, we'd need dedicated TA support.
+
 >> Any other comments?
+
+No.
