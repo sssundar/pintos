@@ -257,6 +257,16 @@ characters * 2, then prints the chars in the given string in order.
 >> keyboard subsystem uses?  How is it suited to your program's overall
 >> operation?
 
+We chose to only accept presses of 'f' to move flappy up and 'q' to quit 
+the game. These key presses are only one byte scan codes, so we don't have 
+to worry about two byte scan codes; i.e. we discard any scan codes that 
+don't correspond to 'f' or 'q'. 
+
+We used a circular queue as a fixed array to store the scan codes. 
+This is faster than using a linked list implementation of a circular 
+queue because there is less fragmentation. 
+
+
 			  SURVEY QUESTIONS
 			  ================
 
@@ -269,8 +279,15 @@ penalized.  We can't fix things until we know about them.  :-)
 >> In your opinion, was this assignment, or any of the parts of it, too
 >> easy or too hard?  Did it take too long or too little time?
 
+Debugging took the most time, actually writing the functions didn't take
+too long. It was difficult to find the values stored in emulated registers.
+
 >> Did you find that working on a particular part of the assignment gave
 >> you greater insight into some aspect of OS design?
+
+Working on the timer gave better perspective on the flow between how the 
+clock can be used for periodic interrupts, and how interrupts from the 
+keyboard can be handled.
 
 >> Were there any parts of the assignment that you felt were unnecessarily
 >> tedious or pointless?
