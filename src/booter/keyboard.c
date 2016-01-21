@@ -133,22 +133,29 @@ uint8_t getch(int flag) {
   // if the flag is 1, keep dequeueing until recognize
   // code 'f' or 'q', otherwise keep looping.
   // if flag is 0, return 0 when reach end of queue.
+  // f scan code 2: 0x2B
+  // q scan code 2: 0x15
 
   uint8_t scan_code;
 
   while(1){
-    if (flag == 0 || flag == 1){
+    if (flag != 0 && flag != 1){
+      fprintf("Error: Received invalid getch flag.");
+      exit(1);
+    }
+    else{
       scan_code = dequeue();
-      if(scan_code == 'f' || scan_code == 'q'){
-	return scan_code;
+
+      if(scan_code == 0x2B){
+	return 'f';
       }
+      if(scan_code == 0x15){
+	return 'q';
+      }
+
       if(flag == 0 && scan_code == 0){
 	return 0;
       }
-    }
-    else{
-      fprintf("Error: Received invalid getch flag.");
-      exit(1);
     }
   }
 }
