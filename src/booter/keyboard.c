@@ -29,13 +29,9 @@
 
 /** Length of the circular keyboard buffer (needs to be less than 8 bits) */
 #define KEYBUFLEN 		100
-#define COMBUFLEN     20
 
 /* Circular buffer of scan codes (or command responses) */
 static volatile uint8_t kbuf[KEYBUFLEN];
-
-/* Linear buffer of command codes */
-static uint8_t cbuf[COMBUFLEN];
 
 /* Index to the current head in the circular buffers. */
 static volatile int start;
@@ -89,15 +85,15 @@ uint8_t dequeue() {
   enable_interrupts();
 }
 
-#define COM_RESET 0xFF;
-#define COM_DEFAU 0xF6;
-#define COM_SCANC 0xF0;
-#define COM_SCANE 0xF4; 
-#define COM_IGNOR 0xE0;
+#define COM_RESET 0xFF
+#define COM_DEFAU 0xF6
+#define COM_SCANC 0xF0
+#define COM_SCANE 0xF4 
+#define COM_IGNOR 0xE0
 
 // Either
-#define KEY_ERROR_1 0x00  Key detection error or internal buffer overrun
-#define KEY_ERROR_2 0xFF  Key detection error or internal buffer overrun
+#define KEY_ERROR_1 0x00  //Key detection error or internal buffer overrun
+#define KEY_ERROR_2 0xFF  //Key detection error or internal buffer overrun
 
 #define KEY_RESET_OK 0xAA  // Self test passed 
 // Either
@@ -109,67 +105,33 @@ uint8_t dequeue() {
 #define KEY_RESEND 0xFE // Resend 
 
 // This call cannot be interrupted.
-inline bool init_keyboard(void) {  
+int init_keyboard(void) {  
   // Reset Queue Tail/Head Indices for command and key buffers
   start = 0;
   end = 0;
 
-  // Set up command buffer (put all our commands in it)    
-  // Reset + Self Test 0xFF  -> response will be 0xAA, 0xFC, 0xFD, or 0xFE.     
-  cbuf[0] = COM_RESET;
-  cbuf[1] = COM_IGNOR; // no second argument
-  // Set default parameters 0xF6 -> 0xFA, 0xFE
-  cbuf[2] = COM_DEFAU;
-  cbuf[3] = COM_IGNOR; // no second argument
-  // Set up: use scan code set 2 (most supported) 
-  // 0xF0 then wait? then 0x01 -> response will be 0xFA, 0xFE
-  cbuf[4] = COM_SCANC;
-  cbuf[5] = 0x02; // set, scan set 2
-  // Check Scan Code, 0xFO, then 0 -> response 0xFA + set # (1,2,3), or 0xFE
-  cbuf[6] = COM_SCANC;
-  cbuf[7] = 0x00; // get scan set
-  // Enable Scanning 0xF4 -> response 0xFA, 0xFE
-  cbuf[8] = COM_SCANE;
-  cbuf[9] = COM_IGNOR; // no second argument
-
-  // Re-Initialize & Set Up Keyboard
-  int index;
+  // Re-Initialize & Set Up Keyboard  
   unsigned char response;
-  for (index = 0; index < 10; index++) {
-    // get next two commands from command buffer
-    uint8_t command = cbuf[index];
-    uint8_t data = cbuf[index+1];
-    // Send 1st byte.
-    outb(KEYBOARD_PORT, command);
-    io_wait();
-    // then send 2nd byte if applicable. 
-    if (data != COM_IGNOR) {
-      outb(KEYBOARD_PORT, data);
-      io_wait();
-    }     
-    // Get response    
-    response = inb(KEYBOARD_PORT);
-    io_wait();
-    if (((command == COM_SCANC) and (data == 0x02)) or (command == COM_DEFAU) or (command == COM_SCANE)) {
-      if (response != KEY_ACK) {      
-        return false; // zero tolerance, first pass.
-      }
-    }
-    if ((command == COM_SCANC) and (data == 0x00)) {
-      if (response != 0x02) {
-        // scan set was not set as requested
-        return false;
-      }
-    }
-    if (command == COM_RESET) {
-      if (response != KEY_RESET_OK) {
-        return false;
-      }
-    }
-  }
+  uint8_t command;
+    
+  // outb(KEYBOARD_PORT, COM_RESET);
+  // io_wait();          
+  // response = inb(KEYBOARD_PORT);
+  // io_wait();    
+  
+  // if (response == KEY_ACK) {
+  //   // wait for self-test OK        
+  //   response = inb(KEYBOARD_PORT);
+  //   io_wait();
+  //   if (response != KEY_RESET_OK) {
+  //     return 0;
+  //   }       
+  // } else {
+  //   return 0;
+  // }  
 
   install_interrupt_handler(1, irq1_handler);
-  return true;
+  return 1;
 }
 
 void keyboard_handler(void) {		
@@ -178,7 +140,7 @@ void keyboard_handler(void) {
   // some other way than playing a game).
   unsigned char scan_code = KEY_ERROR_1;
   scan_code = inb(KEYBOARD_PORT);  
-  if ((scan_code != KEY_ERROR_1) and (scan_code != KEY_ERROR_2)) {
+  if ((scan_code != KEY_ERROR_1) && (scan_code != KEY_ERROR_2)) {
     enqueue((uint8_t) scan_code);
   }
 }
@@ -192,25 +154,22 @@ uint8_t getch(int flag) {
 
   uint8_t scan_code;
 
-  while(1){
-    if (flag != 0 && flag != 1){
-      fprintf("Error: Received invalid getch flag.");
-      exit(1);
-    }
-    else{
-      scan_code = dequeue();
+  while(1){    
+    scan_code = dequeue();
 
-      if(scan_code == 0x2B){
-	return 'f';
-      }
-      if(scan_code == 0x15){
-	return 'q';
-      }
-
-      if(flag == 0 && scan_code == 0){
-	return 0;
-      }
+    if (scan_code == 0x21) {
+      return 'f';
     }
+
+    if (scan_code == 0x10) {
+      return 'q';
+    }
+
+    if ( (flag == 0) && (scan_code == 0) ) {
+      return 0;
+    }  
   }
+
+  return 0;
 }
 

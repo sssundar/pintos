@@ -278,7 +278,7 @@ write_str_done:
 	# String literals used by our boot loader.
 
 STR_LOADING:	.string "Loading program.\r\n"
-STR_LOADED:	.string "Loaded.\r\n"
+STR_LOADED:	.string "Loaded; if this screen hangs, culprit is keyboard error.\r\n"
 STR_FAILED:	.string "Failed to load program.\r\n"
 
 	#=====================================================================

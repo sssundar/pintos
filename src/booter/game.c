@@ -1,6 +1,7 @@
 #include "interrupts.h"
 #include "video.h"
 #include "timer.h"
+#include "keyboard.h"
 
 //-------------------------------- Definitions --------------------------------
 
@@ -503,14 +504,10 @@ void c_start(void) {
   	
 	init_interrupts(); // Masks all interrupts, clears IDT, installs it.	
 	init_timer();			
-	bool kb_ok = init_keyboard(); 	
-	if (kb_ok) {
-		IRQ_clear_mask(1); // keyboard unmasked
-		IRQ_clear_mask(0); // timer unmasked		
-		enable_interrupts();
-	} else {
-		return; // into bootloader, first pass.
-	}
+	init_keyboard(); 			
+	IRQ_clear_mask(0); // timer unmasked		
+	IRQ_clear_mask(1); // keyboard unmasked
+	enable_interrupts();
 	
 	/* ----------------------------------------------------------------------*/
 
@@ -552,10 +549,8 @@ void c_start(void) {
 		// TODO implement:
 		// usleep((unsigned int) (1000000 / TARGET_FPS));
 
-		// Process keystrokes.
-		ch = 0;
-		// TODO implement
-		// ch = getch();
+		// Process keystrokes.			
+		ch = getch(0);
 		switch (ch) {
 		case 'q': // Quit.
 			leave_loop = 1;
@@ -565,7 +560,7 @@ void c_start(void) {
 			f.t = 0;
 			break;
 		default: // Let Flappy fall along his parabola.
-			// TODO UNDOOOOOOOOOOOO f.t++;
+			// TODO UNDOOOOOOOOOOOO f.t++;			
 			f.t = 0;
 		}
 

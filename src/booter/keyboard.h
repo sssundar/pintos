@@ -1,9 +1,8 @@
 #ifndef KEYBOARD_H
 #define KEYBOARD_H
 
-void init_keyboard(void);
+int init_keyboard(void);
 void keyboard_handler(void);
-void setup_keyboard_queue(void);
 /**
  * Enqueues the given scan code in the circular buffer.
  *
