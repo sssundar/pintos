@@ -500,24 +500,18 @@ void c_start(void) {
 	long i = 0; // TODO remove
 	char score_str[50];  // 22 is the max length of the score string, assuming
 						 // 3-digit scores only.
-
-    /* TODO:  You will need to initialize various subsystems here.  This
-     *        would include the interrupt handling mechanism, and the various
-     *        systems that use interrupts.  Once this is done, you can call
-     *        enable_interrupts() to start interrupt handling, and go on to
-     *        do whatever else you decide to do!
-     */
   	
 	init_interrupts(); // Masks all interrupts, clears IDT, installs it.	
-	init_timer();		
-	setup_keyboard_queue();
-	IRQ_clear_mask(0); // timer unmasked	
-	IRQ_clear_mask(1); // keyboard unmasked
-	enable_interrupts();
-
-	init_keyboard(); 	// so that our initialization is interrupt driven
-
-
+	init_timer();			
+	bool kb_ok = init_keyboard(); 	
+	if (kb_ok) {
+		IRQ_clear_mask(1); // keyboard unmasked
+		IRQ_clear_mask(0); // timer unmasked		
+		enable_interrupts();
+	} else {
+		return; // into bootloader, first pass.
+	}
+	
 	/* ----------------------------------------------------------------------*/
 
 	/* Flappy bird code starts here */

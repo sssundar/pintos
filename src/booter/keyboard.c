@@ -29,36 +29,27 @@
 
 /** Length of the circular keyboard buffer (needs to be less than 8 bits) */
 #define KEYBUFLEN 		100
+#define COMBUFLEN     20
 
-/* TODO:  You can create static variables here to hold keyboard state.
- *        Note that if you create some kind of circular queue (a very good
- *        idea, you should declare it "volatile" so that the compiler knows
- *        that it can be changed by exceptional control flow.
- *
- *        Also, don't forget that interrupts can interrupt *any* code,
- *        including code that fetches key data!  If you are manipulating a
- *        shared data structure that is also manipulated from an interrupt
- *        handler, you might want to disable interrupts while you access it,
- *        so that nothing gets mangled...
- */
-
-/* Circular buffer of scan codes */
+/* Circular buffer of scan codes (or command responses) */
 static volatile uint8_t kbuf[KEYBUFLEN];
 
-/* Index to the current head in the circular scan-code buffer. */
+/* Linear buffer of command codes */
+static uint8_t cbuf[COMBUFLEN];
+
+/* Index to the current head in the circular buffers. */
 static volatile int start;
 
-/* Index to the current tail in the circular scan-code buffer. */
+/* Index to the current tail in the circular buffers. */
 static volatile int end;
 
 /**
  * Enqueues the given scan code in the circular buffer.
+ * Only called in side an interrupt handler. No race conditions.
  *
  * @param scode One byte of a scan code.
  */
 void enqueue(uint8_t scode) {
-  // Disable interrupts: don't save return value as we ALWAYS have them enabled
-  disable_interrupts();
   
   kbuf[end] = scode;
   // Full queue case: overwrite the item that was enqueued longest ago by
@@ -69,8 +60,6 @@ void enqueue(uint8_t scode) {
   }
   end = (end + 1) % KEYBUFLEN;
 
-  // Enable interrupts:
-  enable_interrupts();
 }
 
 /**
@@ -96,37 +85,102 @@ uint8_t dequeue() {
   }
   return rtn;
 
-  // Enable interrupts: don't have to 
+  // Enable interrupts
   enable_interrupts();
 }
 
+#define COM_RESET 0xFF;
+#define COM_DEFAU 0xF6;
+#define COM_SCANC 0xF0;
+#define COM_SCANE 0xF4; 
+#define COM_IGNOR 0xE0;
 
-/* 
-Initialize Keyboard - ask it to reset
-*/
+// Either
+#define KEY_ERROR_1 0x00  Key detection error or internal buffer overrun
+#define KEY_ERROR_2 0xFF  Key detection error or internal buffer overrun
 
-// Interrupts Must Be Disabled During This Call
-void setup_keyboard_queue(void) {
-  // Queue Tail/Head Indices
+#define KEY_RESET_OK 0xAA  // Self test passed 
+// Either
+#define KEY_RESET_FAIL_1 0xFC // Self test failed
+#define KEY_RESET_FAIL_2 0xFD // Self test failed
+
+#define KEY_ACK 0xFA  //Command acknowledged (ACK)
+
+#define KEY_RESEND 0xFE // Resend 
+
+// This call cannot be interrupted.
+inline bool init_keyboard(void) {  
+  // Reset Queue Tail/Head Indices for command and key buffers
   start = 0;
   end = 0;
-}
 
-// This call can be interrupted.
-void init_keyboard(void) {
-  // Set up queue as command queue (put all our commands in it)
-  // We 
-  // Disable Scanning
-  // Reset + Self Test
-  // Set up to use scan code set 1
-  // Enable Scanning
+  // Set up command buffer (put all our commands in it)    
+  // Reset + Self Test 0xFF  -> response will be 0xAA, 0xFC, 0xFD, or 0xFE.     
+  cbuf[0] = COM_RESET;
+  cbuf[1] = COM_IGNOR; // no second argument
+  // Set default parameters 0xF6 -> 0xFA, 0xFE
+  cbuf[2] = COM_DEFAU;
+  cbuf[3] = COM_IGNOR; // no second argument
+  // Set up: use scan code set 2 (most supported) 
+  // 0xF0 then wait? then 0x01 -> response will be 0xFA, 0xFE
+  cbuf[4] = COM_SCANC;
+  cbuf[5] = 0x02; // set, scan set 2
+  // Check Scan Code, 0xFO, then 0 -> response 0xFA + set # (1,2,3), or 0xFE
+  cbuf[6] = COM_SCANC;
+  cbuf[7] = 0x00; // get scan set
+  // Enable Scanning 0xF4 -> response 0xFA, 0xFE
+  cbuf[8] = COM_SCANE;
+  cbuf[9] = COM_IGNOR; // no second argument
 
-  // Only handle F (0x21, pressed), Q (0x10, pressed)
-  // These are unique to this scan code.
+  // Re-Initialize & Set Up Keyboard
+  int index;
+  unsigned char response;
+  for (index = 0; index < 10; index++) {
+    // get next two commands from command buffer
+    uint8_t command = cbuf[index];
+    uint8_t data = cbuf[index+1];
+    // Send 1st byte.
+    outb(KEYBOARD_PORT, command);
+    io_wait();
+    // then send 2nd byte if applicable. 
+    if (data != COM_IGNOR) {
+      outb(KEYBOARD_PORT, data);
+      io_wait();
+    }     
+    // Get response    
+    response = inb(KEYBOARD_PORT);
+    io_wait();
+    if (((command == COM_SCANC) and (data == 0x02)) or (command == COM_DEFAU) or (command == COM_SCANE)) {
+      if (response != KEY_ACK) {      
+        return false; // zero tolerance, first pass.
+      }
+    }
+    if ((command == COM_SCANC) and (data == 0x00)) {
+      if (response != 0x02) {
+        // scan set was not set as requested
+        return false;
+      }
+    }
+    if (command == COM_RESET) {
+      if (response != KEY_RESET_OK) {
+        return false;
+      }
+    }
+  }
+
   install_interrupt_handler(1, irq1_handler);
+  return true;
 }
 
 void keyboard_handler(void) {		
+  // enqueue key if not keyerror into key buffer
+  // ignore keyerrors (realistically if your keyboard is broken you'll find out
+  // some other way than playing a game).
+  unsigned char scan_code = KEY_ERROR_1;
+  scan_code = inb(KEYBOARD_PORT);  
+  if ((scan_code != KEY_ERROR_1) and (scan_code != KEY_ERROR_2)) {
+    enqueue((uint8_t) scan_code);
+  }
 }
 
 // char getch(int flag) {
