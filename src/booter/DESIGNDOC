@@ -10,7 +10,7 @@
 
 Hamik Mukelyan 	  <hamik@caltech.edu>
 Sushant Sundaresh <sushant.sundaresh@gmail.com>
-David Luo 	  <dluo@caltech.edu>
+David Luo 	      <dluo@caltech.edu>
 
 >> Specify how many late tokens you are using on this assignment: 0
 
@@ -18,8 +18,8 @@ David Luo 	  <dluo@caltech.edu>
    (You only need to include the commit-hash in the file you submit
    on Moodle.)
 
-   Repository URL:  
-   commit ...
+   Repository URL:  login.cms.caltech.edu:/cs/courses/cs124/teams/Curiosity
+   commit TODO
 
 ---- PRELIMINARIES ----
 
@@ -45,6 +45,10 @@ which parts.
 
 >> L1: How many hours did each team member spend on this assignment?
    Make sure that each member's total time is listed.
+   
+   Sushant: 23
+   David: 8
+   Hamik: 25
 
 >> L2: What did each team member focus on for this assignment?  Keep
    descriptions to 25-30 words or less.
@@ -64,8 +68,14 @@ not required by the question.
 
 >> A1: In 25-30 words or less, what does your PC booter do?
 
+Sushant TODO
+
 >> A2: In 25-30 words or less, how does the user interact with the program?
 >> What are the controls?  What should the user try to do?
+
+The controls and gameplay are briefly explained on our game's splash screen.
+Press 'f' the keep Flappy The Bird flying and 'q' to quit. If Flappy crashes
+you can play again by pressing 'f'.
 
 ---- DATA STRUCTURES ----
 
@@ -73,6 +83,14 @@ not required by the question.
 >> perform its operations.  Don't focus on state managed within interrupt
 >> handlers; we will look at that later.  Rather, focus on state that is
 >> part of the game implementation itself.
+
+Our program is pretty simple... it just keeps track of:
+ - the user's score
+ - best score 
+ - whether the user requested a restart at the death screen
+ - our pseudorandom number generator's seed (which is set to the number of
+   timer interrupts at the time the user presses 'f' for the first time)
+ - and the current frame number
 
 ---- SYNCHRONIZATION ----
 
@@ -83,23 +101,42 @@ not required by the question.
 >> Similarly, when a keyboard interrupt occurs, what does your program do
 >> in response?
 
+Sushant
+
 >> A5: Would you say your program relies on polling or busy-waiting anywhere
 >> to accomplish its tasks?  If so, what tasks?
 
+Sushant
+
 ---- RATIONALE ----
-n
+
 >> A6: Why did you choose the project you did?
+
+It has a simple keyboard interface, everyone knows the game, and it's super
+addictive.
 
 >> A7: Did your choice of project affect any of the specific implementation
 >> details of the various subsystems that you needed to use?  (For example,
 >> if you implemented a scrolling game, did you implement specialized high-
 >> performance video code to scroll the screen?)
 
+Our video code is naive: it just writes a given string to a particular
+x, y coordinate with a given background and foreground color. It's invoked like
+mvprintfcol(x, y, BKGCOL, FRGCOL, "Hi, I am a string.").
+
 >> A8: Did you run into any technical or resource limitations in the
 >> implementation of your program?  (For example, bootloader didn't fit,
 >> or a really useful standard library wasn't available, or you couldn't
 >> achieve the desired performance level, etc.)  If so, what steps did you
 >> take to try to overcome those limitations?
+
+Flappy Bird isn't interesting unless pipe opening heights are random between
+games and of course between pipes. rand() is implemented in the stdlib.h, so
+we couldn't use it in our program. Instead we used a hackish approach where
+our random number generator takes a prime number, multiplies a seed, mods by a
+prime number, sets the seed to the new number, then returns the new seed. 
+The seed starts out as the number of timer interrupts between boot and the 
+first key press.
 
 			     BOOT SECTOR
 			     ===========
@@ -110,14 +147,20 @@ n
 >> memory occupied by the DAP get reclaimed after it is used?  If not,
 >> why not?
 
+Sushant
+
 >> B2: Does your bootloader pass any information to the main program?
 >> (If not, just say no.)  If so, what information is passed, and how
 >> is it passed?
+
+Sushant (no?)
 
 ---- ALGORITHMS ----
 
 >> B3: Briefly describe how your bootloader brings your program into
 >> memory.  Does it perform one large load, or multiple smaller loads?
+
+Sushant
 
 >> B4: Did you add any BIOS calls to your bootloader to prepare for your
 >> main program?  (i.e. things that aren't available in protected mode)
@@ -131,6 +174,12 @@ n
 >> or a graphical mode?  Where does the video buffer start?  How is data
 >> represented in this mode?  (Please be brief; we don't need complete
 >> documentation on the video system.)
+
+Text mode. The video buffer starts at 0xB8000 and ends at 0xB8F9F. The second,
+undisplayed page starts at 0xB8FA0 and ends 25 * 80 * 2 bytes later. Our
+display function mvprintfcol takes the coordinate at which the given string
+should be printed, maps it to memory by adding the number of preceding 
+characters * 2, then prints the chars in the given string in order.
 
 >> C2: Does your video code maintain any variables or data structures to
 >> facilitate video output?  Briefly describe these values and their

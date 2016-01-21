@@ -71,6 +71,10 @@ void timer_handler (void){
   counter++;
 }
 
+long currtime() {
+	return counter;
+}
+
 inline void mysleep(int ms) {
   int initial = counter;
   while(counter - initial < ms) {

@@ -145,27 +145,22 @@ void keyboard_handler(void) {
   }
 }
 
-uint8_t getch(int flag) {
-  // if the flag is 1, keep dequeueing until recognize
-  // code 'f' or 'q', otherwise keep looping.
-  // if flag is 0, return 0 when reach end of queue.
-  // f scan code 2: 0x2B
-  // q scan code 2: 0x15
+uint8_t getch(int block) {
 
   uint8_t scan_code;
 
-  while(1){    
+  while(1) {
     scan_code = dequeue();
 
-    if (scan_code == 0x21) {
+    if (scan_code == 0x21) { // TODO correct scan code?
       return 'f';
     }
 
-    if (scan_code == 0x10) {
+    if (scan_code == 0x10) { // TODO correct scan code?
       return 'q';
     }
 
-    if ( (flag == 0) && (scan_code == 0) ) {
+    if ( (block == 0) && (scan_code == 0) ) {
       return 0;
     }  
   }

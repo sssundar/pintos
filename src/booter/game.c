@@ -278,14 +278,12 @@ void draw_splash_screen() {
 			BLACK, WHITE, "]");
 	refresh_screen();
 	for(i = 0; i < PROG_BAR_LEN; i++) {
-		// TODO implement:
-		// usleep(1000000 * START_TIME_SEC / (float) PROG_BAR_LEN);
+		mysleep(1000 * START_TIME_SEC / (float) PROG_BAR_LEN);
 		mvprintfcol(PROG_BAR_ROW, NUM_COLS / 2 - PROG_BAR_LEN / 2 + i,
 				BLACK, WHITE, "=");
 		refresh_screen();
 	}
-	// TODO implement:
-	//usleep(1000000 * 0.5);
+	mysleep(1000 * 0.45);
 }
 
 /**
@@ -303,9 +301,7 @@ int draw_failure_screen(int *score, int *best_score) {
 	mvprintfcol(NUM_ROWS / 2 - 1, NUM_COLS / 2 - 22, BLACK, WHITE,
 			"Flappy died :-(. 'f' to flap, 'q' to quit.\n");
 	refresh_screen();
-	// TODO implement:
-	// timeout(-1); // Block until user enters something.
-	ch = -1; // TODO = getch();
+	ch = -1; // TODO block here = getch();
 	switch(ch) {
 	case 'q': // Quit.
 		return -1;
@@ -498,14 +494,12 @@ void c_start(void) {
 	int ch;
 	flappy f;
 	int restart = 1;
-	long i = 0; // TODO remove
-	char score_str[50];  // 22 is the max length of the score string, assuming
-						 // 3-digit scores only.
+	char score_str[50];
   	
-	init_interrupts(); // Masks all interrupts, clears IDT, installs it.	
-	init_timer();			
+	init_interrupts(); // Masks all interrupts, clears IDT, installs it.
+	init_timer();
 	init_keyboard(); 			
-	IRQ_clear_mask(0); // timer unmasked		
+	IRQ_clear_mask(0); // timer unmasked
 	IRQ_clear_mask(1); // keyboard unmasked
 	enable_interrupts();
 	
@@ -513,7 +507,7 @@ void c_start(void) {
 
 	/* Flappy bird code starts here */
 
-	seed = 0x55; // TODO set the seed to the current time
+	seed = currtime();
 
 	// Initialize video
 	set_bkg(BLACK);
@@ -529,9 +523,6 @@ void c_start(void) {
 
 		// If we're just starting a game then do some initializations.
 		if (restart) {
-			// TODO make sure we don't block on input. Implement?
-			// timeout(0); // Don't block on input.
-
 			// Start the pipes just out of view on the right. We get a random
 			// number in [0.25, 0.75] so the pipe openings won't be too low
 			// or too high.
@@ -546,11 +537,10 @@ void c_start(void) {
 			restart = 0;
 		}
 
-		// TODO implement:
-		// usleep((unsigned int) (1000000 / TARGET_FPS));
+		mysleep((unsigned int) (1000 / TARGET_FPS));
 
 		// Process keystrokes.			
-		ch = getch(0);
+		ch = 0; // TODO = getch(0); // Don't block on input.
 		switch (ch) {
 		case 'q': // Quit.
 			leave_loop = 1;
@@ -560,7 +550,7 @@ void c_start(void) {
 			f.t = 0;
 			break;
 		default: // Let Flappy fall along his parabola.
-			// TODO UNDOOOOOOOOOOOO f.t++;			
+		// TODO UNDO!!!!!!!!JN!KEJ!EJEKEH  f.t++;
 			f.t = 0;
 		}
 
@@ -570,7 +560,7 @@ void c_start(void) {
 		clear_screen();
 
 		// Print "moving" floor and ceiling
-		draw_floor_and_ceiling(0, NUM_ROWS - 1, '/', 3, frame % 3,
+		draw_floor_and_ceiling(0, NUM_ROWS - 1, '/', 2, frame % 2,
 				score, best_score);
 
 		// Update pipe locations and draw them.

@@ -18,7 +18,15 @@ void enqueue(uint8_t scode);
  */
 uint8_t dequeue();
 
-uint8_t getch(int flag);
+/**
+ * Get a char from the keyboard buffer, blocking if 'block' is set to
+ * 1, not blocking if 'block' is set to 0.
+ *
+ * @param block 1 to block on input, 0 to not block on input.
+ *
+ * @return Char from the keyboard.
+ */
+uint8_t getch(int block);
 
 #endif /* KEYBOARD_H */
 
