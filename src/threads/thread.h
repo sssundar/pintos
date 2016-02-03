@@ -96,7 +96,8 @@ struct thread {
     char name[16];                      /*!< Name (for debugging purposes). */
     uint8_t *stack;                     /*!< Saved stack pointer. */
     int priority;                       /*!< Priority. */
-    struct list_elem allelem;           /*!< List element for all threads list. */
+    int nice;                           /*!< Niceness. */
+    struct list_elem allelem;           /*!< List elem for all threads list. */
     /**@}*/
 
     /*! Shared between thread.c and synch.c. */
@@ -154,9 +155,10 @@ void thread_set_nice(int);
 int thread_get_recent_cpu(void);
 int thread_get_load_avg(void);
 
-bool thread_list_less_func (const struct list_elem *a,
-                            const struct list_elem *b,
-                            void *aux);
+int test_get_recent_cpu(int load_arg, int nice);
+void test1(void);
+void test2(void);
+void test3(void);
 
 #endif /* threads/thread.h */
 
