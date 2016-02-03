@@ -28,10 +28,6 @@ static struct list ready_list;
     when they are first scheduled and removed when they exit. */
 static struct list all_list;
 
-/*! List of priority queues, each with ready to run threads.
-    There are 64 such queues.*/
-static struct list *priority_queues[64];
-
 /*! Idle thread. */
 static struct thread *idle_thread;
 
@@ -76,6 +72,12 @@ static void schedule(void);
 void thread_schedule_tail(struct thread *prev);
 static tid_t allocate_tid(void);
 
+/*! List of priority queues, each with ready to run threads.
+    There are 64 such queues.*/
+static struct list *priority_queues[64];
+
+static int load_avg;
+
 /*! Initializes the threading system by transforming the code
     that's currently running into a thread.  This can't work in
     general and it is possible in this case only because loader.S
@@ -89,6 +91,8 @@ static tid_t allocate_tid(void);
     It is not safe to call thread_current() until this function finishes. */
 void thread_init(void) {
     ASSERT(intr_get_level() == INTR_OFF);
+
+	load_avg = 0;
 
     lock_init(&tid_lock);
     lock_init(&ready_list_lock);
@@ -194,6 +198,13 @@ tid_t thread_create(const char *name, int priority, thread_func *function,
 
     /* Add to run queue. */
     thread_unblock(t);
+
+	if (thread_mlfqs){
+		/*  Thread priority is calculated initially at thread 
+			initialization. It is also recalculated once every 
+			fourth clock tick, for every thread.*/
+		priority_calculate(t);
+	}
 
     // Since thread t was added to the ready list, check if its priority
     // is higher than the current thread's. If so the current thread should
@@ -350,28 +361,42 @@ int thread_get_priority(void) {
 }
 
 /*! Sets the current thread's nice value to NICE. */
-void thread_set_nice(int nice UNUSED) {
-	/* Not yet implemented. */
+void thread_set_nice(int NICE) {
+	ASSERT(NICE <= 20 && NICE >= -20);
+	thread_current()->nice = NICE;
+
+	/* Recalculate thread priority based on new nice value. */
+	/* New priority depends on newest recent_cpu values, so 
+	   recalculate those first. */
+	recent_cpu_calculate();
+	priority_calculate();
 }
 
 /*! Returns the current thread's nice value. */
 int thread_get_nice(void) {
-    /* Not yet implemented. */
-    return 0;
+    return thread_current()->nice;
 }
 
 /*! Returns 100 times the system load average. */
 int thread_get_load_avg(void) {
-    /* Not yet implemented. */
-    return 0;
+    return 100*load_avg;
 }
 
+void load_avg_calculate(void){
+	int ready_threads = list_size(&ready_list);
+
+	if(thread_current() != idle_thread){
+		ready_threads += 1;
+	}
+
+	load_avg = (59/60)load_avg + (1/60)*ready_threads;
+}
 /*! Returns 100 times the current thread's recent_cpu value. */
 int thread_get_recent_cpu(void) {
-    /* Not yet implemented. */
-    return 0;
+    return 100*current_thread()->recent_cpu;
 }
-
+
+
 /*! Idle thread.  Executes when no other thread is ready to run.
 
     The idle thread is initially put on the ready list by thread_start().
@@ -448,6 +473,18 @@ static void init_thread(struct thread *t, const char *name, int priority) {
     old_level = intr_disable();
     list_push_back(&all_list, &t->allelem);
     intr_set_level(old_level);
+
+	/* If running advanced scheduler, default nice to 0, 
+	 * default recent_cpu to 0 if its the first thread, 
+	 * or parent's value in other new threads. */
+	if (thread_mlfqs){
+		t->nice = 0;
+		t->recent_cpu = thread_get_recent_cpu();
+		 
+		if (t == initial_thread){
+			t->recent_cpu = 0;
+		}
+	}
 }
 
 /*! Allocates a SIZE-byte frame at the top of thread T's stack and
