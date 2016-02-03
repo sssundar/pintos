@@ -4,6 +4,7 @@
 #include <random.h>
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
 #include "threads/flags.h"
 #include "threads/interrupt.h"
 #include "threads/intr-stubs.h"
@@ -309,14 +310,14 @@ int thread_get_priority(void) {
 }
 
 /*! Sets the current thread's nice value to NICE. */
-void thread_set_nice(int nice UNUSED) {
-    /* Not yet implemented. */
+void thread_set_nice(int nice) {
+    ASSERT(nice <= 20 && nice >= -20);
+	thread_current()->nice = nice;
 }
 
 /*! Returns the current thread's nice value. */
 int thread_get_nice(void) {
-    /* Not yet implemented. */
-    return 0;
+	return thread_current()->nice;
 }
 
 /*! Returns 100 times the system load average. */
@@ -402,6 +403,7 @@ static void init_thread(struct thread *t, const char *name, int priority) {
     strlcpy(t->name, name, sizeof t->name);
     t->stack = (uint8_t *) t + PGSIZE;
     t->priority = priority;
+	t->nice = 0;
     t->magic = THREAD_MAGIC;
 
     old_level = intr_disable();
@@ -508,3 +510,31 @@ static tid_t allocate_tid(void) {
     Used by switch.S, which can't figure it out on its own. */
 uint32_t thread_stack_ofs = offsetof(struct thread, stack);
 
+
+/*! Returns the current thread's recent_cpu value. */
+// 2^31-1 = 2147483647
+int test_get_recent_cpu(int load_avg, int nice) {
+	int recent_cpu = 2;
+	int f = 2*2*2*2*2*2*2*2*2*2*2*2*2*2;
+		
+	recent_cpu = 2*load_avg + nice;
+    return recent_cpu/f;
+}
+
+void test1(void){
+	int result;
+	result = test_get_recent_cpu(0, 0);
+	printf("result is %d\n", result);
+}
+
+void test2(void){
+	int result;
+	result = test_get_recent_cpu(2147483647, 0);
+	printf("result is %d\n", result);
+}
+
+void test3(void){
+	int result;
+	result = test_get_recent_cpu(163840, 0);
+	printf("result is %d\n", result);
+}
