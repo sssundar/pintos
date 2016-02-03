@@ -6,3 +6,4 @@ doc
 .cproject
 .project
 a.out
+.DS_Store

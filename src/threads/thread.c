@@ -37,6 +37,8 @@ static struct thread *initial_thread;
 /*! Lock used by allocate_tid(). */
 static struct lock tid_lock;
 
+static struct lock ready_list_lock;
+
 /*! Stack frame for kernel_thread(). */
 struct kernel_thread_frame {
     void *eip;                  /*!< Return address. */
@@ -85,6 +87,7 @@ void thread_init(void) {
     ASSERT(intr_get_level() == INTR_OFF);
 
     lock_init(&tid_lock);
+    lock_init(&ready_list_lock);
     list_init(&ready_list);
     list_init(&all_list);
 
@@ -152,6 +155,7 @@ void thread_print_stats(void) {
     goal of Problem 1-3. */
 tid_t thread_create(const char *name, int priority, thread_func *function,
                     void *aux) {
+
     struct thread *t;
     struct kernel_thread_frame *kf;
     struct switch_entry_frame *ef;
@@ -187,6 +191,13 @@ tid_t thread_create(const char *name, int priority, thread_func *function,
     /* Add to run queue. */
     thread_unblock(t);
 
+    // Since thread t was added to the ready list, check if its priority
+    // is higher than the current thread's. If so the current thread should
+    // yield.
+    if (t->priority > thread_current()->priority) {
+    	thread_yield();
+    }
+
     return tid;
 }
 
@@ -220,6 +231,8 @@ void thread_unblock(struct thread *t) {
     list_push_back(&ready_list, &t->elem);
     t->status = THREAD_READY;
     intr_set_level(old_level);
+
+
 }
 
 /*! Returns the name of the running thread. */
@@ -298,19 +311,43 @@ void thread_foreach(thread_action_func *func, void *aux) {
     }
 }
 
-/*! Sets the current thread's priority to NEW_PRIORITY. */
+/*! Sets the current thread's priority to NEW_PRIORITY.
+
+    If the current thread no longer has the highest priority, yields. */
 void thread_set_priority(int new_priority) {
-    thread_current()->priority = new_priority;
+	struct list_elem *e;
+	struct thread *max, *t;
+
+	// Change this thread's priority.
+	thread_current()->priority = new_priority;
+
+	// Find the highest priority thread in the ready list. If its
+	// priority is higher than the new priority of this thread then yield.
+	max = list_entry(list_begin (&ready_list), struct thread, elem);
+    for (e = list_begin (&ready_list); e != list_end (&ready_list);
+    		e = list_next (e)) {
+        t = list_entry (e, struct thread, elem);
+        if (max->priority < t->priority) {
+        	max = t;
+        }
+    }
+    if (max->priority > thread_current()->priority) {
+    	thread_yield();
+    }
 }
 
-/*! Returns the current thread's priority. */
+/*! Returns the current thread's priority.
+
+    In the presence of priority donation, returns the higher (donated)
+    priority. */
 int thread_get_priority(void) {
+	// TODO make it work w/ donation
     return thread_current()->priority;
 }
 
 /*! Sets the current thread's nice value to NICE. */
 void thread_set_nice(int nice UNUSED) {
-    /* Not yet implemented. */
+	/* Not yet implemented. */
 }
 
 /*! Returns the current thread's nice value. */
@@ -425,10 +462,31 @@ static void * alloc_frame(struct thread *t, size_t size) {
     thread can continue running, then it will be in the run queue.)  If the
     run queue is empty, return idle_thread. */
 static struct thread * next_thread_to_run(void) {
+	struct list_elem *e, *max_e;
+	struct thread *t, *max, *rtn;
+
     if (list_empty(&ready_list))
-      return idle_thread;
-    else
-      return list_entry(list_pop_front(&ready_list), struct thread, elem);
+    	rtn = idle_thread;
+    else {
+
+    	// Find the highest priority thread in the ready list and return it.
+    	max_e = list_begin (&ready_list);
+    	max = list_entry(max_e, struct thread, elem);
+        for (e = list_begin (&ready_list); e != list_end (&ready_list);
+        		e = list_next (e)) {
+            t = list_entry (e, struct thread, elem);
+            if (max->priority < t->priority) {
+            	max = t;
+            	max_e = e;
+            }
+        }
+        rtn = max;
+        list_remove(max_e);
+
+        // TODO remove before submission. This was orig. implementation.
+    	//return list_entry(list_pop_front(&ready_list), struct thread, elem);
+    }
+    return rtn;
 }
 
 /*! Completes a thread switch by activating the new thread's page tables, and,
@@ -440,11 +498,12 @@ static struct thread * next_thread_to_run(void) {
     before returning, but the first time a thread is scheduled it is called by
     switch_entry() (see switch.S).
 
-   It's not safe to call printf() until the thread switch is complete.  In
-   practice that means that printf()s should be added at the end of the
-   function.
+    It's not safe to call printf() until the thread switch is complete.  In
+    practice that means that printf()s should be added at the end of the
+    function.
 
-   After this function and its caller returns, the thread switch is complete. */
+    After this function and its caller returns, the thread switch is
+    complete. */
 void thread_schedule_tail(struct thread *prev) {
     struct thread *cur = running_thread();
   
@@ -503,7 +562,7 @@ static tid_t allocate_tid(void) {
 
     return tid;
 }
-
+
 /*! Offset of `stack' member within `struct thread'.
     Used by switch.S, which can't figure it out on its own. */
 uint32_t thread_stack_ofs = offsetof(struct thread, stack);
