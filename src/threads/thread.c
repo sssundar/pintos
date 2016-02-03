@@ -29,6 +29,10 @@ static struct list ready_list;
     when they are first scheduled and removed when they exit. */
 static struct list all_list;
 
+/*! List of priority queues, each with ready to run threads.
+    There are 64 such queues.*/
+static struct list *priority_queues[64];
+
 /*! Idle thread. */
 static struct thread *idle_thread;
 

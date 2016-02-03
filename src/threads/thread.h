@@ -97,6 +97,8 @@ struct thread {
     uint8_t *stack;                     /*!< Saved stack pointer. */
     int priority;                       /*!< Priority. */
     int nice;                           /*!< Niceness. */
+	int recent_cpu;                     /*!< Fixed point number for recent
+										 time use of CPU. */
     struct list_elem allelem;           /*!< List element for all threads list. */
     /**@}*/
 
@@ -154,11 +156,6 @@ int thread_get_nice(void);
 void thread_set_nice(int);
 int thread_get_recent_cpu(void);
 int thread_get_load_avg(void);
-
-int test_get_recent_cpu(int load_arg, int nice);
-void test1(void);
-void test2(void);
-void test3(void);
 
 #endif /* threads/thread.h */
 

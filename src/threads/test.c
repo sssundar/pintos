@@ -4,10 +4,10 @@
 /*! Returns the current thread's recent_cpu value. */
 // 2^31-1 = 2147483647
 int test_get_recent_cpu(int load_avg, int nice) {
-	int recent_cpu;
+	int recent_cpu = 5;
 	int f = 2*2*2*2*2*2*2*2*2*2*2*2*2*2;
 		
-	recent_cpu = 2*(load_avg) + f*nice;
+	recent_cpu = (2*(load_avg)/(2*load_avg + 1))*(recent_cpu * f)/f + f * nice;
     return recent_cpu/f;
 }
 
@@ -25,7 +25,7 @@ void test2(void){
 
 void test3(void){
 	int result;
-	result = test_get_recent_cpu(1073741824, 0);
+	result = test_get_recent_cpu(1073741823, 0);
 	printf("result is %d\n", result);
 }
 void test4(void){
