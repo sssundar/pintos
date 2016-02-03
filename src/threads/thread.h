@@ -100,7 +100,6 @@ struct thread {
 	int recent_cpu;                     /*!< Fixed point number for recent
 										 time use of CPU. */
     struct list_elem allelem;           /*!< List element for all threads list. */
-    /**@}*/
 
     /*! Shared between thread.c and synch.c. */
     /**@{*/
