@@ -381,7 +381,12 @@ int thread_get_nice(void) {
 int thread_get_load_avg(void) {
     return 100*load_avg;
 }
+/*! Returns 100 times the current thread's recent_cpu value. */
+int thread_get_recent_cpu(void) {
+    return 100*current_thread()->recent_cpu;
+}
 
+/* Calculates the new load_avg value. */
 void load_avg_calculate(void){
 	int ready_threads = list_size(&ready_list);
 
@@ -391,10 +396,31 @@ void load_avg_calculate(void){
 
 	load_avg = (59/60)load_avg + (1/60)*ready_threads;
 }
-/*! Returns 100 times the current thread's recent_cpu value. */
-int thread_get_recent_cpu(void) {
-    return 100*current_thread()->recent_cpu;
+
+/* Calculates the new priority value for a thread t.*/
+void priority_calculate(struct thread *t){
+	int ready_threads = list_size(&ready_list);
+
+	if(thread_current() != idle_thread){
+		ready_threads += 1;
+	}
+
+	load_avg = (59/60)load_avg + (1/60)*ready_threads;
 }
+
+/* Calculates the new recent_cpu value for a thread t.*/
+void recent_cpu_calculate(struct thread *t){
+	ASSERT(is_thread(t));
+	
+	if (t == idle_thread){
+		t->recent_cpu = t->recent_cpu;
+	}
+
+	t->recent_cpu = ((2*load_avg)/(2*load_avg + 1))*t->recent_cpu + 
+		t->nice;
+
+}
+
 
 
 /*! Idle thread.  Executes when no other thread is ready to run.
