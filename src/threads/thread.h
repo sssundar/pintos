@@ -97,7 +97,7 @@ struct thread {
     uint8_t *stack;                     /*!< Saved stack pointer. */
     int priority;                       /*!< Priority. */
     int nice;                           /*!< Niceness. */
-	int recent_cpu;                     /*!< Fixed point number for recent
+	  int recent_cpu;                     /*!< Fixed point number for recent
 										 time use of CPU. */
     struct list_elem allelem;           /*!< List element for all threads list. */
 

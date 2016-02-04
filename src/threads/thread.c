@@ -91,19 +91,19 @@ int load_avg;
     It is not safe to call thread_current() until this function finishes. */
 void thread_init(void) {
     ASSERT(intr_get_level() == INTR_OFF);
-
+    
 	load_avg = 0;
 
-    lock_init(&tid_lock);
-    lock_init(&ready_list_lock);
-    list_init(&ready_list);
-    list_init(&all_list);
+    lock_init(&tid_lock);    
+    lock_init(&ready_list_lock);    
+    list_init(&ready_list);    
+    list_init(&all_list);    
 
     /* Set up a thread structure for the running thread. */
-    initial_thread = running_thread();
-    init_thread(initial_thread, "main", PRI_DEFAULT);
-    initial_thread->status = THREAD_RUNNING;
-    initial_thread->tid = allocate_tid();
+    initial_thread = running_thread();    
+    init_thread(initial_thread, "main", PRI_DEFAULT);    
+    initial_thread->status = THREAD_RUNNING;    
+    initial_thread->tid = allocate_tid();    
 }
 
 /*! Starts preemptive thread scheduling by enabling interrupts.
@@ -389,7 +389,7 @@ int thread_get_recent_cpu(void) {
 }
 
 /* Calculates the new load_avg value. */
-static void load_avg_calculate(void){
+void load_avg_calculate(void){
 	int ready_threads = list_size(&ready_list);
 
 	if(thread_current() != idle_thread){
@@ -407,11 +407,11 @@ static void load_avg_calculate(void){
 		load_avg = (load_avg - f/2)/f;
 	}
 
-	printf("load_avg_calculate has been called!");
+	msg("load_avg_calculate has been called!");
 }
 
 /* Calculates the new recent_cpu value for a thread t.*/
-static void recent_cpu_calculate(struct thread *t){
+void recent_cpu_calculate(struct thread *t){
 	ASSERT(is_thread(t));
 	
 	int f = 1 << 14;
@@ -431,18 +431,17 @@ static void recent_cpu_calculate(struct thread *t){
 		t->recent_cpu = (t->recent_cpu - f/2)/f;
 	}
 
-	printf("recent_cpu_calculate has been called!");
+	msg("recent_cpu_calculate has been called!");
 }
 
 /* Calculates the new priority value for a thread t.*/
-static void priority_calculate(struct thread *t){
+void priority_calculate(struct thread *t){
 	ASSERT(is_thread(t));
 	
 	int f = 1 << 14;
 
-	if (t == idle_thread){
-		// does an idle thread have this initialized to 0?
-		t->priority = t->priority;
+	if (t == idle_thread){		
+		return;
 	}
 
 	/* Round real number recent_cpu to the nearest integer. */
@@ -463,7 +462,7 @@ static void priority_calculate(struct thread *t){
 		t->priority = PRI_MIN;
 	}
 
-	printf("priority_calculate has been called!");
+	msg("priority_calculate has been called!");
 }
 
 
@@ -532,28 +531,28 @@ static void init_thread(struct thread *t, const char *name, int priority) {
     ASSERT(t != NULL);
     ASSERT(PRI_MIN <= priority && priority <= PRI_MAX);
     ASSERT(name != NULL);
-
-    memset(t, 0, sizeof *t);
+    
+    memset(t, 0, sizeof *t);    
     t->status = THREAD_BLOCKED;
     strlcpy(t->name, name, sizeof t->name);
     t->stack = (uint8_t *) t + PGSIZE;
     t->priority = priority;
     t->magic = THREAD_MAGIC;
 
-    old_level = intr_disable();
-    list_push_back(&all_list, &t->allelem);
+    old_level = intr_disable();    
+    list_push_back(&all_list, &t->allelem);    
     intr_set_level(old_level);
 
 	/* If running advanced scheduler, default nice to 0, 
 	 * default recent_cpu to 0 if its the first thread, 
 	 * or parent's value in other new threads. */
 	if (thread_mlfqs){
-		t->nice = 0;
-		t->recent_cpu = thread_get_recent_cpu();
-		 
+		t->nice = 0;        
 		if (t == initial_thread){
-			t->recent_cpu = 0;
-		}
+            t->recent_cpu = 0;
+        } else {
+            t->recent_cpu = thread_get_recent_cpu();            
+        }		
 	}
 }
 
