@@ -109,15 +109,19 @@ bool less_ticks (   const struct list_elem *a, const struct list_elem* b,
     be turned on. Negative ticks will wake the thread at the next tick. */
 void timer_sleep(int64_t ticks) {
     /* Makes sure interrupts are enabled. */
-    ASSERT(intr_get_level() == INTR_ON);       
+    ASSERT(intr_get_level() == INTR_ON);           
+
+    struct thread * t;
+
     /*  Assigns current thread's ticks_remaining to ticks.
         It falls on the caller to avoid a race condition. */
-    struct thread * t = thread_current();
+    t = thread_current();
     t->ticks_remaining = ticks;
 
     /*  Disables interrupts, adds current thread (running) to the nappers list, 
         maintaining min-sorted order, in linear time. */
     intr_disable();    
+
     if ( list_empty(&timed_nappers) ) {
         list_push_back (&timed_nappers, &t->elem);
     } else {
@@ -189,7 +193,7 @@ static void timer_interrupt(struct intr_frame *args UNUSED) {
 
     ticks++;
     thread_tick();    
-    
+        
     /*  Decrement all nappers' ticks_remaining (maintains min-sorting).
         Walk from the minimum (head->next) to the maximum (tail->prev).        
         For any that go <= 0 (ignore overflow, practically speaking),
