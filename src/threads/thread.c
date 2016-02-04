@@ -72,9 +72,9 @@ static void schedule(void);
 void thread_schedule_tail(struct thread *prev);
 static tid_t allocate_tid(void);
 
-/*! List of priority queues, each with ready to run threads.
-    There are 64 such queues.*/
-static struct list *priority_queues[64];
+static void load_avg_calculate(void);
+static void recent_cpu_calculate(struct thread *t);
+static void priority_calculate(struct thread *t);
 
 static int load_avg;
 
@@ -368,8 +368,8 @@ void thread_set_nice(int NICE) {
 	/* Recalculate thread priority based on new nice value. */
 	/* New priority depends on newest recent_cpu values, so 
 	   recalculate those first. */
-	recent_cpu_calculate();
-	priority_calculate();
+	recent_cpu_calculate(thread_current());
+	priority_calculate(thread_current());
 }
 
 /*! Returns the current thread's nice value. */
@@ -379,48 +379,87 @@ int thread_get_nice(void) {
 
 /*! Returns 100 times the system load average. */
 int thread_get_load_avg(void) {
+	load_avg_calculate();
     return 100*load_avg;
 }
 /*! Returns 100 times the current thread's recent_cpu value. */
 int thread_get_recent_cpu(void) {
-    return 100*current_thread()->recent_cpu;
+	recent_cpu_calculate(thread_current());
+    return 100*thread_current()->recent_cpu;
 }
 
 /* Calculates the new load_avg value. */
-void load_avg_calculate(void){
+static void load_avg_calculate(void){
 	int ready_threads = list_size(&ready_list);
 
 	if(thread_current() != idle_thread){
 		ready_threads += 1;
 	}
 
-	load_avg = (59/60)load_avg + (1/60)*ready_threads;
-}
+	int f = 1 << 14;
+	load_avg = ((int64_t)((59*f)/60))*(load_avg)/f + 
+		(1*f/60)*ready_threads;
 
-/* Calculates the new priority value for a thread t.*/
-void priority_calculate(struct thread *t){
-	int ready_threads = list_size(&ready_list);
-
-	if(thread_current() != idle_thread){
-		ready_threads += 1;
+	if (load_avg >= 0){
+		load_avg = (load_avg + f/2)/f;
 	}
-
-	load_avg = (59/60)load_avg + (1/60)*ready_threads;
+	else {
+		load_avg = (load_avg - f/2)/f;
+	}
 }
 
 /* Calculates the new recent_cpu value for a thread t.*/
-void recent_cpu_calculate(struct thread *t){
+static void recent_cpu_calculate(struct thread *t){
 	ASSERT(is_thread(t));
 	
+	int f = 1 << 14;
+
 	if (t == idle_thread){
+		// does an idle thread have this initialized to 0?
 		t->recent_cpu = t->recent_cpu;
 	}
+	
+	int factor = ((((int64_t)(2*load_avg))*f)/(2*load_avg + 1*f));
+	t->recent_cpu = (((int64_t)(factor))*t->recent_cpu)/f + f*t->nice;
 
-	t->recent_cpu = ((2*load_avg)/(2*load_avg + 1))*t->recent_cpu + 
-		t->nice;
-
+	if (t->recent_cpu >= 0){
+		t->recent_cpu = (t->recent_cpu + f/2)/f;
+	}
+	else {
+		t->recent_cpu = (t->recent_cpu - f/2)/f;
+	}
 }
 
+/* Calculates the new priority value for a thread t.*/
+static void priority_calculate(struct thread *t){
+	ASSERT(is_thread(t));
+	
+	int f = 1 << 14;
+
+	if (t == idle_thread){
+		// does an idle thread have this initialized to 0?
+		t->priority = t->priority;
+	}
+
+	/* Round real number recent_cpu to the nearest integer. */
+	if (t->recent_cpu >= 0){
+		t->recent_cpu = (t->recent_cpu + f/2)/f;
+	}
+	else {
+		t->recent_cpu = (t->recent_cpu - f/2)/f;
+	}
+
+	t->priority = PRI_MAX - (t->recent_cpu/4) - 2*t->nice;
+
+	/* Limit priorities between PRI_MIN and PRI_MAX. */
+	if (t->priority > PRI_MAX){
+		t->priority = PRI_MAX;
+	}
+	else if (t->priority < PRI_MIN){
+		t->priority = PRI_MIN;
+	}
+
+}
 
 
 /*! Idle thread.  Executes when no other thread is ready to run.
