@@ -35,6 +35,7 @@ typedef int tid_t;
 typedef struct donation_given {
 	struct thread *thread;
 	int8_t priority;
+	struct lock *lock;
 } donation_given;
 
 /*! A kernel thread or user process.
@@ -127,7 +128,6 @@ struct thread {
     /**@{*/
 #endif
 
-    // TODO new
     /*! List of all donations received; each element is a pointer to the
         donor as well as the priority received so that it can be
         recalled. 160 total bytes. Thread pointers and priority values need
@@ -187,9 +187,10 @@ int thread_get_recent_cpu(void);
 int thread_get_load_avg(void);
 
 bool thread_donate_priority(int8_t priority, struct thread *recipient,
-		struct thread *donor);
+		struct thread *donor, struct lock *the_lock, int nesting);
 
-bool thread_giveback_priority(struct thread *recipient);
+bool thread_giveback_priority(struct thread *recipient,
+		struct lock *the_lock);
 
 #endif /* threads/thread.h */
 

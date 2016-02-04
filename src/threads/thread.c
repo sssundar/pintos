@@ -541,8 +541,10 @@ static void init_thread(struct thread *t, const char *name, int priority) {
     for (i = 0; i < MAX_DONATIONS; i++) {
     	(t->donations_given)[i].priority = PRIORITY_SENTINEL;
     	(t->donations_given)[i].thread = NULL;
+    	(t->donations_given)[i].lock = NULL;
     	(t->donations_received)[i].priority = PRIORITY_SENTINEL;
     	(t->donations_received)[i].thread = NULL;
+    	(t->donations_received)[i].lock = NULL;
     }
 
     t->status = THREAD_BLOCKED;
@@ -603,9 +605,6 @@ static struct thread * next_thread_to_run(void) {
         }
         rtn = max;
         list_remove(max_e);
-
-        // TODO remove before submission. This was orig. implementation.
-    	//return list_entry(list_pop_front(&ready_list), struct thread, elem);
     }
     return rtn;
 }
@@ -684,72 +683,124 @@ static tid_t allocate_tid(void) {
     return tid;
 }
 
-// TODO new
 /*! Inserts the given priority into the given thread's donations_received
     array. If there isn't sufficient space returns false, otherwise returns
-    true. */
+    true. Donations can be nested or chained; this function searches the
+    recipient's donations_given array to see who received a donation, then
+    it forwards the donation to that thread if necessary. */
 bool thread_donate_priority(int8_t priority, struct thread *recipient,
-		struct thread *donor) {
+		struct thread *donor, struct lock *the_lock, int nesting) {
 	int i, ridx = -1, didx = -1;
 	enum intr_level old_level;
 
 	old_level = intr_disable();
+
+	// Base case for nesting recursion.
+	if (nesting >= 10) {
+		return false;
+	}
+
+	// Find an opening in the receiver's received donations array unless
+	// there's an element with the same lock.
 	for (i = 0; i < MAX_DONATIONS; i++) {
-		if ((recipient->donations_received)[i].priority == PRIORITY_SENTINEL) {
+		if ((recipient->donations_received)[i].lock == the_lock) {
 			ridx = i;
 			break;
 		}
 	}
+	if (ridx == -1) {
+		for (i = 0; i < MAX_DONATIONS; i++) {
+			if ((recipient->donations_received)[i].priority ==
+					PRIORITY_SENTINEL) {
+				ridx = i;
+				break;
+			}
+		}
+	}
+
+	// Find an opening in the giver's donations given array unless there's
+	// something with the same lock.
 	for (i = 0; i < MAX_DONATIONS; i++) {
-		if ((donor->donations_given)[i].priority == PRIORITY_SENTINEL &&
-				(donor->donations_given)[i].thread == NULL) {
+		if ((donor->donations_given)[i].lock == the_lock) {
 			didx = i;
 			break;
 		}
 	}
+	if (didx == -1) {
+		for (i = 0; i < MAX_DONATIONS; i++) {
+			if ((donor->donations_given)[i].priority == PRIORITY_SENTINEL) {
+				didx = i;
+				break;
+			}
+		}
+	}
 	if (ridx == -1 || didx == -1)
 		return false;
+
+	// Log the priority that the donor gave away.
 	donor->donations_given[didx].priority = priority;
 	donor->donations_given[didx].thread = recipient;
+	donor->donations_given[didx].lock = the_lock;
+
+	// Log the priority that the receiver got.
 	recipient->donations_received[ridx].priority = priority;
 	recipient->donations_received[ridx].thread = donor;
+	recipient->donations_received[ridx].lock = the_lock;
+
+	// Donate to a thread that the recipient thread is waiting on (if any).
+	for (i = 0; i < MAX_DONATIONS; i++) {
+		if ((recipient->donations_given)[i].priority != PRIORITY_SENTINEL &&
+				(recipient->donations_given)[i].priority < priority) {
+
+			thread_donate_priority(priority,
+					(recipient->donations_given)[i].thread, donor,
+					(recipient->donations_given)[i].lock, nesting + 1);
+			break;
+		}
+	}
+
 	intr_set_level(old_level);
 	return true;
 }
 
-/*! TODO */
-bool thread_giveback_priority(struct thread *recipient) {
-	int i;
-	int8_t max_priority, didx = -1, ridx = -1;
+/*! Clear the donation corresponding to this lock then clear all the
+    corresponding giver's donations. */
+bool thread_giveback_priority(struct thread *recipient,
+		struct lock *the_lock) {
+	int i, j;
+	int8_t priority;//, didx = -1, ridx = -1;
 	struct thread *donor;
 	enum intr_level old_level;
 
 	old_level = intr_disable();
 
-	max_priority = thread_get_tpriority(recipient);
+	// Find every thread that donated a priority under the given lock
+	// to this thread, then clear all the donations given by that thread
+	// to this one.
 	for (i = 0; i < MAX_DONATIONS; i++) {
-		if ((recipient->donations_received)[i].priority == max_priority) {
+		if ((recipient->donations_received)[i].lock == the_lock) {
 			donor = (recipient->donations_received)[i].thread;
-			ridx = i;
-			break;
-		}
-	}
-	if (ridx == -1 || donor == NULL)
-		return false;
-	for (i = 0; i < MAX_DONATIONS; i++) {
-		if ((donor->donations_given)[i].thread == recipient &&
-				(donor->donations_given)[i].priority == max_priority) {
-			didx = i;
-			break;
-		}
-	}
-	if (didx == -1)
-		return false;
+			priority = (recipient->donations_received)[i].priority;
 
-	donor->donations_given[didx].priority = PRIORITY_SENTINEL;
-	donor->donations_given[didx].thread = NULL;
-	recipient->donations_received[ridx].priority = PRIORITY_SENTINEL;
-	recipient->donations_received[ridx].thread = NULL;
+			// Clear all the donations from the giver.
+			for (j = 0; j < MAX_DONATIONS; j++) {
+				if ((donor->donations_given)[j].thread == recipient &&
+						(donor->donations_given)[j].priority == priority &&
+						(donor->donations_given)[j].lock == the_lock) {
+
+					// Clear the giver's donation.
+					donor->donations_given[j].priority = PRIORITY_SENTINEL;
+					donor->donations_given[j].thread = NULL;
+					donor->donations_given[j].lock = NULL;
+				}
+			}
+
+			// Clear the receiver's donation.
+			recipient->donations_received[i].priority = PRIORITY_SENTINEL;
+			recipient->donations_received[i].thread = NULL;
+			recipient->donations_received[i].lock = NULL;
+		}
+	}
 
 	intr_set_level(old_level);
 

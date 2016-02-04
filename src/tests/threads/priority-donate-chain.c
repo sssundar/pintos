@@ -44,7 +44,7 @@ static thread_func interloper_thread_func;
 void
 test_priority_donate_chain (void) 
 {
-  int i;  
+  int i;
   struct lock locks[NESTING_DEPTH - 1];
   struct lock_pair lock_pairs[NESTING_DEPTH];
 
@@ -79,7 +79,7 @@ test_priority_donate_chain (void)
 
   lock_release (&locks[0]);
   msg ("%s finishing with priority %d.", thread_name (),
-		  thread_get_priority ());
+                                         thread_get_priority ());
 }
 
 static void
@@ -96,13 +96,13 @@ donor_thread_func (void *locks_)
   lock_release (locks->second);
   msg ("%s should have priority %d. Actual priority: %d", 
         thread_name (), (NESTING_DEPTH - 1) * 3,
-		thread_get_priority ());
+        thread_get_priority ());
 
   if (locks->first)
     lock_release (locks->first);
 
   msg ("%s finishing with priority %d.", thread_name (),
-		  thread_get_priority ());
+                                         thread_get_priority ());
 }
 
 static void

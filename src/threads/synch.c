@@ -130,10 +130,6 @@ void sema_up(struct semaphore *sema) {
         }
         list_remove(max_e);
         thread_unblock(max);
-
-        // TODO remove before submission; this was the orig. implementation.
-        //thread_unblock(t = list_entry(list_pop_front(&sema->waiters),
-        //                          struct thread, elem));
     }
     sema->value++;
     intr_set_level(old_level);
@@ -208,29 +204,26 @@ void lock_acquire(struct lock *lock) {
 	struct thread *prev_holder;
 	enum intr_level old_level;
 
+	old_level = intr_disable();
+
     ASSERT(lock != NULL);
     ASSERT(!intr_context());
     ASSERT(!lock_held_by_current_thread(lock));
 
-    // TODO new
-
-    prev_holder = lock->holder;
     // If the lock owner's priority is lower than ours then donate.
-    if (prev_holder != NULL && thread_get_tpriority(prev_holder) <
+    prev_holder = lock->holder;
+    if (prev_holder != NULL && thread_get_tpriority(prev_holder) <=
     		thread_get_priority()) {
-    	old_level = intr_disable();
     	ASSERT (thread_donate_priority ((int8_t)(thread_get_priority()),
-    			prev_holder, thread_current()));
-    	// thread_yield(); // TODO neeed?
+    			prev_holder, thread_current(), lock, 0));
     	sema_down(&lock->semaphore);
-    	intr_set_level(old_level);
     }
     else {
     	sema_down(&lock->semaphore);
     }
 
-    // TODO end new, old thing was single line: sema_down(&lock->semaphore);
     lock->holder = thread_current();
+    intr_set_level(old_level);
 }
 
 /*! Tries to acquires LOCK and returns true if successful or false
@@ -258,13 +251,20 @@ bool lock_try_acquire(struct lock *lock) {
     make sense to try to release a lock within an interrupt
     handler. */
 void lock_release(struct lock *lock) {
+	enum intr_level old_level;
+
+	old_level = intr_disable();
     ASSERT(lock != NULL);
     ASSERT(lock_held_by_current_thread(lock));
 
-    if (thread_get_priority() != thread_current()->priority)
-    	thread_giveback_priority(lock->holder);
+    // If this thread's priority is higher than the priority it was
+    // assigned at creation, that means that someone donated to it.
+    // Give back that donation.
+    if (thread_get_priority() > thread_current()->priority)
+    	thread_giveback_priority(lock->holder, lock);
     lock->holder = NULL;
     sema_up(&lock->semaphore);
+    intr_set_level(old_level);
 }
 
 /*! Returns true if the current thread holds LOCK, false
@@ -377,9 +377,6 @@ void cond_signal(struct condition *cond, struct lock *lock UNUSED) {
 
         }
         list_remove(max_s);
-
-        // TODO remove before submission. This was the original implementation
-    	// e = list_pop_front(&cond->waiters);
 
         sema_up(&list_entry(max_s, struct semaphore_elem, elem)->semaphore);
     }
