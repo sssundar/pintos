@@ -407,7 +407,6 @@ void load_avg_calculate(void){
 		load_avg = (load_avg - f/2)/f;
 	}
 
-	msg("load_avg_calculate has been called!");
 }
 
 /* Calculates the new recent_cpu value for a thread t.*/
@@ -431,7 +430,6 @@ void recent_cpu_calculate(struct thread *t){
 		t->recent_cpu = (t->recent_cpu - f/2)/f;
 	}
 
-	msg("recent_cpu_calculate has been called!");
 }
 
 /* Calculates the new priority value for a thread t.*/
@@ -462,7 +460,6 @@ void priority_calculate(struct thread *t){
 		t->priority = PRI_MIN;
 	}
 
-	msg("priority_calculate has been called!");
 }
 
 
