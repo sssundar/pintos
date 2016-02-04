@@ -59,7 +59,11 @@ void sema_init(struct semaphore *sema, unsigned value) {
     This function may sleep, so it must not be called within an
     interrupt handler.  This function may be called with
     interrupts disabled, but if it sleeps then the next scheduled
-    thread will probably turn interrupts back on. */
+    thread will probably turn interrupts back on. 
+
+    ==ASIDE== This PINTOS comment suggests it is possible to return to this
+    function after thread_block() with interrupts in a different state than we 
+    left with. I do not believe this is possible. */
 void sema_down(struct semaphore *sema) {
     enum intr_level old_level;
 
@@ -147,7 +151,7 @@ static void sema_test_helper(void *sema_) {
         sema_up(&sema[1]);
     }
 }
-
+
 /*! Initializes LOCK.  A lock can be held by at most a single
     thread at any given time.  Our locks are not "recursive", that
     is, it is an error for the thread currently holding a lock to
@@ -227,7 +231,7 @@ bool lock_held_by_current_thread(const struct lock *lock) {
 
     return lock->holder == thread_current();
 }
-
+
 /*! One semaphore in a list. */
 struct semaphore_elem {
     struct list_elem elem;              /*!< List element. */

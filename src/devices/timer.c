@@ -23,6 +23,9 @@
 /*! Number of timer ticks since OS booted. */
 static int64_t ticks;
 
+/*!< List of threads waiting for ticks. Initialized by timer_init(). */
+static struct list timed_nappers;    
+
 /*! Number of loops per timer tick.  Initialized by timer_calibrate(). */
 static unsigned loops_per_tick;
 
@@ -31,12 +34,17 @@ static bool too_many_loops(unsigned loops);
 static void busy_wait(int64_t loops);
 static void real_time_sleep(int64_t num, int32_t denom);
 static void real_time_delay(int64_t num, int32_t denom);
+static bool less_ticks (const struct list_elem *a, 
+                        const struct list_elem* b, 
+                        void *aux UNUSED);
 
 /*! Sets up the timer to interrupt TIMER_FREQ times per second,
-    and registers the corresponding interrupt. */
+    and registers the corresponding interrupt. Initializes the
+    list of threads blocked on timer_sleep calls. */
 void timer_init(void) {
     pit_configure_channel(0, 2, TIMER_FREQ);
     intr_register_ext(0x20, timer_interrupt, "8254 Timer");
+    list_init(&timed_nappers);
 }
 
 /*! Calibrates loops_per_tick, used to implement brief delays. */
@@ -78,14 +86,51 @@ int64_t timer_elapsed(int64_t then) {
     return timer_ticks() - then;
 }
 
-/*! Sleeps for approximately TICKS timer ticks.  Interrupts must
-    be turned on. */
-void timer_sleep(int64_t ticks) {
-    int64_t start = timer_ticks();
+/*  Ignores aux, and performs an arithmetic less than on the ticks remaining
+    in the thread structures containing list_elem's a, b. Returns true if 
+    a is less than b, or false if a is greater than or equal to b. */
+bool less_ticks (   const struct list_elem *a, const struct list_elem* b, 
+                    void *aux UNUSED) {
+    struct thread *t;
+    int64_t a_ticks_remaining, b_ticks_remaining;
 
-    ASSERT(intr_get_level() == INTR_ON);
-    while (timer_elapsed(start) < ticks) 
-        thread_yield();
+    t = list_entry (a, struct thread, elem);
+    a_ticks_remaining = t->ticks_remaining;
+    t = list_entry (b, struct thread, elem);
+    b_ticks_remaining = t->ticks_remaining;
+
+    if (a_ticks_remaining < b_ticks_remaining) {
+        return true;
+    } 
+    return false;    
+}
+
+/*! Sleeps for approximately TICKS timer ticks.  Interrupts must
+    be turned on. Negative ticks will wake the thread at the next tick. */
+void timer_sleep(int64_t ticks) {
+    /* Makes sure interrupts are enabled. */
+    ASSERT(intr_get_level() == INTR_ON);       
+    /*  Assigns current thread's ticks_remaining to ticks.
+        It falls on the caller to avoid a race condition. */
+    struct thread * t = thread_current();
+    t->ticks_remaining = ticks;
+
+    /*  Disables interrupts, adds current thread (running) to the nappers list, 
+        maintaining min-sorted order, in linear time. */
+    intr_disable();    
+    if ( list_empty(&timed_nappers) ) {
+        list_push_back (&timed_nappers, &t->elem);
+    } else {
+        list_insert_ordered (   &timed_nappers, &t->elem, 
+                                (list_less_func *) less_ticks, NULL);
+    }    
+
+    /* Blocks thread with interrupts disabled, as required. */
+    thread_block();
+
+    /*  Re-enables interrupts, as they were enabled when we entered but are 
+        disabled on re-entry from thread_block. */
+    intr_enable();
 }
 
 /*! Sleeps for approximately MS milliseconds.  Interrupts must be turned on. */
@@ -136,11 +181,37 @@ void timer_ndelay(int64_t ns) {
 void timer_print_stats(void) {
     printf("Timer: %"PRId64" ticks\n", timer_ticks());
 }
-
-/*! Timer interrupt handler. */
+
+/*! Timer interrupt handler. Interrupts are disabled before entry. */
 static void timer_interrupt(struct intr_frame *args UNUSED) {
+    struct thread *thread_walker;
+    struct list_elem *list_walker;
+
     ticks++;
-    thread_tick();
+    thread_tick();    
+    
+    /*  Decrement all nappers' ticks_remaining (maintains min-sorting).
+        Walk from the minimum (head->next) to the maximum (tail->prev).        
+        For any that go <= 0 (ignore overflow, practically speaking),
+        remove them from the nappers list and unblock them. These 
+        are always guaranteed to be at the head of the list throughout
+        the iteration. */
+    if (!list_empty(&timed_nappers)) {
+        list_walker = list_front(&timed_nappers);            
+        do {            
+            thread_walker = list_entry(list_walker, struct thread, elem);
+            thread_walker->ticks_remaining--;
+            if (thread_walker->ticks_remaining <= 0) {
+                /*  ==TODO== Could extend thread_unblock() to handle multiple
+                    threads at once (e.g. if we spliced out a segment rather
+                    than removing one at a time), but let's wait on Hamik's
+                    priority scheduling implementation. */                
+                list_remove(list_walker); 
+                thread_unblock(thread_walker);
+            }
+            list_walker = list_walker->next;
+        } while (list_walker->next != NULL);
+    }    
 }
 
 /*! Returns true if LOOPS iterations waits for more than one timer tick,

@@ -104,6 +104,11 @@ struct thread {
     struct list_elem elem;              /*!< List element. */
     /**@}*/
 
+    /*! Owned by devices/timer.c. */
+    /**@{*/
+    int64_t ticks_remaining;           /*!< Tick counter for timer_sleep */
+    /**@{*/
+
 #ifdef USERPROG
     /*! Owned by userprog/process.c. */
     /**@{*/
