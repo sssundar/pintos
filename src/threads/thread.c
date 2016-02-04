@@ -384,7 +384,7 @@ int thread_get_load_avg(void) {
 }
 /*! Returns 100 times the current thread's recent_cpu value. */
 int thread_get_recent_cpu(void) {
-	recent_cpu_calculate(thread_current());
+	//	recent_cpu_calculate(thread_current());
     return 100*thread_current()->recent_cpu;
 }
 
@@ -406,6 +406,8 @@ static void load_avg_calculate(void){
 	else {
 		load_avg = (load_avg - f/2)/f;
 	}
+
+	printf("load_avg_calculate has been called!");
 }
 
 /* Calculates the new recent_cpu value for a thread t.*/
@@ -428,6 +430,8 @@ static void recent_cpu_calculate(struct thread *t){
 	else {
 		t->recent_cpu = (t->recent_cpu - f/2)/f;
 	}
+
+	printf("recent_cpu_calculate has been called!");
 }
 
 /* Calculates the new priority value for a thread t.*/
@@ -459,6 +463,7 @@ static void priority_calculate(struct thread *t){
 		t->priority = PRI_MIN;
 	}
 
+	printf("priority_calculate has been called!");
 }
 
 
