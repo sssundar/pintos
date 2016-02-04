@@ -332,12 +332,14 @@ void thread_foreach(thread_action_func *func, void *aux) {
 void thread_set_priority(int new_priority) {
 	struct list_elem *e;
 	struct thread *max, *t;
+	enum intr_level old_level;
 
 	// Change this thread's priority.
 	thread_current()->priority = new_priority;
 
 	// Find the highest priority thread in the ready list. If its
 	// priority is higher than the new priority of this thread then yield.
+	old_level = intr_disable();
 	max = list_entry(list_begin (&ready_list), struct thread, elem);
     for (e = list_begin (&ready_list); e != list_end (&ready_list);
     		e = list_next (e)) {
@@ -346,6 +348,7 @@ void thread_set_priority(int new_priority) {
         	max = t;
         }
     }
+    intr_set_level(old_level);
     if (thread_get_tpriority(max) > thread_get_tpriority(thread_current())) {
     	thread_yield();
     }

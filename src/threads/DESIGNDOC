@@ -1,0 +1,451 @@
+			+--------------------+
+			|       CS 124       |
+			| PROJECT 3: THREADS |
+			|   DESIGN DOCUMENT  |
+			+--------------------+
+				   
+---- GROUP ----
+
+>> Fill in the names and email addresses of your group members.
+
+Hamik Mukelyan <hamik@caltech.edu>
+Sushant Sundaresh <sushant.sundaresh@gmail.com>
+Dave Luo <dluo@caltech.edu>
+
+>> Specify how many late tokens you are using on this assignment:  
+TODO
+
+>> What is the Git repository and commit hash for your submission?
+   (You only need to include the commit-hash in the file you submit
+   on Moodle.)
+
+   Repository URL: login.cms.caltech.edu:/cs/courses/cs124/teams/Curiosity
+   commit ... TODO
+
+---- PRELIMINARIES ----
+
+>> If you have any preliminary comments on your submission, notes for the
+>> TAs, or extra credit, please give them here.
+
+>> Please cite any offline or online sources you consulted while
+>> preparing your submission, other than the Pintos documentation, course
+>> text, lecture notes, and course instructors.
+
+https://tssurya.wordpress.com/tag/priority-donation/
+  Note that the above link contained a link that looked A LOT like the design
+  document for this class, so we assumed it contained answers and didn't
+  read it.
+TODO
+
+			      THREADS
+			      =======
+
+---- LOGISTICS ----
+
+These questions will help us to keep track of the difficulty level of
+assignments, as well as keeping track of which team members worked on
+which parts.
+
+>> L1: How many hours did each team member spend on this assignment?
+   Make sure that each member's total time is listed.
+
+Hamik Mukelyan: 38
+Sushant Sundaresh: TODO
+Dave Luo: TODO
+
+>> L2: What did each team member focus on for this assignment?  Keep
+   descriptions to 25-30 words or less.
+   
+Hamik Mukelyan: wrote all parts of the priority scheduler.
+Sushant Sundaresh: TODO
+Dave Luo: TODO
+
+			     ALARM CLOCK
+			     ===========
+
+---- DATA STRUCTURES ----
+
+>> A1: Copy here the declaration of each new or changed `struct' or
+>> `struct' member, global or static variable, `typedef', or
+>> enumeration.  Identify the purpose of each in 25 words or less.
+
+TODO
+
+---- ALGORITHMS ----
+
+>> A2: Briefly describe what happens in a call to timer_sleep(),
+>> including the effects of the timer interrupt handler.
+
+TODO
+
+>> A3: What steps are taken to minimize the amount of time spent in
+>> the timer interrupt handler?
+
+TODO
+
+---- SYNCHRONIZATION ----
+
+>> A4: How are race conditions avoided when multiple threads call
+>> timer_sleep() simultaneously?
+
+TODO
+
+>> A5: How are race conditions avoided when a timer interrupt occurs
+>> during a call to timer_sleep()?
+
+TODO
+
+---- RATIONALE ----
+
+>> A6: Why did you choose this design?  In what ways is it superior to
+>> another design you considered?
+
+TODO
+
+			 PRIORITY SCHEDULING
+			 ===================
+
+---- DATA STRUCTURES ----
+
+>> B1: Copy here the declaration of each new or changed `struct' or
+>> `struct' member, global or static variable, `typedef', or
+>> enumeration.  Identify the purpose of each in 25 words or less.
+
+ /*!< Length of the donations given/received lists. My implementation
+      can track only that many donations given and/or received per thread. */
+#define MAX_DONATIONS 10             
+
+/*! Tracks a donation amount, recipient, and corresponding lock. */
+typedef struct donation_given {
+    struct thread *thread;
+    int8_t priority;
+    struct lock *lock;
+} donation_given;
+
+struct thread { ...
+
+    int priority;                       /*!< Priority. */
+
+    ...
+
+    /*! List of all donations received. Each element consists of a pointer
+        to the, a pointer to the corresponding lock, and the priority
+        received so that it can be recalled when the lock is released.
+        Thread pointers, lock pointers, and priority values need to be
+        initialized to sentinel values of NULL and -1. The user needs
+        to do a linear search for the desired element. */
+    donation_given donations_received[MAX_DONATIONS];
+
+    /*! List of all donations given. Each element consists of a pointer
+        to the, a pointer to the corresponding lock, and the priority
+        received so that it can be recalled when the lock is released.
+        Thread pointers, lock pointers, and priority values need to be
+        initialized to sentinel values of NULL and -1. The user needs
+        to do a linear search for the desired element. */
+    donation_given donations_given[MAX_DONATIONS]; 
+    
+    ... 
+}
+
+>> B2: Explain the data structure used to track priority donation.
+>> Use ASCII art to diagram a nested donation.  (Alternately, submit a
+>> .png file.)
+
+
+* The following is an example like the nested donations test file at
+  "src/tests/threads/priority-donate-nest.c". 
+
+* "pr_received" is for "thread.donations_received" & its elements are triplets 
+  { <thread received from> , <priority received> , <corresponding lock> }. 
+
+* "pr_given" is for "thread.donations_given" & its elements are triplets 
+  { <thread given to> , <priority given> , <corresponding lock> }.
+
+* "init_pr" is for "initially assigned priority", which doesn't change even
+  under donations.
+  
+* "effectiv_pr" is for "effective priority", and its simply the max of the
+  donated priorities.
+  
+
+In thread "main": 
+  // We have initializations like:  
+  //   struct locks { struct lock *a; struct lock *b; };
+  //   struct lock a, b; 
+  //   struct locks locks;
+  //   lock_init (&a); lock_init (&b);
+  // Here's the code whose side effects are shown in the table:
+  
+  lock_acquire (&a);
+
+---------------------------------------------------------------------------
+| Thread name |       main       |      medium       |       high         |
+|-------------+------------------+-------------------+--------------------|
+| locks owned |        a         |                   |                    |
+|-------------+------------------+-------------------+--------------------|
+|   pr_given  |                  |                   |                    |
+|-------------+------------------+-------------------+--------------------|
+| pr_received |                  |                   |                    |
+|-------------+------------------+-------------------+--------------------|
+|   init_pr   |        31        |                   |                    |
+|-------------+------------------+-------------------+--------------------|
+| effectiv_pr |        31        |                   |                    |
+---------------------------------------------------------------------------
+
+
+In thread "main": 
+  locks.a = &a; 
+  locks.b = &b;
+  thread_create ("medium", PRI_DEFAULT + 1, medium_thread_func, &locks);
+  
+In thread "medium":
+  lock_acquire (locks->b);  // b isn't owned by anyone, so "medium" takes it
+
+---------------------------------------------------------------------------
+| Thread name |       main       |      medium       |       high         |
+|-------------+------------------+-------------------+--------------------|
+| locks owned |        a         |        b          |                    |
+|-------------+------------------+-------------------+--------------------|
+|   pr_given  |                  |                   |                    |
+|-------------+------------------+-------------------+--------------------|
+| pr_received |                  |                   |                    |
+|-------------+------------------+-------------------+--------------------|
+|   init_pr   |        31        |        32         |                    |
+|-------------+------------------+-------------------+--------------------|
+| effectiv_pr |        31        |        32         |                    |
+---------------------------------------------------------------------------
+
+
+In thread "medium":
+  lock_acquire (locks->a);  // a is owned by "main", so priority is donated
+
+---------------------------------------------------------------------------
+| Thread name |       main       |      medium       |       high         |
+|-------------+------------------+-------------------+--------------------|
+| locks owned |        a         |        b          |                    |
+|-------------+------------------+-------------------+--------------------|
+|   pr_given  |                  |   {main, 32, a}   |                    |
+|-------------+------------------+-------------------+--------------------|
+| pr_received | {medium, 32, a}  |                   |                    |
+|-------------+------------------+-------------------+--------------------|
+|   init_pr   |        31        |        32         |                    |
+|-------------+------------------+-------------------+--------------------|
+| effectiv_pr |        32        |        32         |                    |
+---------------------------------------------------------------------------
+
+
+In thread "main":
+  thread_create ("high", PRI_DEFAULT + 2, high_thread_func, &b);
+
+---------------------------------------------------------------------------
+| Thread name |       main       |      medium       |       high         |
+|-------------+------------------+-------------------+--------------------|
+| locks owned |        a         |        b          |                    |
+|-------------+------------------+-------------------+--------------------|
+|   pr_given  |                  |   {main, 32, a}   |                    |
+|-------------+------------------+-------------------+--------------------|
+| pr_received | {medium, 32, a}  |                   |                    |
+|-------------+------------------+-------------------+--------------------|
+|   init_pr   |        31        |        32         |        33          |
+|-------------+------------------+-------------------+--------------------|
+| effectiv_pr |        32        |        32         |        33          |
+---------------------------------------------------------------------------
+
+
+In thread "high":
+  lock_acquire (lock);  // b is owned by "medium", so priority is donated
+
+---------------------------------------------------------------------------
+| Thread name |       main       |      medium       |       high         |
+|-------------+------------------+-------------------+--------------------|
+| locks owned |        a         |        b          |                    |
+|-------------+------------------+-------------------+--------------------|
+|   pr_given  |                  |   {main, 32, a}   |  {medium, 33, b}   |
+|             |                  |   {main, 33, a}   |                    |
+|-------------+------------------+-------------------+--------------------|
+| pr_received | {medium, 32, a}  |   {high, 33, b}   |                    |
+|             | {medium, 33, a}  |                   |                    |
+|-------------+------------------+-------------------+--------------------|
+|   init_pr   |        31        |        32         |        33          |
+|-------------+------------------+-------------------+--------------------|
+| effectiv_pr |        33        |        33         |        33          |
+---------------------------------------------------------------------------
+
+
+---- ALGORITHMS ----
+
+>> B3: How do you ensure that the highest priority thread waiting for
+>> a lock, semaphore, or condition variable wakes up first?
+
+When the scheduler thread.c:schedule() runs it calls 
+thread.c:next_thread_to_run, which does a linear search over the list of 
+ready threads and returns the one with the highest priority. It makes
+sure to remove it from the ready list before returning.
+
+>> B4: Describe the sequence of events when a call to lock_acquire()
+>> causes a priority donation.  How is nested donation handled?
+
+We consider priority donations necessary when the lock holder's priority
+is lower than the priority of the thread trying to acquire the lock.
+So if thread A has priority N > M and wants lock L but thread B, which
+has priority M, has lock L, then priority donation will happen in 
+synch.c:lock_acquire(struct lock *lock). The recipient of the 
+donation is just the holder of the lock and the giver is the current
+thread. The donation itself is passed off to the new function 
+thread.c:thread_donate_priority(...), which determines if the 
+recipient of the donation itself has a pending donation (i.e., is waiting
+for a lock). If so the donation is recursively donated to that thread,
+and so on.
+
+>> B5: Describe the sequence of events when lock_release() is called
+>> on a lock that a higher-priority thread is waiting for.
+
+If the priority of the current thread is higher than the "initial priority"
+with which the thread started, which is just thread.priority in our
+project, then we conclude that the current thread has donations that
+must be given back. We pass off this behavior to 
+thread.c:thread_giveback_priority(...), which finds each thread that donated
+a priority under the given lock to this thread (by a linear search of the
+lock owner thead's "donations_received" list) then clears all donations
+given by each of those threads to this one (by linear search of each of 
+those thread's "donations_given" lists).
+
+---- SYNCHRONIZATION ----
+
+>> B6: Describe a potential race in thread_set_priority() and explain
+>> how your implementation avoids it.  Can you use a lock to avoid
+>> this race?
+
+My implementation finds the highest priority thread in the ready list
+then yields if the change in the priority forces the current thread
+below that threshold. Two threads could try to change priorities at the 
+same time, which might result in a race condition. I get around it by
+disabling interrupts temporarily in this function.
+
+---- RATIONALE ----
+
+>> B7: Why did you choose this design?  In what ways is it superior to
+>> another design you considered?
+
+It's not superior. All the linear searches are slow (a priority heap 
+would be cooler/faster) and the lists of donation data are super
+clunky. And instead of using linked lists, which were weird to fit into the
+thread struct, I used a fixed-size array of "donation data" elements (i.e. 
+the "donation_given" structs). I initialize all the elements to NULL or -1
+then check for those values in linear searches to see where to stop and
+place new donation data. When I remove elements (after finding them
+via linear search...) I clear them by resetting values to NULL and -1. 
+It's pretty ugly but it's reasonably fast and works.
+
+			  ADVANCED SCHEDULER
+			  ==================
+
+---- DATA STRUCTURES ----
+
+>> C1: Copy here the declaration of each new or changed `struct' or
+>> `struct' member, global or static variable, `typedef', or
+>> enumeration.  Identify the purpose of each in 25 words or less.
+
+TODO
+
+---- ALGORITHMS ----
+
+>> C2: Suppose threads A, B, and C have nice values 0, 1, and 2.  Each
+>> has a recent_cpu value of 0.  Fill in the table below showing the
+>> scheduling decision and the priority and recent_cpu values for each
+>> thread after each given number of timer ticks:
+
+TODO
+
+timer  recent_cpu    priority   thread
+ticks   A   B   C   A   B   C   to run
+-----  --  --  --  --  --  --   ------
+ 0
+ 4
+ 8
+12
+16
+20
+24
+28
+32
+36
+
+>> C3: Did any ambiguities in the scheduler specification make values
+>> in the table uncertain?  If so, what rule did you use to resolve
+>> them?  Does this match the behavior of your scheduler?
+
+TODO
+
+>> C4: How is the way you divided the cost of scheduling between code
+>> inside and outside interrupt context likely to affect performance?
+
+TODO
+
+---- RATIONALE ----
+
+>> C5: Briefly critique your design, pointing out advantages and
+>> disadvantages in your design choices.  If you were to have extra
+>> time to work on this part of the project, how might you choose to
+>> refine or improve your design?
+
+TODO
+
+>> C6: The assignment explains arithmetic for fixed-point math in
+>> detail, but it leaves it open to you to implement it.  Why did you
+>> decide to implement it the way you did?  If you created an
+>> abstraction layer for fixed-point math, that is, an abstract data
+>> type and/or a set of functions or macros to manipulate fixed-point
+>> numbers, why did you do so?  If not, why not?
+
+TODO
+
+			  SURVEY QUESTIONS
+			  ================
+
+Answering these questions is optional, but it will help us improve the
+course in future years.  Feel free to tell us anything you want - these
+questions are just to spur your thoughts.  Also, feel free to be completely
+honest if there are issues with the assignment or the course - you won't be
+penalized.  We can't fix things until we know about them.  :-)
+
+>> In your opinion, was this assignment, or any of the parts of it, too
+>> easy or too hard?  Did it take too long or too little time?
+
+The priority scheduler took FOREVER, but you already knew that. :-)
+
+TODO
+
+>> Did you find that working on a particular part of the assignment gave
+>> you greater insight into some aspect of OS design?
+
+Yes. Working on the priority scheduler was super cool because I feel like 
+I understand threads, race conditions, and priority inversions much, much
+better now. I remember being slightly confused about the Pathfinder
+bug in CS24 but get it hardcore now.
+
+TODO
+
+>> Were there any parts of the assignment that you felt were unnecessarily
+>> tedious or pointless?
+
+TODO
+
+>> Is there some particular fact or hint we should give students in
+>> future quarters to help them solve the problems?  Conversely, did you
+>> find any of our guidance to be misleading?
+
+I didn't really understand anything until I read the tests. You say to read
+tests in the FAQ, but moving that up higher in the project would be helpful.
+
+TODO
+
+>> Do you have any suggestions for the instructor and/or TAs to more
+>> effectively assist students, either for future quarters or the remaining
+>> projects?
+
+TODO
+
+>> Any other comments?
+
+TODO

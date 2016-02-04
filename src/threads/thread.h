@@ -28,10 +28,10 @@ typedef int tid_t;
 #define PRI_MIN 0                       /*!< Lowest priority. */
 #define PRI_DEFAULT 31                  /*!< Default priority. */
 #define PRI_MAX 63                      /*!< Highest priority. */
-#define MAX_DONATIONS 32				/*!< Max donations tracked. */
+#define MAX_DONATIONS 10				/*!< Max donations tracked. */
 #define PRIORITY_SENTINEL -1		    /*!< For unset priorities. */
 
-/*! Tracks a donation amount and recipient. */
+/*! Tracks a donation amount, recipient, and corresponding lock. */
 typedef struct donation_given {
 	struct thread *thread;
 	int8_t priority;
@@ -128,18 +128,20 @@ struct thread {
     /**@{*/
 #endif
 
-    /*! List of all donations received; each element is a pointer to the
-        donor as well as the priority received so that it can be
-        recalled. 160 total bytes. Thread pointers and priority values need
-        to be initialized to sentinel values of NULL and -1, respectively.
-        User needs to do linear search for desired element. */
+    /*! List of all donations received. Each element consists of a pointer
+        to the, a pointer to the corresponding lock, and the priority
+        received so that it can be recalled when the lock is released.
+        Thread pointers, lock pointers, and priority values need to be
+        initialized to sentinel values of NULL and -1. The user needs
+        to do a linear search for the desired element. */
     donation_given donations_received[MAX_DONATIONS];
 
-    /*! List of all donations given; each element is a pointer to the recipient
-        of the donation as well as the priority given so that it can be
-        recalled. 160 total bytes. Thread pointers and priority values need
-        to be initialized to sentinel values of NULL and -1, respectively.
-        User needs to do linear search for desired element. */
+    /*! List of all donations given. Each element consists of a pointer
+        to the, a pointer to the corresponding lock, and the priority
+        received so that it can be recalled when the lock is released.
+        Thread pointers, lock pointers, and priority values need to be
+        initialized to sentinel values of NULL and -1. The user needs
+        to do a linear search for the desired element. */
     donation_given donations_given[MAX_DONATIONS];
 
     /*! Owned by thread.c. */
