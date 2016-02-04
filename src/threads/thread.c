@@ -72,11 +72,11 @@ static void schedule(void);
 void thread_schedule_tail(struct thread *prev);
 static tid_t allocate_tid(void);
 
-static void load_avg_calculate(void);
-static void recent_cpu_calculate(struct thread *t);
-static void priority_calculate(struct thread *t);
+void load_avg_calculate(void);
+void recent_cpu_calculate(struct thread *t);
+void priority_calculate(struct thread *t);
 
-static int load_avg;
+int load_avg;
 
 /*! Initializes the threading system by transforming the code
     that's currently running into a thread.  This can't work in
