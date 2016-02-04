@@ -209,7 +209,7 @@ tid_t thread_create(const char *name, int priority, thread_func *function,
     // Since thread t was added to the ready list, check if its priority
     // is higher than the current thread's. If so the current thread should
     // yield.
-    if (t->priority > thread_current()->priority) {
+    if (thread_get_tpriority(t) > thread_get_tpriority(thread_current())) {
     	thread_yield();
     }
 
@@ -342,22 +342,28 @@ void thread_set_priority(int new_priority) {
     for (e = list_begin (&ready_list); e != list_end (&ready_list);
     		e = list_next (e)) {
         t = list_entry (e, struct thread, elem);
-        if (max->priority < t->priority) {
+        if (thread_get_tpriority(max) < thread_get_tpriority(t)) {
         	max = t;
         }
     }
-    if (max->priority > thread_current()->priority) {
+    if (thread_get_tpriority(max) > thread_get_tpriority(thread_current())) {
     	thread_yield();
     }
 }
 
-/*! Returns the current thread's priority.
+/*! Get the maximum of the donated priorities or the thread's own priority. */
+int thread_get_tpriority(struct thread *t) {
+	int i;
+	int8_t max = t->priority;
+	for (i = 0; i < MAX_DONATIONS; i++) {
+		if (t->donations_received[i].priority > max)
+			max = t->donations_received[i].priority;
+	}
+	return (int) max;
+}
 
-    In the presence of priority donation, returns the higher (donated)
-    priority. */
 int thread_get_priority(void) {
-	// TODO make work with donations
-    return thread_current()->priority;
+	return thread_get_tpriority (thread_current());
 }
 
 /*! Sets the current thread's nice value to NICE. */
@@ -524,12 +530,21 @@ static bool is_thread(struct thread *t) {
 /*! Does basic initialization of T as a blocked thread named NAME. */
 static void init_thread(struct thread *t, const char *name, int priority) {
     enum intr_level old_level;
+    int i;
 
     ASSERT(t != NULL);
     ASSERT(PRI_MIN <= priority && priority <= PRI_MAX);
     ASSERT(name != NULL);
-    
-    memset(t, 0, sizeof *t);    
+
+    memset(t, 0, sizeof *t);
+    // Initialize the donations arrays.
+    for (i = 0; i < MAX_DONATIONS; i++) {
+    	(t->donations_given)[i].priority = PRIORITY_SENTINEL;
+    	(t->donations_given)[i].thread = NULL;
+    	(t->donations_received)[i].priority = PRIORITY_SENTINEL;
+    	(t->donations_received)[i].thread = NULL;
+    }
+
     t->status = THREAD_BLOCKED;
     strlcpy(t->name, name, sizeof t->name);
     t->stack = (uint8_t *) t + PGSIZE;
@@ -581,7 +596,7 @@ static struct thread * next_thread_to_run(void) {
         for (e = list_begin (&ready_list); e != list_end (&ready_list);
         		e = list_next (e)) {
             t = list_entry (e, struct thread, elem);
-            if (max->priority < t->priority) {
+            if (thread_get_tpriority(max) < thread_get_tpriority(t)) {
             	max = t;
             	max_e = e;
             }
@@ -667,6 +682,78 @@ static tid_t allocate_tid(void) {
     lock_release(&tid_lock);
 
     return tid;
+}
+
+// TODO new
+/*! Inserts the given priority into the given thread's donations_received
+    array. If there isn't sufficient space returns false, otherwise returns
+    true. */
+bool thread_donate_priority(int8_t priority, struct thread *recipient,
+		struct thread *donor) {
+	int i, ridx = -1, didx = -1;
+	enum intr_level old_level;
+
+	old_level = intr_disable();
+	for (i = 0; i < MAX_DONATIONS; i++) {
+		if ((recipient->donations_received)[i].priority == PRIORITY_SENTINEL) {
+			ridx = i;
+			break;
+		}
+	}
+	for (i = 0; i < MAX_DONATIONS; i++) {
+		if ((donor->donations_given)[i].priority == PRIORITY_SENTINEL &&
+				(donor->donations_given)[i].thread == NULL) {
+			didx = i;
+			break;
+		}
+	}
+	if (ridx == -1 || didx == -1)
+		return false;
+	donor->donations_given[didx].priority = priority;
+	donor->donations_given[didx].thread = recipient;
+	recipient->donations_received[ridx].priority = priority;
+	recipient->donations_received[ridx].thread = donor;
+	intr_set_level(old_level);
+	return true;
+}
+
+/*! TODO */
+bool thread_giveback_priority(struct thread *recipient) {
+	int i;
+	int8_t max_priority, didx = -1, ridx = -1;
+	struct thread *donor;
+	enum intr_level old_level;
+
+	old_level = intr_disable();
+
+	max_priority = thread_get_tpriority(recipient);
+	for (i = 0; i < MAX_DONATIONS; i++) {
+		if ((recipient->donations_received)[i].priority == max_priority) {
+			donor = (recipient->donations_received)[i].thread;
+			ridx = i;
+			break;
+		}
+	}
+	if (ridx == -1 || donor == NULL)
+		return false;
+	for (i = 0; i < MAX_DONATIONS; i++) {
+		if ((donor->donations_given)[i].thread == recipient &&
+				(donor->donations_given)[i].priority == max_priority) {
+			didx = i;
+			break;
+		}
+	}
+	if (didx == -1)
+		return false;
+
+	donor->donations_given[didx].priority = PRIORITY_SENTINEL;
+	donor->donations_given[didx].thread = NULL;
+	recipient->donations_received[ridx].priority = PRIORITY_SENTINEL;
+	recipient->donations_received[ridx].thread = NULL;
+
+	intr_set_level(old_level);
+
+	return true;
 }
 
 /*! Offset of `stack' member within `struct thread'.

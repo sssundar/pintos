@@ -9,6 +9,7 @@
 #include <debug.h>
 #include <list.h>
 #include <stdint.h>
+#include "threads/synch.h"
 
 /*! States in a thread's life cycle. */
 enum thread_status {
@@ -27,6 +28,14 @@ typedef int tid_t;
 #define PRI_MIN 0                       /*!< Lowest priority. */
 #define PRI_DEFAULT 31                  /*!< Default priority. */
 #define PRI_MAX 63                      /*!< Highest priority. */
+#define MAX_DONATIONS 32				/*!< Max donations tracked. */
+#define PRIORITY_SENTINEL -1		    /*!< For unset priorities. */
+
+/*! Tracks a donation amount and recipient. */
+typedef struct donation_given {
+	struct thread *thread;
+	int8_t priority;
+} donation_given;
 
 /*! A kernel thread or user process.
 
@@ -97,7 +106,7 @@ struct thread {
     uint8_t *stack;                     /*!< Saved stack pointer. */
     int priority;                       /*!< Priority. */
     int nice;                           /*!< Niceness. */
-	  int recent_cpu;                     /*!< Fixed point number for recent
+	int recent_cpu;                     /*!< Fixed point number for recent
 										 time use of CPU. */
     struct list_elem allelem;           /*!< List element for all threads list. */
 
@@ -117,6 +126,21 @@ struct thread {
     uint32_t *pagedir;                  /*!< Page directory. */
     /**@{*/
 #endif
+
+    // TODO new
+    /*! List of all donations received; each element is a pointer to the
+        donor as well as the priority received so that it can be
+        recalled. 160 total bytes. Thread pointers and priority values need
+        to be initialized to sentinel values of NULL and -1, respectively.
+        User needs to do linear search for desired element. */
+    donation_given donations_received[MAX_DONATIONS];
+
+    /*! List of all donations given; each element is a pointer to the recipient
+        of the donation as well as the priority given so that it can be
+        recalled. 160 total bytes. Thread pointers and priority values need
+        to be initialized to sentinel values of NULL and -1, respectively.
+        User needs to do linear search for desired element. */
+    donation_given donations_given[MAX_DONATIONS];
 
     /*! Owned by thread.c. */
     /**@{*/
@@ -153,6 +177,7 @@ typedef void thread_action_func(struct thread *t, void *aux);
 
 void thread_foreach(thread_action_func *, void *);
 
+int thread_get_tpriority(struct thread *t);
 int thread_get_priority(void);
 void thread_set_priority(int);
 
@@ -160,6 +185,11 @@ int thread_get_nice(void);
 void thread_set_nice(int);
 int thread_get_recent_cpu(void);
 int thread_get_load_avg(void);
+
+bool thread_donate_priority(int8_t priority, struct thread *recipient,
+		struct thread *donor);
+
+bool thread_giveback_priority(struct thread *recipient);
 
 #endif /* threads/thread.h */
 

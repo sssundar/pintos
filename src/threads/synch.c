@@ -123,7 +123,7 @@ void sema_up(struct semaphore *sema) {
         for (e = list_begin (&sema->waiters); e != list_end (&sema->waiters);
         		e = list_next (e)) {
             t = list_entry (e, struct thread, elem);
-            if (max->priority < t->priority) {
+            if (thread_get_tpriority(max) < thread_get_tpriority(t)) {
             	max = t;
             	max_e = e;
             }
@@ -138,7 +138,7 @@ void sema_up(struct semaphore *sema) {
     sema->value++;
     intr_set_level(old_level);
 
-    if (t != NULL && t->priority > thread_current()->priority) {
+    if (t != NULL && thread_get_tpriority(t) > thread_get_priority()) {
     	thread_yield();
     }
 }
@@ -179,16 +179,16 @@ static void sema_test_helper(void *sema_) {
     is, it is an error for the thread currently holding a lock to
     try to acquire that lock.
 
-   A lock is a specialization of a semaphore with an initial
-   value of 1.  The difference between a lock and such a
-   semaphore is twofold.  First, a semaphore can have a value
-   greater than 1, but a lock can only be owned by a single
-   thread at a time.  Second, a semaphore does not have an owner,
-   meaning that one thread can "down" the semaphore and then
-   another one "up" it, but with a lock the same thread must both
-   acquire and release it.  When these restrictions prove
-   onerous, it's a good sign that a semaphore should be used,
-   instead of a lock. */
+    A lock is a specialization of a semaphore with an initial
+    value of 1.  The difference between a lock and such a
+    semaphore is twofold.  First, a semaphore can have a value
+    greater than 1, but a lock can only be owned by a single
+    thread at a time.  Second, a semaphore does not have an owner,
+    meaning that one thread can "down" the semaphore and then
+    another one "up" it, but with a lock the same thread must both
+    acquire and release it.  When these restrictions prove
+    onerous, it's a good sign that a semaphore should be used,
+    instead of a lock. */
 void lock_init(struct lock *lock) {
     ASSERT(lock != NULL);
 
@@ -205,11 +205,31 @@ void lock_init(struct lock *lock) {
     interrupts disabled, but interrupts will be turned back on if
     we need to sleep. */
 void lock_acquire(struct lock *lock) {
+	struct thread *prev_holder;
+	enum intr_level old_level;
+
     ASSERT(lock != NULL);
     ASSERT(!intr_context());
     ASSERT(!lock_held_by_current_thread(lock));
 
-    sema_down(&lock->semaphore);
+    // TODO new
+
+    prev_holder = lock->holder;
+    // If the lock owner's priority is lower than ours then donate.
+    if (prev_holder != NULL && thread_get_tpriority(prev_holder) <
+    		thread_get_priority()) {
+    	old_level = intr_disable();
+    	ASSERT (thread_donate_priority ((int8_t)(thread_get_priority()),
+    			prev_holder, thread_current()));
+    	// thread_yield(); // TODO neeed?
+    	sema_down(&lock->semaphore);
+    	intr_set_level(old_level);
+    }
+    else {
+    	sema_down(&lock->semaphore);
+    }
+
+    // TODO end new, old thing was single line: sema_down(&lock->semaphore);
     lock->holder = thread_current();
 }
 
@@ -241,6 +261,8 @@ void lock_release(struct lock *lock) {
     ASSERT(lock != NULL);
     ASSERT(lock_held_by_current_thread(lock));
 
+    if (thread_get_priority() != thread_current()->priority)
+    	thread_giveback_priority(lock->holder);
     lock->holder = NULL;
     sema_up(&lock->semaphore);
 }
@@ -342,13 +364,13 @@ void cond_signal(struct condition *cond, struct lock *lock UNUSED) {
             			f != list_end (&((s->semaphore).waiters));
             			f = list_next (f)) {
             		t = list_entry (f, struct thread, elem);
-            		if (tmax->priority < t->priority) {
+            		if (thread_get_tpriority(tmax) < thread_get_tpriority(t)) {
             			tmax = t;
             			max_t = f;
             		}
             	}
             }
-            if (best->priority < tmax->priority) {
+            if (thread_get_tpriority(best) < thread_get_tpriority(tmax)) {
             	best = tmax;
             	max_s = e;
             }
