@@ -369,7 +369,7 @@ int thread_get_tpriority(struct thread *t) {
 }
 
 int thread_get_priority(void) {
-	if(mlfqs){
+	if(thread_mlfqs){
 		return thread_current()->priority;
 	}
 	return thread_get_tpriority (thread_current());
@@ -412,7 +412,7 @@ int thread_get_recent_cpu(void) {
 	int f = 1<<14;
 	struct thread *t;
 
-	t = current_thread();
+	t = thread_current();
 
 	if (t->recent_cpu >= 0){
 		t->recent_cpu = (t->recent_cpu + f/2)/f;
