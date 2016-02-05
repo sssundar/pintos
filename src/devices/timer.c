@@ -222,7 +222,7 @@ static void timer_interrupt(struct intr_frame *args UNUSED) {
 
 	if(thread_mlfqs){
 		/* recent_cpu updated each timer tick. */
-		thread_current()->recent_cpu += 1*f;
+		thread_current()->recent_cpu=thread_current()->recent_cpu + int_to_fp(1);
 
 		if(ticks % TIMER_FREQ == 0){
 			/* Calculate the load_avg and every thread's recent_cpu*/
