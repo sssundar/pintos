@@ -82,6 +82,12 @@ bool less_sort (const struct list_elem *a,
 				void *aux UNUSED);
 
 
+int fp_mult(int x, int y);
+int fp_div(int x, int y);
+int fp_convert(int x);
+int fp_add(int x, int y);
+int int_to_fp(int x);
+
 int load_avg;
 
 /*! Initializes the threading system by transforming the code
@@ -343,6 +349,10 @@ void thread_set_priority(int new_priority) {
 	struct thread *max, *t;
 	enum intr_level old_level;
 
+	if(thread_mlfqs){
+		return;
+	}
+
 	// Change this thread's priority.
 	thread_current()->priority = new_priority;
 
@@ -375,11 +385,9 @@ int thread_get_tpriority(struct thread *t) {
 }
 
 int thread_get_priority(void) {
-	/*
 	if(thread_mlfqs){
 		return thread_current()->priority;
 	}
-	*/
 	return thread_get_tpriority (thread_current());
 }
 
@@ -400,36 +408,56 @@ int thread_get_nice(void) {
     return thread_current()->nice;
 }
 
+
+int fp_mult(int x, int y){ 
+	int f = 1<<14;
+	return ((int64_t)(x)) * (y) / (f);
+}
+int fp_div(int x, int y){ 
+	int f = 1<<14;
+	return ((int64_t)(x)) * (f) / (y);
+}
+int fp_convert(int x){
+	int f = 1<<14;
+	
+	if (x >= 0){
+		return (x + f/2)/f;
+	}
+	else {
+		return (x - f/2)/f;
+	}
+}
+int fp_add(int x, int y){
+	int f = 1<<14;
+	return x + y*f;
+}
+int int_to_fp(int x){
+	int f = 1<<14;
+	return x*f;
+}
+
 /*! Returns 100 times the system load average. */
 int thread_get_load_avg(void) {
-	int f = 1 << 14;
 
-	// Convert load_avg to the nearest int.
+	/* Convert load_avg to the nearest int.
 	if (load_avg >= 0){
 		load_avg = (load_avg + f/2)/f;
 	}
 	else {
 		load_avg = (load_avg - f/2)/f;
 	}
+	*/
 
 	// Return value.
-    return 100*load_avg;
+    return fp_convert(100*load_avg);
 }
 /*! Returns 100 times the current thread's recent_cpu value. */
 int thread_get_recent_cpu(void) {
-	int f = 1<<14;
 	struct thread *t;
 
 	t = thread_current();
-
-	if (t->recent_cpu >= 0){
-		t->recent_cpu = (t->recent_cpu + f/2)/f;
-	}
-	else {
-		t->recent_cpu = (t->recent_cpu - f/2)/f;
-	}
-
-    return 100*t->recent_cpu;
+	
+    return fp_convert(100*t->recent_cpu);
 }
 
 /* Calculates the new load_avg value. */
@@ -440,39 +468,47 @@ void load_avg_calculate(void){
 		ready_threads += 1;
 	}
 
-	int f = 1 << 14;
-	load_avg = ((int64_t)((59*f)/60))*(load_avg)/f + 
-		(1*f/60)*ready_threads;
-
+	// int f = 1 << 14;
+	/*
+	load_avg = (((int64_t)((59*f)/60))*(load_avg))/(f) + 
+		((1*f/60)*ready_threads);
+	*/
+	load_avg = fp_mult(int_to_fp(59)/60, load_avg) + \
+		int_to_fp(1)/60 * ready_threads;
 }
 
 /* Calculates the new recent_cpu value for a thread t.*/
 void recent_cpu_calculate(struct thread *t){
 	ASSERT(is_thread(t));
 	
-	int f = 1 << 14;
+	// int f = 1 << 14;
 
 	if (t == idle_thread){
-		// does an idle thread have this initialized to 0?
-		t->recent_cpu = t->recent_cpu;
+		return;
 	}
 	
+	/*
 	int factor = ((((int64_t)(2*load_avg))*f)/(2*load_avg + 1*f));
 	t->recent_cpu = (((int64_t)(factor))*t->recent_cpu)/f + f*t->nice;
+	*/
+
+	t->recent_cpu = fp_add(fp_mult(fp_div(2*load_avg, 
+										  fp_add(2*load_avg, 1)), 
+								   t->recent_cpu), t->nice);
 }
 
 /* Calculates the new priority value for a thread t.*/
 void priority_calculate(struct thread *t){
 	ASSERT(is_thread(t));
 	
-	int f = 1 << 14;
-	int irecent_cpu;
+	// int f = 1 << 14;
+	// int irecent_cpu;
 
 	if (t == idle_thread){		
 		return;
 	}
 
-	/* Round real number recent_cpu to the nearest integer. */
+	/* Round real number recent_cpu to the nearest integer.
 	if (t->recent_cpu >= 0){
 		irecent_cpu = (t->recent_cpu + f/2)/f;
 	}
@@ -481,6 +517,9 @@ void priority_calculate(struct thread *t){
 	}
 
 	t->priority = PRI_MAX - (irecent_cpu/4) - 2*t->nice;
+	*/
+
+	t->priority = PRI_MAX - fp_convert(t->recent_cpu / 4) - 2 * t->nice;
 
 	/* Limit priorities between PRI_MIN and PRI_MAX. */
 	if (t->priority > PRI_MAX){
