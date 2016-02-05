@@ -215,7 +215,6 @@ void timer_print_stats(void) {
 static void timer_interrupt(struct intr_frame *args UNUSED) {
     struct thread *thread_walker;
     struct list_elem *list_walker;
-	int f = 1<<14;
 
     ticks++;
     thread_tick();    
@@ -263,7 +262,8 @@ static void timer_interrupt(struct intr_frame *args UNUSED) {
         do {            
             thread_walker = list_entry(list_walker, struct thread, elem);
             thread_walker->ticks_remaining--;
-            if (thread_walker->ticks_remaining <= 0) {
+            if (thread_walker->ticks_remaining <= 0
+            		&& thread_walker->status == THREAD_BLOCKED) {
                 /*  ==TODO== Could extend thread_unblock() to handle multiple
                     threads at once (e.g. if we spliced out a segment rather
                     than removing one at a time), but let's wait on Hamik's
