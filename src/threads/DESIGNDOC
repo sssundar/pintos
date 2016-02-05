@@ -50,14 +50,14 @@ which parts.
    Make sure that each member's total time is listed.
 
 Hamik Mukelyan: 38
-Sushant Sundaresh: TODO
+Sushant Sundaresh: 31
 Dave Luo: TODO
 
 >> L2: What did each team member focus on for this assignment?  Keep
    descriptions to 25-30 words or less.
    
 Hamik Mukelyan: wrote all parts of the priority scheduler.
-Sushant Sundaresh: TODO
+Sushant Sundaresh: alarm clock
 Dave Luo: TODO
 
 			     ALARM CLOCK
@@ -69,38 +69,71 @@ Dave Luo: TODO
 >> `struct' member, global or static variable, `typedef', or
 >> enumeration.  Identify the purpose of each in 25 words or less.
 
-TODO
+/*!< Tick down-counter for this thread, as seen by timer_sleep */
+struct thread
+  int64_t ticks_remaining;           
+
+/*  List of threads blocked in sleep. 
+    Initialized by timer_init(). 
+    Sorted on ticks_remaining, smallest to largest */
+static struct list timed_nappers;    
 
 ---- ALGORITHMS ----
 
 >> A2: Briefly describe what happens in a call to timer_sleep(),
 >> including the effects of the timer interrupt handler.
 
-TODO
+The current thread's ticks_remaining is set, then interrupts are disabled
+and the thread is added to the sleepers list preserving its ordering.
+The thread is then blocked. The timer interrupt handler could technically
+interrupt between setting ticks_remaining and placing the thread in the 
+sleepers list which ticks down its members on interrupts; it'd be better
+if these were reordered, but it makes no difference to the test cases.
 
 >> A3: What steps are taken to minimize the amount of time spent in
 >> the timer interrupt handler?
 
-TODO
+Well, only one: moving the tick assignment outside the interrupt block.
+It means ticks requested slept is a lower bound. There's not much else I can
+move out; interrupts can preempt so list operations need to be atomic.
 
 ---- SYNCHRONIZATION ----
 
 >> A4: How are race conditions avoided when multiple threads call
 >> timer_sleep() simultaneously?
 
-TODO
+timer_sleep maintains the tick-down counter in the thread struct of all
+threads, so this does not cause a race condition as long as list accesses
+are non-preemptible.
 
 >> A5: How are race conditions avoided when a timer interrupt occurs
 >> during a call to timer_sleep()?
 
-TODO
+By enclosing list accesses in interrupt-disabled blocks.
 
 ---- RATIONALE ----
 
 >> A6: Why did you choose this design?  In what ways is it superior to
 >> another design you considered?
 
-TODO
+I made only three decisions here: 
+  to keep sleepers in a single linear list sorted by time remaining, 
+  to traverse this list one item at a time decrementing the tick counter
+  to push things back to the ready queue one at a time
+
+The first absolutely will not scale. 
+
+The second could have been avoided by keeping the final tick count and comparing
+against it, in which case I could stop traversing the list the moment I hit a 
+tick count greater than the current tick count. It wouldn't help me in the worst
+case. 
+
+The third would save O(N) pointer reassignment operations. It's non-trivial
+when every clock counts. 
+
+The reason I didn't fix any of these is because the test alarm-simultaneous
+which was our last failure, failed BEFORE any of these had a chance to come into
+play. 
 
 			 PRIORITY SCHEDULING
 			 ===================
