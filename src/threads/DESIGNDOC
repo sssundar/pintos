@@ -13,7 +13,7 @@ Sushant Sundaresh <sushant.sundaresh@gmail.com>
 Dave Luo <dluo@caltech.edu>
 
 >> Specify how many late tokens you are using on this assignment:  
-TODO
+1
 
 >> What is the Git repository and commit hash for your submission?
    (You only need to include the commit-hash in the file you submit
@@ -346,7 +346,11 @@ It's pretty ugly but it's reasonably fast and works.
 >> `struct' member, global or static variable, `typedef', or
 >> enumeration.  Identify the purpose of each in 25 words or less.
 
-TODO
+
+thread.h: recent_cpu: recent_cpu in thread struct, recent_cpu of thread.
+thread.h: nice: nice in thread struct, niceness of thread.
+thread.c: int load_avg: global variable declared in thread.c 
+		  keeping track of updated load_avg every second.
 
 ---- ALGORITHMS ----
 
@@ -355,13 +359,22 @@ TODO
 >> scheduling decision and the priority and recent_cpu values for each
 >> thread after each given number of timer ticks:
 
-TODO
+Each thread has a priority, between 0 and 63, 
+recalculated every fourth tick:
+priority = PRI_MAX - (recent_cpu / 4) - (nice * 2).
+
+On each timer tick, the running thread's recent_cpu is incremented by 1. 
+Once per second, every thread's recent_cpu is updated:
+recent_cpu = (2*load_avg)/(2*load_avg + 1) * recent_cpu + nice.
+
+load_avg initialized to 0 and recalculated once per second as follows:
+load_avg = (59/60)*load_avg + (1/60)*ready_threads.
 
 timer  recent_cpu    priority   thread
 ticks   A   B   C   A   B   C   to run
 -----  --  --  --  --  --  --   ------
- 0
- 4
+ 0      0   1   2  63  61  59     A
+ 4		
  8
 12
 16

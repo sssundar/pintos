@@ -29,6 +29,9 @@ static struct list timed_nappers;
 /*! Number of loops per timer tick.  Initialized by timer_calibrate(). */
 static unsigned loops_per_tick;
 
+extern struct list all_list;
+extern struct list ready_list;
+
 static intr_handler_func timer_interrupt;
 static bool too_many_loops(unsigned loops);
 static void busy_wait(int64_t loops);
@@ -37,6 +40,10 @@ static void real_time_delay(int64_t num, int32_t denom);
 static bool less_ticks (const struct list_elem *a, 
                         const struct list_elem* b, 
                         void *aux UNUSED);
+bool less_sort (const struct list_elem *a, 
+				const struct list_elem* b, 
+				void *aux UNUSED);
+
 
 /*! Sets up the timer to interrupt TIMER_FREQ times per second,
     and registers the corresponding interrupt. Initializes the
@@ -100,6 +107,24 @@ bool less_ticks (   const struct list_elem *a, const struct list_elem* b,
     b_ticks_remaining = t->ticks_remaining;
 
     if (a_ticks_remaining < b_ticks_remaining) {
+        return true;
+    } 
+    return false;    
+}
+
+/*  Ignores aux, and performs an arithmetic less than on the priorities 
+	remaining in the thread structures containing list_elem's a, b. 
+	Returns true if a's priority is greater than b's priority, false 
+	otherwise. */
+bool less_sort (const struct list_elem *a, const struct list_elem* b, 
+                    void *aux UNUSED) {
+    struct thread *t;
+	struct thread *s;
+
+    t = list_entry (a, struct thread, elem);
+    s = list_entry (b, struct thread, elem);
+
+    if (t->priority > s->priority) {
         return true;
     } 
     return false;    
@@ -190,9 +215,42 @@ void timer_print_stats(void) {
 static void timer_interrupt(struct intr_frame *args UNUSED) {
     struct thread *thread_walker;
     struct list_elem *list_walker;
+	int f = 1<<14;
 
     ticks++;
     thread_tick();    
+
+	if(thread_mlfqs){
+		/* recent_cpu updated each timer tick. */
+		thread_current()->recent_cpu += 1*f;
+
+		if(ticks % TIMER_FREQ == 0){
+			/* Calculate the load_avg and every thread's recent_cpu*/
+			load_avg_calculate();
+			
+			list_walker = list_begin(&all_list);
+			while(list_walker != list_end(&all_list)){
+				thread_walker = list_entry(list_walker, struct thread, 
+										   allelem);
+				recent_cpu_calculate(thread_walker);
+				list_walker = list_walker->next;
+			}
+		}
+
+		if (ticks % 4 == 0){
+			
+			list_walker = list_begin(&all_list);
+			while(list_walker != list_end(&all_list)){
+				thread_walker = list_entry(list_walker, struct thread, 
+										   allelem);
+				priority_calculate(thread_walker);
+				list_walker = list_walker->next;
+			}
+			/* Don't forget to sort the ready list. */
+			list_sort(&ready_list, less_sort, NULL);
+		}
+
+	}
         
     /*  Decrement all nappers' ticks_remaining (maintains min-sorting).
         Walk from the minimum (head->next) to the maximum (tail->prev).        

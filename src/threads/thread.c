@@ -22,11 +22,11 @@
 
 /*! List of processes in THREAD_READY state, that is, processes
     that are ready to run but not actually running. */
-static struct list ready_list;
+struct list ready_list;
 
 /*! List of all processes.  Processes are added to this list
     when they are first scheduled and removed when they exit. */
-static struct list all_list;
+struct list all_list;
 
 /*! Idle thread. */
 static struct thread *idle_thread;
@@ -75,6 +75,12 @@ static tid_t allocate_tid(void);
 void load_avg_calculate(void);
 void recent_cpu_calculate(struct thread *t);
 void priority_calculate(struct thread *t);
+
+
+bool less_sort (const struct list_elem *a, 
+				const struct list_elem* b, 
+				void *aux UNUSED);
+
 
 int load_avg;
 
@@ -244,7 +250,7 @@ void thread_unblock(struct thread *t) {
     old_level = intr_disable();
     ASSERT(t->status == THREAD_BLOCKED);
     list_push_back(&ready_list, &t->elem);
-	// CALL SORT FUNCTION AFTER PUSHING TO READY_LIST!!!!
+	list_sort(&ready_list, less_sort, NULL);
     t->status = THREAD_READY;
     intr_set_level(old_level);
 
@@ -308,7 +314,7 @@ void thread_yield(void) {
     old_level = intr_disable();
     if (cur != idle_thread) {
         list_push_back(&ready_list, &cur->elem);
-		// SORT AFTER PUSHING ELEM ONTO READY_LIST!!!
+		list_sort(&ready_list, less_sort, NULL);
 	}
     cur->status = THREAD_READY;
     schedule();
@@ -369,9 +375,11 @@ int thread_get_tpriority(struct thread *t) {
 }
 
 int thread_get_priority(void) {
+	/*
 	if(thread_mlfqs){
 		return thread_current()->priority;
 	}
+	*/
 	return thread_get_tpriority (thread_current());
 }
 
@@ -569,7 +577,8 @@ static void init_thread(struct thread *t, const char *name, int priority) {
     t->magic = THREAD_MAGIC;
 
     old_level = intr_disable();    
-    list_push_back(&all_list, &t->allelem);    
+    list_push_back(&all_list, &t->allelem);
+	list_sort(&all_list, less_sort, NULL);
     intr_set_level(old_level);
 
 	/* If running advanced scheduler, default nice to 0, 

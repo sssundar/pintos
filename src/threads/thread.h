@@ -188,6 +188,10 @@ void thread_set_nice(int);
 int thread_get_recent_cpu(void);
 int thread_get_load_avg(void);
 
+void load_avg_calculate(void);
+void recent_cpu_calculate(struct thread *t);
+void priority_calculate(struct thread *t);
+
 bool thread_donate_priority(int8_t priority, struct thread *recipient,
 		struct thread *donor, struct lock *the_lock, int nesting);
 
