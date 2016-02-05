@@ -192,6 +192,12 @@ void load_avg_calculate(void);
 void recent_cpu_calculate(struct thread *t);
 void priority_calculate(struct thread *t);
 
+int fp_mult(int x, int y);
+int fp_div(int x, int y);
+int fp_convert(int x);
+int fp_add(int x, int y);
+int int_to_fp(int x);
+
 bool thread_donate_priority(int8_t priority, struct thread *recipient,
 		struct thread *donor, struct lock *the_lock, int nesting);
 
