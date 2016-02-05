@@ -56,7 +56,8 @@ Dave Luo: TODO
 >> L2: What did each team member focus on for this assignment?  Keep
    descriptions to 25-30 words or less.
    
-Hamik Mukelyan: wrote all parts of the priority scheduler.
+Hamik Mukelyan: wrote all parts of the priority scheduler. Spent several
+  hours debugging advanced scheduler. The fix was super simple though.
 Sushant Sundaresh: TODO
 Dave Luo: TODO
 
