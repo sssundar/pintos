@@ -35,7 +35,7 @@ https://tssurya.wordpress.com/tag/priority-donation/
   Note that the above link contained a link that looked A LOT like the design
   document for this class, so we assumed it contained answers and didn't
   read it.
-TODO
+
 
 			      THREADS
 			      =======
@@ -50,16 +50,16 @@ which parts.
    Make sure that each member's total time is listed.
 
 Hamik Mukelyan: 38
-Sushant Sundaresh: TODO
-Dave Luo: TODO
+Sushant Sundaresh: 31
+Dave Luo: 30
 
 >> L2: What did each team member focus on for this assignment?  Keep
    descriptions to 25-30 words or less.
    
 Hamik Mukelyan: wrote all parts of the priority scheduler. Spent several
   hours debugging advanced scheduler. The fix was super simple though.
-Sushant Sundaresh: TODO
-Dave Luo: TODO
+Sushant Sundaresh: Alarm clock
+Dave Luo: Advanced Scheduler
 
 			     ALARM CLOCK
 			     ===========
@@ -70,38 +70,71 @@ Dave Luo: TODO
 >> `struct' member, global or static variable, `typedef', or
 >> enumeration.  Identify the purpose of each in 25 words or less.
 
-TODO
+/*!< Tick down-counter for this thread, as seen by timer_sleep */
+struct thread
+  int64_t ticks_remaining;           
+
+/*  List of threads blocked in sleep. 
+    Initialized by timer_init(). 
+    Sorted on ticks_remaining, smallest to largest */
+static struct list timed_nappers;    
 
 ---- ALGORITHMS ----
 
 >> A2: Briefly describe what happens in a call to timer_sleep(),
 >> including the effects of the timer interrupt handler.
 
-TODO
+The current thread's ticks_remaining is set, then interrupts are disabled
+and the thread is added to the sleepers list preserving its ordering.
+The thread is then blocked. The timer interrupt handler could technically
+interrupt between setting ticks_remaining and placing the thread in the 
+sleepers list which ticks down its members on interrupts; it'd be better
+if these were reordered, but it makes no difference to the test cases.
 
 >> A3: What steps are taken to minimize the amount of time spent in
 >> the timer interrupt handler?
 
-TODO
+Well, only one: moving the tick assignment outside the interrupt block.
+It means ticks requested slept is a lower bound. There's not much else I can
+move out; interrupts can preempt so list operations need to be atomic.
 
 ---- SYNCHRONIZATION ----
 
 >> A4: How are race conditions avoided when multiple threads call
 >> timer_sleep() simultaneously?
 
-TODO
+timer_sleep maintains the tick-down counter in the thread struct of all
+threads, so this does not cause a race condition as long as list accesses
+are non-preemptible.
 
 >> A5: How are race conditions avoided when a timer interrupt occurs
 >> during a call to timer_sleep()?
 
-TODO
+By enclosing list accesses in interrupt-disabled blocks.
 
 ---- RATIONALE ----
 
 >> A6: Why did you choose this design?  In what ways is it superior to
 >> another design you considered?
 
-TODO
+I made only three decisions here: 
+  to keep sleepers in a single linear list sorted by time remaining, 
+  to traverse this list one item at a time decrementing the tick counter
+  to push things back to the ready queue one at a time
+
+The first absolutely will not scale. 
+
+The second could have been avoided by keeping the final tick count and comparing
+against it, in which case I could stop traversing the list the moment I hit a 
+tick count greater than the current tick count. It wouldn't help me in the worst
+case. 
+
+The third would save O(N) pointer reassignment operations. It's non-trivial
+when every clock counts. 
+
+The reason I didn't fix any of these is because the test alarm-simultaneous
+which was our last failure, failed BEFORE any of these had a chance to come into
+play. 
 
 			 PRIORITY SCHEDULING
 			 ===================
@@ -360,41 +393,49 @@ thread.c: int load_avg: global variable declared in thread.c
 >> scheduling decision and the priority and recent_cpu values for each
 >> thread after each given number of timer ticks:
 
-Each thread has a priority, between 0 and 63, 
-recalculated every fourth tick:
-priority = PRI_MAX - (recent_cpu / 4) - (nice * 2).
-
-On each timer tick, the running thread's recent_cpu is incremented by 1. 
-Once per second, every thread's recent_cpu is updated:
-recent_cpu = (2*load_avg)/(2*load_avg + 1) * recent_cpu + nice.
-
-load_avg initialized to 0 and recalculated once per second as follows:
-load_avg = (59/60)*load_avg + (1/60)*ready_threads.
-
 timer  recent_cpu    priority   thread
 ticks   A   B   C   A   B   C   to run
 -----  --  --  --  --  --  --   ------
- 0      0   1   2  63  61  59     A
- 4		
- 8
-12
-16
-20
-24
-28
-32
-36
+ 0      0   0   0  63  61  59     A
+ 4		4	0	0  62  61  59	  A
+ 8		8 	0	0  61  61  59	  B
+12		8	4	0  61  60  59	  A	
+16		12	4	0  60  60  59	  B
+20		12	8	0  60  59  59	  A
+24		16	8	0  59  59  59	  B
+28		16 	12	0  59  58  59	  C	
+32		16	12	4  59  58  58	  A
+36		20	12	4  58  58  58	  B
+
+
+Priority, between 0 and 63, recalculated every fourth tick:
+priority = PRI_MAX - (recent_cpu / 4) - (nice * 2).
+
+Each timer tick, the running thread's recent_cpu is incremented by 1. 
+recent_cpu = (2*load_avg)/(2*load_avg + 1) * recent_cpu + nice.
 
 >> C3: Did any ambiguities in the scheduler specification make values
 >> in the table uncertain?  If so, what rule did you use to resolve
 >> them?  Does this match the behavior of your scheduler?
 
-TODO
+Some of the threads eventually have the same priority, so we do not know 
+which of them to choose. Our rule is to choose to run the thread with 
+the highest priority which has not run in the longest time compared to 
+the other threads with which it shares it priority.
+
+This matches the behaviour of our scheduler, because we use 
+list_insert_ordered to ensure threads run in a round robin order.
 
 >> C4: How is the way you divided the cost of scheduling between code
 >> inside and outside interrupt context likely to affect performance?
 
-TODO
+In the interrupt context, we recalculate the priorities for every 
+single thread, and then order the ready_list once they have been 
+calculated. This only requires one sort at the end, and is more 
+efficient compared to if we were to insert into the ready list in 
+the right order every time we updated a priority for a thread. The 
+other calculations of load_avg, nice, and recent_cpu are simple 
+enought to not drastically affect performance.
 
 ---- RATIONALE ----
 
@@ -403,7 +444,9 @@ TODO
 >> time to work on this part of the project, how might you choose to
 >> refine or improve your design?
 
-TODO
+Implement 64 priority queues instead of constantly sorting the 
+ready queue. By eliminating constant sorting, we can insert into the 
+matching priority queue much faster than inserting in place.
 
 >> C6: The assignment explains arithmetic for fixed-point math in
 >> detail, but it leaves it open to you to implement it.  Why did you
@@ -412,7 +455,13 @@ TODO
 >> type and/or a set of functions or macros to manipulate fixed-point
 >> numbers, why did you do so?  If not, why not?
 
-TODO
+We just wrote a bunch of functions in both thread.c, and made them 
+available for use in timer.c also. Defining functions in thread.c meant 
+we could avoid making another header file just for fixed-point arithmetic.
+In addition, once the functions were created, we could avoid having a 
+bunch of nested parentheses and determining order of operations if we had 
+directly operated between the fixed-point arithmetic and integers. It 
+also results in clearer and more easily understandable code.
 
 			  SURVEY QUESTIONS
 			  ================
@@ -428,7 +477,8 @@ penalized.  We can't fix things until we know about them.  :-)
 
 The priority scheduler took FOREVER, but you already knew that. :-)
 
-TODO
+One bug in advanced_schedule was just solved by an extra condition in 
+an if-statement. :'(
 
 >> Did you find that working on a particular part of the assignment gave
 >> you greater insight into some aspect of OS design?
@@ -438,12 +488,12 @@ I understand threads, race conditions, and priority inversions much, much
 better now. I remember being slightly confused about the Pathfinder
 bug in CS24 but get it hardcore now.
 
-TODO
+I am now a master of fixed-point arithmetic...
 
 >> Were there any parts of the assignment that you felt were unnecessarily
 >> tedious or pointless?
 
-TODO
+No.
 
 >> Is there some particular fact or hint we should give students in
 >> future quarters to help them solve the problems?  Conversely, did you
@@ -452,14 +502,16 @@ TODO
 I didn't really understand anything until I read the tests. You say to read
 tests in the FAQ, but moving that up higher in the project would be helpful.
 
-TODO
+Say how to debug an individual test, a lot of it was just watching how 
+the make check ran, and figuring out what flags and in what order to run.
+
 
 >> Do you have any suggestions for the instructor and/or TAs to more
 >> effectively assist students, either for future quarters or the remaining
 >> projects?
 
-TODO
+Nope.
 
 >> Any other comments?
 
-TODO
+Nope.
