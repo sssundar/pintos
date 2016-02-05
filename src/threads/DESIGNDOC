@@ -35,7 +35,7 @@ https://tssurya.wordpress.com/tag/priority-donation/
   Note that the above link contained a link that looked A LOT like the design
   document for this class, so we assumed it contained answers and didn't
   read it.
-TODO
+
 
 			      THREADS
 			      =======
@@ -51,7 +51,7 @@ which parts.
 
 Hamik Mukelyan: 38
 Sushant Sundaresh: 31
-Dave Luo: TODO
+Dave Luo: 30
 
 >> L2: What did each team member focus on for this assignment?  Keep
    descriptions to 25-30 words or less.
@@ -59,7 +59,7 @@ Dave Luo: TODO
 Hamik Mukelyan: wrote all parts of the priority scheduler. Spent several
   hours debugging advanced scheduler. The fix was super simple though.
 Sushant Sundaresh: alarm clock
-Dave Luo: TODO
+Dave Luo: Advanced Scheduler
 
 			     ALARM CLOCK
 			     ===========
@@ -493,7 +493,7 @@ I am now a master of fixed-point arithmetic...
 >> Were there any parts of the assignment that you felt were unnecessarily
 >> tedious or pointless?
 
-TODO
+No.
 
 >> Is there some particular fact or hint we should give students in
 >> future quarters to help them solve the problems?  Conversely, did you
@@ -505,14 +505,13 @@ tests in the FAQ, but moving that up higher in the project would be helpful.
 Say how to debug an individual test, a lot of it was just watching how 
 the make check ran, and figuring out what flags and in what order to run.
 
-TODO
 
 >> Do you have any suggestions for the instructor and/or TAs to more
 >> effectively assist students, either for future quarters or the remaining
 >> projects?
 
-TODO
+Nope.
 
 >> Any other comments?
 
-TODO
+Nope.
