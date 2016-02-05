@@ -360,41 +360,49 @@ thread.c: int load_avg: global variable declared in thread.c
 >> scheduling decision and the priority and recent_cpu values for each
 >> thread after each given number of timer ticks:
 
-Each thread has a priority, between 0 and 63, 
-recalculated every fourth tick:
-priority = PRI_MAX - (recent_cpu / 4) - (nice * 2).
-
-On each timer tick, the running thread's recent_cpu is incremented by 1. 
-Once per second, every thread's recent_cpu is updated:
-recent_cpu = (2*load_avg)/(2*load_avg + 1) * recent_cpu + nice.
-
-load_avg initialized to 0 and recalculated once per second as follows:
-load_avg = (59/60)*load_avg + (1/60)*ready_threads.
-
 timer  recent_cpu    priority   thread
 ticks   A   B   C   A   B   C   to run
 -----  --  --  --  --  --  --   ------
- 0      0   1   2  63  61  59     A
- 4		
- 8
-12
-16
-20
-24
-28
-32
-36
+ 0      0   0   0  63  61  59     A
+ 4		4	0	0  62  61  59	  A
+ 8		8 	0	0  61  61  59	  B
+12		8	4	0  61  60  59	  A	
+16		12	4	0  60  60  59	  B
+20		12	8	0  60  59  59	  A
+24		16	8	0  59  59  59	  B
+28		16 	12	0  59  58  59	  C	
+32		16	12	4  59  58  58	  A
+36		20	12	4  58  58  58	  B
+
+
+Priority, between 0 and 63, recalculated every fourth tick:
+priority = PRI_MAX - (recent_cpu / 4) - (nice * 2).
+
+Each timer tick, the running thread's recent_cpu is incremented by 1. 
+recent_cpu = (2*load_avg)/(2*load_avg + 1) * recent_cpu + nice.
 
 >> C3: Did any ambiguities in the scheduler specification make values
 >> in the table uncertain?  If so, what rule did you use to resolve
 >> them?  Does this match the behavior of your scheduler?
 
-TODO
+Some of the threads eventually have the same priority, so we do not know 
+which of them to choose. Our rule is to choose to run the thread with 
+the highest priority which has not run in the longest time compared to 
+the other threads with which it shares it priority.
+
+This matches the behaviour of our scheduler, because we use 
+list_insert_ordered to ensure threads run in a round robin order.
 
 >> C4: How is the way you divided the cost of scheduling between code
 >> inside and outside interrupt context likely to affect performance?
 
-TODO
+In the interrupt context, we recalculate the priorities for every 
+single thread, and then order the ready_list once they have been 
+calculated. This only requires one sort at the end, and is more 
+efficient compared to if we were to insert into the ready list in 
+the right order every time we updated a priority for a thread. The 
+other calculations of load_avg, nice, and recent_cpu are simple 
+enought to not drastically affect performance.
 
 ---- RATIONALE ----
 
@@ -403,7 +411,9 @@ TODO
 >> time to work on this part of the project, how might you choose to
 >> refine or improve your design?
 
-TODO
+Implement 64 priority queues instead of constantly sorting the 
+ready queue. By eliminating constant sorting, we can insert into the 
+matching priority queue much faster than inserting in place.
 
 >> C6: The assignment explains arithmetic for fixed-point math in
 >> detail, but it leaves it open to you to implement it.  Why did you
@@ -412,7 +422,13 @@ TODO
 >> type and/or a set of functions or macros to manipulate fixed-point
 >> numbers, why did you do so?  If not, why not?
 
-TODO
+We just wrote a bunch of functions in both thread.c, and made them 
+available for use in timer.c also. Defining functions in thread.c meant 
+we could avoid making another header file just for fixed-point arithmetic.
+In addition, once the functions were created, we could avoid having a 
+bunch of nested parentheses and determining order of operations if we had 
+directly operated between the fixed-point arithmetic and integers. It 
+also results in clearer and more easily understandable code.
 
 			  SURVEY QUESTIONS
 			  ================
@@ -428,7 +444,8 @@ penalized.  We can't fix things until we know about them.  :-)
 
 The priority scheduler took FOREVER, but you already knew that. :-)
 
-TODO
+One bug in advanced_schedule was just solved by an extra condition in 
+an if-statement. :'(
 
 >> Did you find that working on a particular part of the assignment gave
 >> you greater insight into some aspect of OS design?
@@ -438,7 +455,7 @@ I understand threads, race conditions, and priority inversions much, much
 better now. I remember being slightly confused about the Pathfinder
 bug in CS24 but get it hardcore now.
 
-TODO
+I am now a master of fixed-point arithmetic...
 
 >> Were there any parts of the assignment that you felt were unnecessarily
 >> tedious or pointless?
@@ -451,6 +468,9 @@ TODO
 
 I didn't really understand anything until I read the tests. You say to read
 tests in the FAQ, but moving that up higher in the project would be helpful.
+
+Say how to debug an individual test, a lot of it was just watching how 
+the make check ran, and figuring out what flags and in what order to run.
 
 TODO
 
