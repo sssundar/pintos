@@ -109,6 +109,12 @@ struct thread {
     /**@{*/
     uint32_t *pagedir;                  /*!< Page directory. */
     /**@{*/
+
+    /*! Status passed by exit call. */
+    int status_on_exit;
+
+    /*! All the files that this thread has open. */
+    struct list files;
 #endif
 
     /*! Owned by thread.c. */

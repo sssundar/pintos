@@ -118,7 +118,7 @@ int main(void) {
     input_init();
 #ifdef USERPROG
     exception_init();
-    syscall_init();
+    sc_init();
 #endif
 
     /* Start thread scheduler and enable interrupts. */
