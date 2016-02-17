@@ -181,7 +181,7 @@ struct Elf32_Phdr {
 #define PF_R 4          /*!< Readable. */
 /*! @} */
 
-static bool setup_stack(void **esp);
+static bool setup_stack(void **esp, const char *file_name);
 static bool validate_segment(const struct Elf32_Phdr *, struct file *);
 static bool load_segment(struct file *file, off_t ofs, uint8_t *upage,
                          uint32_t read_bytes, uint32_t zero_bytes,
@@ -280,7 +280,7 @@ bool load(const char *file_name, void (**eip) (void), void **esp) {
     }
 
     /* Set up stack. */
-    if (!setup_stack(esp))
+    if (!setup_stack(esp, file_name))
         goto done;
 
     /* Start address. */
@@ -396,18 +396,67 @@ static bool load_segment(struct file *file, off_t ofs, uint8_t *upage,
 
 /*! Create a minimal stack by mapping a zeroed page at the top of
     user virtual memory. */
-static bool setup_stack(void **esp) {
+static bool setup_stack(void **esp, const char *file_name) {
     uint8_t *kpage;
+    int argc = 0;
     bool success = false;
+    char *fncopy, *token, *save_ptr;
+    char *start = (char *) PHYS_BASE;
+    char *ptr = (char *) *esp;
+    int i;
 
+    // Make a copy of FILE_NAME. Need a non-const one for tok'ing to work.
+    fncopy = (char *) palloc_get_page(0);
+    if (fncopy == NULL)
+        return false;
+    strlcpy(fncopy, file_name, PGSIZE);
+
+    // Setup the stack.
     kpage = palloc_get_page(PAL_USER | PAL_ZERO);
     if (kpage != NULL) {
         success = install_page(((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
-        if (success)
-            *esp = PHYS_BASE;
+        if (success) {
+
+            // TODO Temporary fix until argument passing is implemented
+            // *esp = PHYS_BASE - 12;
+
+            // Copy argv elements onto the stack as they're parsed out.
+            for (token = strtok_r(fncopy, " ", &save_ptr);
+                 token != NULL; token = strtok_r(NULL, " ", &save_ptr)) {
+
+                start = ptr - strlen(token) - 1;
+                strlcpy(start, token, strlen(token) + 1);
+                ptr = start;
+                argc++;
+            }
+
+            // Perform word alignment (round address down to nearest multiple
+            // of 4).
+            ptr = (char *) ((((unsigned int) ptr) / 4) * 4);
+
+            // Add in the pointers to the strings in the argv array.
+            char **vptr = (char **) ptr;
+            vptr--;
+            for (i = 0; i < argc; i++) {
+                *vptr = start;
+                start += strlen(start) + 1;
+                vptr--;
+            }
+
+            // Set up argv pointer, which is char **argv, and argc
+            *vptr = (char *) (vptr + 1);
+            vptr--;
+            *vptr = (char *) argc;
+
+            // The bogus return address.
+            vptr--;
+
+            *esp = (void *) vptr;
+        }
         else
             palloc_free_page(kpage);
     }
+    palloc_free_page((void *) fncopy);
     return success;
 }
 

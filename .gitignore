@@ -1,0 +1,14 @@
+cscope.files
+cscope.out
+TAGS
+tags
+doc
+.cproject
+.project
+a.out
+.DS_Store
+.project
+.cproject
+.autotools
+*.o
+*.d
