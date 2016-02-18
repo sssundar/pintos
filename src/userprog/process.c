@@ -16,6 +16,7 @@
 #include "threads/interrupt.h"
 #include "threads/palloc.h"
 #include "threads/thread.h"
+#include "threads/synch.h"
 #include "threads/vaddr.h"
 
 static thread_func start_process NO_RETURN;
@@ -36,8 +37,8 @@ tid_t process_execute(const char *file_name) {
         return TID_ERROR;
     strlcpy(fn_copy, file_name, PGSIZE);
 
-    /* Create a new thread to execute FILE_NAME. */
-    tid = thread_create(file_name, PRI_DEFAULT, start_process, fn_copy);
+    /* Create a new thread to execute FILE_NAME, and make sure it knows it's our child */    
+    tid = thread_create(file_name, PRI_DEFAULT, start_process, fn_copy, 1, &thread_current()->child_list);
     if (tid == TID_ERROR)
         palloc_free_page(fn_copy); 
     return tid;
@@ -77,10 +78,47 @@ static void start_process(void *file_name_) {
     process_wait() has already been successfully called for the given TID,
     returns -1 immediately, without waiting.
 
-    This function will be implemented in problem 2-2.  For now, it does
-    nothing. */
-int process_wait(tid_t child_tid UNUSED) {
-    return -1;
+    */
+int process_wait(tid_t child_tid) {
+    /* Search my child list for this child. If it exists, great. If not, return -1 */
+    struct thread *t = thread_current();
+    struct list_elem *elem = list_begin(&t->child_list);
+
+    bool found_tid = false;
+    struct thread *mychild;
+    enum intr_level old_level;
+    int result; 
+
+    tid_t this_childs_tid; 
+
+
+    while (elem != list_end(&t->child_list)) {        
+        mychild = list_entry(elem, struct thread, sibling_list);
+        this_childs_tid = mychild->tid;
+        if (this_childs_tid == child_tid) {
+            found_tid = true;
+            break;
+        }
+        elem = list_next(elem);
+    }
+
+    if (!found_tid) {
+        return -1; /* Possibly because of TID_ERROR, Child Termination, Child Already Waited Upon */
+    }
+
+    /* Down the sema of the child, i_am_done. Wait for it to call us back. */
+    old_level = intr_disable(); /* Disable interrupts so this process can't be terminated if we return */
+    sema_down(&mychild->i_am_done);
+
+    /* Check the status of the child */    
+    result = mychild->status_on_exit;
+
+    /* Snip out the child using pointers to both sides of child_list around the child, then 
+    allow the child to destroy itself at will. */
+    list_remove(elem);
+    sema_up(&mychild->may_i_die);    
+
+    intr_set_level(old_level);    
 }
 
 /*! Free the current process's resources. */
