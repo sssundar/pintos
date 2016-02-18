@@ -437,6 +437,8 @@ static bool setup_stack(void **esp, const char *file_name) {
             // TODO Temporary fix until argument passing is implemented
             //*esp = PHYS_BASE - 12;
 
+        	// TODO maybe need to write with kpage as the offset?
+
             // Copy argv elements onto the stack as they're parsed out.
             for (token = strtok_r(fncopy, " ", &save_ptr);
                  token != NULL; token = strtok_r(NULL, " ", &save_ptr)) {
