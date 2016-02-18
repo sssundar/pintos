@@ -169,7 +169,7 @@ int open(const char *file){
 	lock_acquire(&sys_lock);
 	if (!uptr_is_valid(file)) {
 		lock_release(&sys_lock);
-		return -1;
+		exit(-1);
 	}
 
 	if (!file) {
@@ -217,7 +217,7 @@ int write(int fd, const void *buffer, unsigned size) {
 
 	if (!uptr_is_valid(buffer)) {
 		lock_release(&sys_lock);
-		return -1;
+		exit(-1);
 	}
 
 	if (fd == STDOUT_FILENO){
@@ -259,9 +259,9 @@ int read(int fd, void *buffer, unsigned size){
 
 	lock_acquire (&sys_lock);
 
-	if (!uptr_is_valid(buffer)) {
+	if (!uptr_is_valid(buffer) || fd < 0) {
 		lock_release(&sys_lock);
-		return -1;
+		exit(-1);
 	}
 
 	// Reading from stdin.
@@ -366,7 +366,7 @@ bool create (const char *file, unsigned initial_size) {
 
 	if (!uptr_is_valid(file)) {
 		lock_release(&sys_lock);
-		return success;
+		exit(-1);
 	}
 
 	success = filesys_create(file, initial_size);
@@ -385,7 +385,7 @@ bool remove (const char *file) {
 
 	if (!uptr_is_valid(file)) {
 		lock_release(&sys_lock);
-		return success;
+		exit(-1);
 	}
 
 	// This function does exactly the same as filesys_remove, but to be
@@ -408,7 +408,7 @@ pid_t exec (const char *cmd_line) {
 
 	if (!uptr_is_valid(cmd_line)) {
 		lock_release(&sys_lock);
-		return -1;
+		exit(-1);
 	}
 	lock_release(&sys_lock);
 	tid = process_execute(cmd_line);
@@ -422,135 +422,3 @@ bool uptr_is_valid (const void *uptr) {
 	return uptr != NULL && is_user_vaddr(uptr) &&
 			pagedir_get_page(thread_current()->pagedir, uptr) != NULL;
 }
-
-#ifdef BLURGLE
-
-#include "userprog/syscall.h"
-#include "lib/user/syscall.h"
-#include "userprog/process.h"
-#include "lib/stdio.h"
-#include "lib/kernel/stdio.h"
-#include "lib/syscall-nr.h"
-#include "threads/interrupt.h"
-#include "threads/thread.h"
-#include "threads/init.h"
-#include "threads/vaddr.h"
-#include "threads/synch.h"
-#include "threads/malloc.h"
-#include "threads/palloc.h"
-#include "filesys/filesys.h"
-#include "filesys/file.h"
-#include "devices/input.h"
-#include "devices/shutdown.h"
-
-//----------------------------- Global variables ------------------------------
-
-struct lock sys_lock;
-
-// TODO important: it appears that when files are opened they are added to
-// THIS instead of the thread struct's file list.
-struct list file_list;
-
-//---------------------------- Function prototypes ----------------------------
-
-static void sc_handler(struct intr_frame *);
-void sc_init(void);
-
-//---------------------------- Function definitions ---------------------------
-
-struct fd_element {
-	int fd;
-	struct file *file;
-	struct list_elem  f_elem;
-	struct list_elem  l_elem;
-};
-
-void sc_init(void) {
-    intr_register_int(0x30, 3, INTR_ON, sc_handler, "syscall");
-}
-
-static void sc_handler(struct intr_frame *f){
-
-	/*
-    printf("system call!\n");
-    thread_exit();
-	*/
-	int *esp;
-
-	esp = f->esp;
-
-	// TODO sushant has some code to handle the stack pointer
-	int sc_n = *esp;
-	int sc_n1 = *(esp + 1);
-	int sc_n2 = *(esp + 2);
-	int sc_n3 = *(esp + 3);
-
-	/*
-	if (sc_n == SYS_WRITE){
-		f->eax = write(sc_n1, (void *) sc_n2, sc_n3);
-	}
-	else if (sc_n == SYS_OPEN){
-		f->eax = open((const char *) sc_n1);
-	}
-	else if (sc_n == SYS_READ){
-		f->eax = read(sc_n1, (void *) sc_n2, sc_n3);
-	}
-	else if (sc_n == SYS_FILESIZE){
-		f->eax = filesize(sc_n1);
-	}
-	else if (sc_n == SYS_SEEK){
-		seek(sc_n1, sc_n2);
-	}
-	else if (sc_n == SYS_TELL){
-		f->eax = tell(sc_n1);
-	}
-	else if (sc_n == SYS_CLOSE){
-		close(sc_n1);
-	}
-	else if (sc_n == SYS_HALT) {
-		halt();
-	}
-	else if (sc_n == SYS_EXIT) {
-		exit(sc_n1);
-	}
-	else if (sc_n == SYS_EXEC) {
-		f->eax = exec((const char *) sc_n1);
-	}
-	else if (sc_n == SYS_CREATE) {
-		f->eax = create((const char *) sc_n1, (unsigned) sc_n2);
-	}
-	else if (sc_n == SYS_REMOVE) {
-		f->eax = remove((const char *) sc_n1);
-	}
-	*/
-
-}
-
-
-
-
-int write(int fd, const void *buffer, unsigned size){
-	struct file *f;
-	struct fd_element *r;
-	struct list_elem *l;
-
-	lock_acquire(&sys_lock);
-	if (fd == STDOUT_FILENO){
-		putbuf(buffer, size);
-		lock_release(&sys_lock);
-		return size;
-	}
-	for (l = list_begin(&file_list);
-		 l != list_end(&file_list);
-		 l = list_next(l)){
-		r = list_entry(l, struct fd_element, l_elem);
-		if (r->fd == fd){
-			f = r->file;
-			lock_release(&sys_lock);
-			return file_write(f, buffer, size);
-		}
-	}
-	return -1;
-}
-
-#endif // BLURGLE
