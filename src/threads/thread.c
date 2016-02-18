@@ -466,6 +466,7 @@ static void init_thread(struct thread *t, const char *name, int priority,
     list_init(&(t->files));
     t->max_fd = 3; // This is the first available fd after debug, which is 2
     old_level = intr_disable();
+    t->voluntarily_exited = 0;
     list_push_back(&all_list, &t->allelem);
     /* Initialize process_wait() system call structures */
     list_init(&t->child_list);

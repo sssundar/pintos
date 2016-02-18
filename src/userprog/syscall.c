@@ -89,15 +89,25 @@ static void sc_handler(struct intr_frame *f) {
 	// Don't need to run these through uptr_is_valid b/c they're generated
 	// in the kernel.
 	// int *esp = f->esp;
-	int sc_n, sc_n1, sc_n2, sc_n3;
+	int sc_n, sc_n1, sc_n2, sc_n3, buffer_int;
 	// sc_n = *esp;
 	// sc_n1 = *(esp + 1);
 	// sc_n2 = *(esp + 2);
 	// sc_n3 = *(esp + 3);
-    get_user_quadbyte ((const uint8_t *) f->esp, &sc_n);
-    get_user_quadbyte ((const uint8_t *) (f->esp+4), &sc_n1);
-    get_user_quadbyte ((const uint8_t *) (f->esp+8), &sc_n2);
-    get_user_quadbyte ((const uint8_t *) (f->esp+12), &sc_n3);
+    
+	// get_user_quadbyte ((const uint8_t *) f->esp, &sc_n);
+ //    get_user_quadbyte ((const uint8_t *) (f->esp+4), &sc_n1);
+ //    get_user_quadbyte ((const uint8_t *) (f->esp+8), &sc_n2);
+ //    get_user_quadbyte ((const uint8_t *) (f->esp+12), &sc_n3);
+
+    if ( 	!get_user_quadbyte ((const uint8_t *) f->esp, &sc_n) 		|| 
+    		!get_user_quadbyte ((const uint8_t *) (f->esp+4), &sc_n1) 	|| 
+    		!get_user_quadbyte ((const uint8_t *) (f->esp+8), &sc_n2) 	|| 
+    		!get_user_quadbyte ((const uint8_t *) (f->esp+12), &sc_n3) 	||
+    		!get_user_quadbyte ((const uint8_t *) (f->esp+16), &buffer_int) ) {
+    	thread_current()->voluntarily_exited = 0;
+    	thread_exit();
+    }
 
 	if (sc_n == SYS_WRITE) {
 		f->eax = write(sc_n1, (void *) sc_n2, sc_n3);
