@@ -344,7 +344,46 @@ unsigned tell(int fd){
 	return -1;
 }
 
+/*! Creates a new file called file initially initial_size bytes in size.
+    Returns true if successful, false otherwise. Creating a new file does
+    not open it: opening the new file is a separate operation which would
+    require a open system call.
+ */
+bool create (const char *file, unsigned initial_size) {
 
+	bool success = false;
+	lock_acquire(&sys_lock);
+
+	if (!uptr_is_valid(file)) {
+		lock_release(&sys_lock);
+		return success;
+	}
+
+	success = filesys_create(file, initial_size);
+	lock_release(&sys_lock);
+	return success;
+}
+
+/*! Deletes the file called file. Returns true if successful, false
+    otherwise. A file may be removed regardless of whether it is open or
+    closed, and removing an open file does not close it.
+ */
+bool remove (const char *file) {
+
+	bool success = false;
+	lock_acquire(&sys_lock);
+
+	if (!uptr_is_valid(file)) {
+		lock_release(&sys_lock);
+		return success;
+	}
+
+	// This function does exactly the same as filesys_remove, but to be
+	// safe I think getting a lock is necessary as in exec.
+	success = filesys_remove(file);
+	lock_release(&sys_lock);
+	return success;
+}
 
 /*! True if the given pointer is less than PHYSBASE, is not null, and is a
     user address one.
