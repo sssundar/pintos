@@ -28,6 +28,13 @@ typedef int tid_t;
 #define PRI_DEFAULT 31                  /*!< Default priority. */
 #define PRI_MAX 63                      /*!< Highest priority. */
 
+/* File list struct. */
+struct fd_element{
+	int fd;
+	struct file *file;
+	struct list_elem  f_elem;
+};
+
 /*! A kernel thread or user process.
 
    Each thread structure is stored in its own 4 kB page.  The
@@ -115,6 +122,9 @@ struct thread {
 
     /*! All the files that this thread has open. */
     struct list files;
+
+    /*! This is the highest file descriptor assigned so far. */
+    int max_fd;
 #endif
 
     /*! Owned by thread.c. */

@@ -20,6 +20,9 @@
     of thread.h for details. */
 #define THREAD_MAGIC 0xcd6abf4b
 
+/* The file system lock used in syscall.c. */
+// extern struct lock sys_lock; TODO uncomment eventually
+
 /*! List of processes in THREAD_READY state, that is, processes
     that are ready to run but not actually running. */
 static struct list ready_list;
@@ -255,6 +258,21 @@ void thread_exit(void) {
     ASSERT(!intr_context());
 
 #ifdef USERPROG
+    /* TODO eventually uncomment this
+	struct fd_element *r;
+	struct list_elem *l;
+
+	// Close the open file descriptors.
+	lock_acquire(&sys_lock);
+	for (l = list_begin(&thread_current()->files);
+			 l != list_end(&thread_current()->files);
+			 l = list_next(l)) {
+		r = list_entry(l, struct fd_element, l_elem);
+		close(r->fd);
+		free(r);
+	}
+	lock_release(&sys_lock);
+	*/
     process_exit();
 #endif
 
@@ -403,7 +421,8 @@ static void init_thread(struct thread *t, const char *name, int priority) {
     t->stack = (uint8_t *) t + PGSIZE;
     t->priority = priority;
     t->magic = THREAD_MAGIC;
-
+    list_init(&(t->files));
+    t->max_fd = 3; // This is the first available fd after debug, which is 2
     old_level = intr_disable();
     list_push_back(&all_list, &t->allelem);
     intr_set_level(old_level);

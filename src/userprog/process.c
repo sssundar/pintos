@@ -4,7 +4,7 @@
 #include <round.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
+#include "lib/string.h"
 #include "userprog/gdt.h"
 #include "userprog/pagedir.h"
 #include "userprog/tss.h"
@@ -80,6 +80,9 @@ static void start_process(void *file_name_) {
     This function will be implemented in problem 2-2.  For now, it does
     nothing. */
 int process_wait(tid_t child_tid UNUSED) {
+
+	while (true);
+
     return -1;
 }
 
@@ -196,7 +199,8 @@ bool load(const char *file_name, void (**eip) (void), void **esp) {
     struct file *file = NULL;
     off_t file_ofs;
     bool success = false;
-    int i;
+    int i = 0;
+    char *progname = NULL;
 
     /* Allocate and activate page directory. */
     t->pagedir = pagedir_create();
@@ -205,9 +209,20 @@ bool load(const char *file_name, void (**eip) (void), void **esp) {
     process_activate();
 
     /* Open executable file. */
-    file = filesys_open(file_name);
+
+    // Find the program name, which is the first token.
+    progname = (char *) palloc_get_page(0);
+	if (progname == NULL)
+		goto done;
+	strlcpy(progname, file_name, PGSIZE);
+	while (progname[i] != ' ' && progname[i] != '\0') {
+		i++;
+	}
+	progname[i] = '\0';
+
+    file = filesys_open(progname);
     if (file == NULL) {
-        printf("load: %s: open failed\n", file_name);
+        printf("load: %s: open failed\n", progname);
         goto done; 
     }
 
@@ -224,7 +239,6 @@ bool load(const char *file_name, void (**eip) (void), void **esp) {
     file_ofs = ehdr.e_phoff;
     for (i = 0; i < ehdr.e_phnum; i++) {
         struct Elf32_Phdr phdr;
-
         if (file_ofs < 0 || file_ofs > file_length(file))
             goto done;
         file_seek(file, file_ofs);
@@ -289,6 +303,9 @@ bool load(const char *file_name, void (**eip) (void), void **esp) {
     success = true;
 
 done:
+	if(progname != NULL) {
+		palloc_free_page((void *) progname);
+	}
     /* We arrive here whether the load is successful or not. */
     file_close(file);
     return success;
@@ -402,7 +419,7 @@ static bool setup_stack(void **esp, const char *file_name) {
     bool success = false;
     char *fncopy, *token, *save_ptr;
     char *start = (char *) PHYS_BASE;
-    char *ptr = (char *) *esp;
+    char *ptr = (char *) PHYS_BASE;
     int i;
 
     // Make a copy of FILE_NAME. Need a non-const one for tok'ing to work.
@@ -418,7 +435,7 @@ static bool setup_stack(void **esp, const char *file_name) {
         if (success) {
 
             // TODO Temporary fix until argument passing is implemented
-            // *esp = PHYS_BASE - 12;
+            //*esp = PHYS_BASE - 12;
 
             // Copy argv elements onto the stack as they're parsed out.
             for (token = strtok_r(fncopy, " ", &save_ptr);
