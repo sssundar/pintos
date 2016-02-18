@@ -84,7 +84,7 @@ void sc_init(void) {
     lock_init(&sys_lock);
 }
 
-static void sc_handler(struct intr_frame *f UNUSED) {
+static void sc_handler(struct intr_frame *f) {
 
 	/*
 	TODO remove
