@@ -95,6 +95,11 @@ static void sc_handler(struct intr_frame *f) {
 	// sc_n2 = *(esp + 2);
 	// sc_n3 = *(esp + 3);
     get_user_quadbyte ((const uint8_t *) f->esp, &sc_n);
+
+    // Exit if the stack pointer is dangerously close to PHYS_BASE.
+    if ( ((void *) sc_n) >= (PHYS_BASE - 4) ) {
+    	exit(-1);
+    }
     get_user_quadbyte ((const uint8_t *) (f->esp+4), &sc_n1);
     get_user_quadbyte ((const uint8_t *) (f->esp+8), &sc_n2);
     get_user_quadbyte ((const uint8_t *) (f->esp+12), &sc_n3);
