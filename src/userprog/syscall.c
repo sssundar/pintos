@@ -162,22 +162,57 @@ int wait(pid_t p) {
     the process's parent waits for it this is the status that will be
     returned. Conventionally, a status of 0 indicates success and nonzero
     values indicate errors.
- */
-void exit(int status) {
-	struct thread *t = thread_current();
 
-	lock_acquire(&sys_lock);
+    Closes all the open file descriptors (i.e., behaves like the Linux _exit
+    function).
+ */
+void exit(int status) {	
+    struct thread *t = thread_current();
+
+    lock_acquire(&sys_lock);
 
 #ifdef USERPROG
-	printf ("%s: exit(%d)\n", t->name, status);
+    printf ("%s: exit(%d)\n", t->name, status);
 #endif
 
-	t->status_on_exit = status;
-	t->voluntarily_exited = 1;
-	lock_release(&sys_lock);
+    struct list_elem *elem;        
+    struct thread *mychild;
+    enum intr_level old_level;    
 
-	// Note that thread_exit closes all the open file decriptors. TODO not yet
-	thread_exit();
+    /*  Am I a process? Yes, and I'm calling this, exiting normally, not being terminated. */
+    /*  I can be both a child and a parent */
+    
+    /* I might be a parent process. Orphan any children. */    
+    /*  I'm clearly not in my children's sema-block lists, so just sema_up their may_i_dies and
+        disabling interrupts and unflagging their am_child, and unlinking my child list. 
+        This call CAN be interrupted by something trying to terminate the parent, hence this is 
+        critical code. Then re-enable interrupts and proceed normally. */
+    
+    old_level = intr_disable();        
+    elem = list_begin(&t->child_list);
+    while (elem != list_end(&t->child_list)) {        
+        mychild = list_entry(elem, struct thread, sibling_list);            
+        mychild->am_child = 0;
+        sema_up(&mychild->may_i_die);
+        elem = list_next(elem);           
+        list_remove(elem->prev);            
+    }                
+    intr_set_level(old_level);        
+
+    /*  Do not release files here; sometimes processes could be terminated by an external source and
+        that means that source is responsible for cleaning up after us. */    
+    t->voluntarily_exited = 1;
+    t->status_on_exit = status;
+    lock_release(&sys_lock);
+
+    if (t->am_child > 0) {
+        /* Am I a child process? Then don't kill me just yet, I might be needed later. */
+        sema_up(&t->i_am_done);
+        sema_down(&t->may_i_die);        
+    } 
+    
+    /* Proceed as normal */
+    thread_exit();
 }
 
 /*! Returns the size, in bytes, of the file open as fd. */
