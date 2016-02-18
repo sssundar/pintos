@@ -23,12 +23,61 @@ struct lock sys_lock;
 
 static void sc_handler(struct intr_frame *);
 void sc_init(void);
-//int get_user (const uint8_t *uaddr);
-//bool put_user (uint8_t *udst, uint8_t byte);
-//bool get_user_quadbyte (const uint8_t *uaddr, int *arg);
+int get_user (const uint8_t *uaddr);
+bool put_user (uint8_t *udst, uint8_t byte);
+bool get_user_quadbyte (const uint8_t *uaddr, int *arg);
 bool uptr_is_valid (const void *uptr);
 
 //---------------------------- Function definitions ---------------------------
+
+/*! Attempt to get a byte from a specified user virtual addres.
+    Internally converts the address to a kernel virtual address.    
+    Returns the byte value on success as an integer, guaranteed
+    positive or zero, and returns -1 on recognizing an invalid
+    pointer, in which case the caller should terminate the process/thread. */
+int get_user (const uint8_t *uaddr) {    
+    int result = -1;
+    void *kaddr = pagedir_get_page(thread_current()->pagedir, uaddr);
+    if ((kaddr != NULL) && is_user_vaddr(uaddr)) {
+        result = (int) ( *((uint8_t *) kaddr) & ((unsigned int) 0xFF));        
+    } 
+    return result;   
+}
+
+/*! Attempt to set a byte given a virtual user address. Internally converts
+    the address to kernel space. Returns true on success, and false if
+    the user address is invalid (this should result in thread/process
+    termination. */
+bool put_user (uint8_t *udst, uint8_t byte) {        
+    bool result = false;
+    void *kdst = pagedir_get_page(thread_current()->pagedir, udst);
+    if ((kdst != NULL) && is_user_vaddr(udst)) {
+        *((uint8_t *) udst) = byte;
+        result = true;
+    } 
+    return result;
+}
+
+/*! Gets 4 consecutive user-space bytes assuming Little Endian ordering
+    and returns them as an integer. */
+bool get_user_quadbyte (const uint8_t *uaddr, int *arg) {
+    int byte0, byte1, byte2, byte3; 
+    byte0 = get_user(uaddr + 0); // < 0 on failure
+    byte1 = get_user(uaddr + 1);
+    byte2 = get_user(uaddr + 2);
+    byte3 = get_user(uaddr + 3);
+    if ( (byte0 | byte1 | byte2 | byte3) >= 0 ) {
+        // We're little endian, so byte0 is the LSB
+        byte0 &= 0xFF;
+        byte1 &= 0xFF; byte1 = byte1 << 8;
+        byte2 &= 0xFF; byte2 = byte2 << 16;
+        byte3 &= 0xFF; byte3 = byte3 << 24;
+        *arg = byte3 | byte2 | byte1 | byte0;    
+        return true;
+    }     
+    return false;
+}
+
 
 void sc_init(void) {
     intr_register_int(0x30, 3, INTR_ON, sc_handler, "syscall");
@@ -45,11 +94,16 @@ static void sc_handler(struct intr_frame *f UNUSED) {
 
 	// Don't need to run these through uptr_is_valid b/c they're generated
 	// in the kernel.
-	int *esp = f->esp;
-	int sc_n = *esp;
-	int sc_n1 = *(esp + 1);
-	int sc_n2 = *(esp + 2);
-	int sc_n3 = *(esp + 3);
+	// int *esp = f->esp;
+	int sc_n, sc_n1, sc_n2, sc_n3;
+	// sc_n = *esp;
+	// sc_n1 = *(esp + 1);
+	// sc_n2 = *(esp + 2);
+	// sc_n3 = *(esp + 3);
+    get_user_quadbyte ((const uint8_t *) f->esp, &sc_n);
+    get_user_quadbyte ((const uint8_t *) (f->esp+4), &sc_n1);
+    get_user_quadbyte ((const uint8_t *) (f->esp+8), &sc_n2);
+    get_user_quadbyte ((const uint8_t *) (f->esp+12), &sc_n3);
 
 	if (sc_n == SYS_WRITE) {
 		f->eax = write(sc_n1, (void *) sc_n2, sc_n3);
@@ -118,7 +172,8 @@ void exit(int status) {
 	printf ("%s: exit(%d)\n", t->name, status);
 #endif
 
-	thread_current()->status_on_exit = status;
+	t->status_on_exit = status;
+	t->voluntarily_exited = 1;
 	lock_release(&sys_lock);
 
 	// Note that thread_exit closes all the open file decriptors. TODO not yet
