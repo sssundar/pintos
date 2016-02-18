@@ -13,6 +13,7 @@
 #include "devices/shutdown.h"
 #include "threads/malloc.h"
 #include "devices/input.h"
+#include "userprog/process.h"
 
 //----------------------------- Global variables ------------------------------
 
@@ -83,6 +84,9 @@ static void sc_handler(struct intr_frame *f UNUSED) {
 	else if (sc_n == SYS_REMOVE) {
 		f->eax = remove((const char *) sc_n1);
 	}
+	else if (sc_n == SYS_EXEC) {
+		f->eax = exec((const char *) sc_n1);
+	}
 }
 
 /*! Terminates Pintos by calling shutdown_power_off() (declared in
@@ -104,7 +108,6 @@ void exit(int status) {
 	lock_acquire(&sys_lock);
 
 #ifdef USERPROG
-	// TODO it's OK to call printf here?
 	printf ("%s: exit(%d)\n", t->name, status);
 #endif
 
@@ -385,6 +388,26 @@ bool remove (const char *file) {
 	return success;
 }
 
+/*! Runs the executable whose name is given in cmd_line, passing any given
+    arguments, and returns the new process's program id (pid). Must return
+    pid -1, which otherwise should not be a valid pid, if the program cannot
+    load or run for any reason. Thus, the parent process cannot return from
+    the exec until it knows whether the child process successfully loaded its
+    executable. Uses appropriate synchronization to ensure this.
+ */
+pid_t exec (const char *cmd_line) {
+	tid_t tid;
+	lock_acquire(&sys_lock);
+
+	if (!uptr_is_valid(cmd_line)) {
+		lock_release(&sys_lock);
+		return -1;
+	}
+	lock_release(&sys_lock);
+	tid = process_execute(cmd_line);
+	return (pid_t) tid;
+}
+
 /*! True if the given pointer is less than PHYSBASE, is not null, and is a
     user address one.
  */
@@ -483,11 +506,9 @@ static void sc_handler(struct intr_frame *f){
 	else if (sc_n == SYS_EXIT) {
 		exit(sc_n1);
 	}
-	*/
 	else if (sc_n == SYS_EXEC) {
 		f->eax = exec((const char *) sc_n1);
 	}
-	/*
 	else if (sc_n == SYS_CREATE) {
 		f->eax = create((const char *) sc_n1, (unsigned) sc_n2);
 	}
@@ -499,20 +520,7 @@ static void sc_handler(struct intr_frame *f){
 }
 
 
-/*! Runs the executable whose name is given in cmd_line, passing any given
-    arguments, and returns the new process's program id (pid). Must return
-    pid -1, which otherwise should not be a valid pid, if the program cannot
-    load or run for any reason. Thus, the parent process cannot return from
-    the exec until it knows whether the child process successfully loaded its
-    executable. Uses appropriate synchronization to ensure this.
- */
-pid_t exec (const char *cmd_line) {
-	tid_t tid;
-	lock_acquire(&sys_lock);
-	tid = process_execute(cmd_line);
-	lock_release(&sys_lock);
-	return (pid_t) tid;
-}
+
 
 int write(int fd, const void *buffer, unsigned size){
 	struct file *f;

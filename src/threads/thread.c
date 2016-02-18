@@ -11,6 +11,10 @@
 #include "threads/switch.h"
 #include "threads/synch.h"
 #include "threads/vaddr.h"
+#include "threads/malloc.h"
+
+#include "list.h"
+#include "userprog/syscall.h"
 #ifdef USERPROG
 #include "userprog/process.h"
 #endif
@@ -66,7 +70,7 @@ static void kernel_thread(thread_func *, void *aux);
 static void idle(void *aux UNUSED);
 static struct thread *running_thread(void);
 static struct thread *next_thread_to_run(void);
-static void init_thread(struct thread *, const char *name, int priority);
+static void init_thread(struct thread *t, const char *name, int priority, uint8_t flag_child, struct list *parents_child_list);
 static bool is_thread(struct thread *) UNUSED;
 static void *alloc_frame(struct thread *, size_t size);
 static void schedule(void);
@@ -83,7 +87,10 @@ static tid_t allocate_tid(void);
     After calling this function, be sure to initialize the page allocator
     before trying to create any threads with thread_create().
 
-    It is not safe to call thread_current() until this function finishes. */
+    It is not safe to call thread_current() until this function finishes. 
+
+    The initial thread, depending on user arguments, might need to 
+    pretend to be a process so that it can wait for the user program running */
 void thread_init(void) {
     ASSERT(intr_get_level() == INTR_OFF);
 
@@ -92,10 +99,10 @@ void thread_init(void) {
     list_init(&all_list);
 
     /* Set up a thread structure for the running thread. */
-    initial_thread = running_thread();
-    init_thread(initial_thread, "main", PRI_DEFAULT);
-    initial_thread->status = THREAD_RUNNING;
-    initial_thread->tid = allocate_tid();
+    initial_thread = running_thread();    
+    init_thread(initial_thread, "main", PRI_DEFAULT, 0, NULL);        
+    initial_thread->status = THREAD_RUNNING;    
+    initial_thread->tid = allocate_tid();    
 }
 
 /*! Starts preemptive thread scheduling by enabling interrupts.
@@ -104,7 +111,7 @@ void thread_start(void) {
     /* Create the idle thread. */
     struct semaphore idle_started;
     sema_init(&idle_started, 0);
-    thread_create("idle", PRI_MIN, idle, &idle_started);
+    thread_create("idle", PRI_MIN, idle, &idle_started, 0, NULL);
 
     /* Start preemptive thread scheduling. */
     intr_enable();
@@ -154,7 +161,8 @@ void thread_print_stats(void) {
     no actual priority scheduling is implemented.  Priority scheduling is the
     goal of Problem 1-3. */
 tid_t thread_create(const char *name, int priority, thread_func *function,
-                    void *aux) {
+                    void *aux, uint8_t flag_child, struct list *parents_child_list) {
+
     struct thread *t;
     struct kernel_thread_frame *kf;
     struct switch_entry_frame *ef;
@@ -169,7 +177,7 @@ tid_t thread_create(const char *name, int priority, thread_func *function,
         return TID_ERROR;
 
     /* Initialize thread. */
-    init_thread(t, name, priority);
+    init_thread(t, name, priority, flag_child, parents_child_list);    
     tid = t->tid = allocate_tid();
 
     /* Stack frame for kernel_thread(). */
@@ -256,6 +264,7 @@ tid_t thread_tid(void) {
     returns to the caller. */
 void thread_exit(void) {
     ASSERT(!intr_context());
+    struct thread *t = thread_current();
 
 #ifdef USERPROG
     /* TODO eventually uncomment this
@@ -267,7 +276,7 @@ void thread_exit(void) {
 	for (l = list_begin(&thread_current()->files);
 			 l != list_end(&thread_current()->files);
 			 l = list_next(l)) {
-		r = list_entry(l, struct fd_element, l_elem);
+		r = list_entry(l, struct fd_element, f_elem);
 		close(r->fd);
 		free(r);
 	}
@@ -280,6 +289,38 @@ void thread_exit(void) {
        and schedule another process.  That process will destroy us
        when it calls thread_schedule_tail(). */
     intr_disable();
+
+    /*  We might not have called this voluntarily, so check the voluntary_sys_exit flag. */        
+    /*  If we got here voluntarily we already cleaned up process relationships so we're just a thread */
+    struct list_elem *elem;     
+    struct thread *mychild;        
+
+    if (t->voluntarily_exited == 0) {
+        /*  If involuntary exit, are we a parent? That is, do we have children? Orphan them atomically. It's 
+            not possible I was waiting on them before I started terminating, whether or not it was voluntary,
+            as long as there are no related kernel bugs. See, we're running, so we aren't on any child's waiting list. 
+            Up their may_i_die sema and tell them they aren't children anymore, and whether or not they terminated
+            involuntarily they'll clean themselves up (see directly above). */                    
+        elem = list_begin(&t->child_list);
+        while (elem != list_end(&t->child_list)) {        
+            mychild = list_entry(elem, struct thread, sibling_list);            
+            mychild->am_child = 0;
+            sema_up(&mychild->may_i_die);
+            elem = list_next(elem);            
+            list_remove(elem->prev);            
+        }                
+
+        if (t->am_child > 0) {            
+            /*  If involuntary exit, are we a child? Set my exit code to -1 to signify termination, and block me, 
+                and sema_up i_am_done to unblock my parent if blocked, but then wait here, blocked not dying, 
+                until my parent manually destroys me. My parent now has the only pointer to me. */            
+            t->status_on_exit = -1;
+            sema_up(&t->i_am_done);
+            sema_down(&t->may_i_die);        
+        } 
+
+    }     
+
     list_remove(&thread_current()->allelem);
     thread_current()->status = THREAD_DYING;
     schedule();
@@ -408,7 +449,8 @@ static bool is_thread(struct thread *t) {
 }
 
 /*! Does basic initialization of T as a blocked thread named NAME. */
-static void init_thread(struct thread *t, const char *name, int priority) {
+static void init_thread(struct thread *t, const char *name, int priority,
+		uint8_t flag_child, struct list *parents_child_list) {
     enum intr_level old_level;
 
     ASSERT(t != NULL);
@@ -425,6 +467,19 @@ static void init_thread(struct thread *t, const char *name, int priority) {
     t->max_fd = 3; // This is the first available fd after debug, which is 2
     old_level = intr_disable();
     list_push_back(&all_list, &t->allelem);
+    /* Initialize process_wait() system call structures */
+    list_init(&t->child_list);
+    sema_init(&t->i_am_done, 0); /* Locked by child, implicitly */    
+    t->am_child = flag_child;     
+    if (flag_child > 0) {
+        list_push_back(parents_child_list, &t->sibling_list);
+        sema_init(&t->may_i_die, 0); /* Blocking child from death on sys_exit */    
+    } else {
+    	/* If process, sys_exit will not block for a parent's approval. */
+        sema_init(&t->may_i_die, 1);
+        t->sibling_list.prev = NULL;
+        t->sibling_list.next = NULL;
+    }  
     intr_set_level(old_level);
 }
 

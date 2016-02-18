@@ -9,6 +9,7 @@
 #include <debug.h>
 #include <list.h>
 #include <stdint.h>
+#include "threads/synch.h"
 
 /*! States in a thread's life cycle. */
 enum thread_status {
@@ -120,6 +121,14 @@ struct thread {
     /*! Status passed by exit call. */
     int status_on_exit;
 
+    struct semaphore i_am_done;         /*!< block parent till I exit, if parent waits */
+    struct semaphore may_i_die;         /*!< allow parent to keep us blocked during an exit */
+    struct list_elem sibling_list;      /*!< keep track of other children of my parent */    
+    struct list child_list;             /*!< keep track of my children */
+    uint8_t am_child;                   /*!< active high flag for whether I am a child */
+    uint8_t voluntarily_exited;         /*!< active high flag for voluntary exit, relies on no sig_term or sig_kill */
+    /**@{*/
+
     /*! All the files that this thread has open. */
     struct list files;
 
@@ -145,7 +154,8 @@ void thread_tick(void);
 void thread_print_stats(void);
 
 typedef void thread_func(void *aux);
-tid_t thread_create(const char *name, int priority, thread_func *, void *);
+tid_t thread_create(const char *name, int priority, thread_func *function,
+                    void *aux, uint8_t flag_child, struct list *parents_child_list);
 
 void thread_block(void);
 void thread_unblock(struct thread *);

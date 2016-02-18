@@ -16,6 +16,7 @@
 #include "threads/interrupt.h"
 #include "threads/palloc.h"
 #include "threads/thread.h"
+#include "threads/synch.h"
 #include "threads/vaddr.h"
 
 static thread_func start_process NO_RETURN;
@@ -28,6 +29,8 @@ static bool load(const char *cmdline, void (**eip)(void), void **esp);
 tid_t process_execute(const char *file_name) {
     char *fn_copy;
     tid_t tid;
+    char *progname;
+    int i = 0;
 
     /* Make a copy of FILE_NAME.
        Otherwise there's a race between the caller and load(). */
@@ -36,10 +39,25 @@ tid_t process_execute(const char *file_name) {
         return TID_ERROR;
     strlcpy(fn_copy, file_name, PGSIZE);
 
-    /* Create a new thread to execute FILE_NAME. */
-    tid = thread_create(file_name, PRI_DEFAULT, start_process, fn_copy);
+    // Find the program name, which is the first token.
+    progname = (char *) palloc_get_page(0);
+	if (progname == NULL)
+		return -1;
+	strlcpy(progname, file_name, PGSIZE);
+	while (progname[i] != ' ' && progname[i] != '\0') {
+		i++;
+	}
+	progname[i] = '\0';
+
+    /* Create a new thread to execute FILE_NAME, and make sure it knows it's
+       our child */
+    tid = thread_create(progname, PRI_DEFAULT, start_process, fn_copy, 1,
+    		&thread_current()->child_list);
     if (tid == TID_ERROR)
         palloc_free_page(fn_copy); 
+
+    if (progname != NULL)
+    	palloc_free_page((void *) progname);
     return tid;
 }
 
@@ -78,12 +96,60 @@ static void start_process(void *file_name_) {
     returns -1 immediately, without waiting.
 
     This function will be implemented in problem 2-2.  For now, it does
-    nothing. */
-int process_wait(tid_t child_tid UNUSED) {
+    nothing.
+*/
+int process_wait(tid_t child_tid) {
+    /* Search my child list for this child. If it exists, great. If not,
+       return -1 */
 
-	while (true);
+	/* TODO old code, remove.
+	while(true);
+	return -1;
+	*/
 
-    return -1;
+    struct thread *t = thread_current();
+    struct list_elem *elem = list_begin(&t->child_list);
+
+    bool found_tid = false;
+    struct thread *mychild;
+    enum intr_level old_level;
+    int result; 
+
+    tid_t this_childs_tid; 
+
+
+    while (elem != list_end(&t->child_list)) {        
+        mychild = list_entry(elem, struct thread, sibling_list);
+        this_childs_tid = mychild->tid;
+        if (this_childs_tid == child_tid) {
+            found_tid = true;
+            break;
+        }
+        elem = list_next(elem);
+    }
+
+    if (!found_tid) {
+    	// Possibly because of TID_ERROR, Child Termination, Child
+    	// Already Waited Upon
+        return -1;
+    }
+
+    // Down the sema of the child, i_am_done. Wait for it to call us back.
+    // Disable interrupts so this process can't be terminated if we return.
+    old_level = intr_disable();
+    sema_down(&mychild->i_am_done);
+
+    // Check the status of the child
+    result = mychild->status_on_exit;
+
+    // Snip out the child using pointers to both sides of child_list around
+    // the child, then allow the child to destroy itself at will.
+    list_remove(elem);
+    sema_up(&mychild->may_i_die);    
+
+    intr_set_level(old_level);    
+
+    return result;
 }
 
 /*! Free the current process's resources. */
@@ -273,8 +339,8 @@ bool load(const char *file_name, void (**eip) (void), void **esp) {
                     /* Normal segment.
                        Read initial part from disk and zero the rest. */
                     read_bytes = page_offset + phdr.p_filesz;
-                    zero_bytes = (ROUND_UP(page_offset + phdr.p_memsz, PGSIZE) -
-                                 read_bytes);
+                    zero_bytes = (ROUND_UP(page_offset + phdr.p_memsz, PGSIZE)
+                    		- read_bytes);
                 }
                 else {
                     /* Entirely zero.
@@ -317,7 +383,8 @@ static bool install_page(void *upage, void *kpage, bool writable);
 
 /*! Checks whether PHDR describes a valid, loadable segment in
     FILE and returns true if so, false otherwise. */
-static bool validate_segment(const struct Elf32_Phdr *phdr, struct file *file) {
+static bool validate_segment(const struct Elf32_Phdr *phdr,
+		struct file *file) {
     /* p_offset and p_vaddr must have the same page offset. */
     if ((phdr->p_offset & PGMASK) != (phdr->p_vaddr & PGMASK)) 
         return false; 
@@ -358,7 +425,8 @@ static bool validate_segment(const struct Elf32_Phdr *phdr, struct file *file) {
 }
 
 /*! Loads a segment starting at offset OFS in FILE at address UPAGE.  In total,
-    READ_BYTES + ZERO_BYTES bytes of virtual memory are initialized, as follows:
+    READ_BYTES + ZERO_BYTES bytes of virtual memory are initialized, as
+    follows:
 
         - READ_BYTES bytes at UPAGE must be read from FILE
           starting at offset OFS.
@@ -496,4 +564,3 @@ static bool install_page(void *upage, void *kpage, bool writable) {
     return (pagedir_get_page(t->pagedir, upage) == NULL &&
             pagedir_set_page(t->pagedir, upage, kpage, writable));
 }
-
