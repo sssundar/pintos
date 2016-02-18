@@ -524,6 +524,7 @@ static bool setup_stack(void **esp, const char *file_name) {
             // Add in the pointers to the strings in the argv array.
             char **vptr = (char **) ptr;
             vptr--;
+            vptr--; // This one is for the null-terminator of argv
             for (i = 0; i < argc; i++) {
                 *vptr = start;
                 start += strlen(start) + 1;
