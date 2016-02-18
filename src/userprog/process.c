@@ -100,7 +100,7 @@ static void start_process(void *file_name_) {
 */
 int process_wait(tid_t child_tid) {
     /* Search my child list for this child. If it exists, great. If not,
-       return -1 */
+       return -1. */
 
 	/* TODO old code, remove.
 	while(true);
