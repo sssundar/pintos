@@ -86,6 +86,9 @@ static void sc_handler(struct intr_frame *f UNUSED) {
 	}
 	else if (sc_n == SYS_EXEC) {
 		f->eax = exec((const char *) sc_n1);
+	} 
+	else if (sc_n == SYS_WAIT) {
+		f->eax = wait((pid_t) sc_n1);
 	}
 }
 
@@ -95,6 +98,10 @@ static void sc_handler(struct intr_frame *f UNUSED) {
  */
 void halt (void) {
 	shutdown_power_off();
+}
+
+int wait(pid_t p) {
+	return process_wait(p);
 }
 
 /*! Terminates the current user program, returning status to the kernel. If
