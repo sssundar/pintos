@@ -23,33 +23,81 @@ struct lock sys_lock;
 
 static void sc_handler(struct intr_frame *);
 void sc_init(void);
-//int get_user (const uint8_t *uaddr);
-//bool put_user (uint8_t *udst, uint8_t byte);
-//bool get_user_quadbyte (const uint8_t *uaddr, int *arg);
+int get_user (const uint8_t *uaddr);
+bool put_user (uint8_t *udst, uint8_t byte);
+bool get_user_quadbyte (const uint8_t *uaddr, int *arg);
 bool uptr_is_valid (const void *uptr);
 
 //---------------------------- Function definitions ---------------------------
+
+/*! Attempt to get a byte from a specified user virtual addres.
+    Internally converts the address to a kernel virtual address.    
+    Returns the byte value on success as an integer, guaranteed
+    positive or zero, and returns -1 on recognizing an invalid
+    pointer, in which case the caller should terminate the process/thread. */
+int get_user (const uint8_t *uaddr) {    
+    int result = -1;
+    void *kaddr = pagedir_get_page(thread_current()->pagedir, uaddr);
+    if ((kaddr != NULL) && is_user_vaddr(uaddr)) {
+        result = (int) ( *((uint8_t *) kaddr) & ((unsigned int) 0xFF));        
+    } 
+    return result;   
+}
+
+/*! Attempt to set a byte given a virtual user address. Internally converts
+    the address to kernel space. Returns true on success, and false if
+    the user address is invalid (this should result in thread/process
+    termination. */
+bool put_user (uint8_t *udst, uint8_t byte) {        
+    bool result = false;
+    void *kdst = pagedir_get_page(thread_current()->pagedir, udst);
+    if ((kdst != NULL) && is_user_vaddr(udst)) {
+        *((uint8_t *) udst) = byte;
+        result = true;
+    } 
+    return result;
+}
+
+/*! Gets 4 consecutive user-space bytes assuming Little Endian ordering
+    and returns them as an integer. */
+bool get_user_quadbyte (const uint8_t *uaddr, int *arg) {
+    int byte0, byte1, byte2, byte3; 
+    byte0 = get_user(uaddr + 0); // < 0 on failure
+    byte1 = get_user(uaddr + 1);
+    byte2 = get_user(uaddr + 2);
+    byte3 = get_user(uaddr + 3);
+    if ( (byte0 | byte1 | byte2 | byte3) >= 0 ) {
+        // We're little endian, so byte0 is the LSB
+        byte0 &= 0xFF;
+        byte1 &= 0xFF; byte1 = byte1 << 8;
+        byte2 &= 0xFF; byte2 = byte2 << 16;
+        byte3 &= 0xFF; byte3 = byte3 << 24;
+        *arg = byte3 | byte2 | byte1 | byte0;    
+        return true;
+    }     
+    return false;
+}
+
 
 void sc_init(void) {
     intr_register_int(0x30, 3, INTR_ON, sc_handler, "syscall");
     lock_init(&sys_lock);
 }
 
-static void sc_handler(struct intr_frame *f UNUSED) {
-
-	/*
-	TODO remove
-    printf("system call!\n");
-    thread_exit();
-    */
+static void sc_handler(struct intr_frame *f) {
 
 	// Don't need to run these through uptr_is_valid b/c they're generated
 	// in the kernel.
-	int *esp = f->esp;
-	int sc_n = *esp;
-	int sc_n1 = *(esp + 1);
-	int sc_n2 = *(esp + 2);
-	int sc_n3 = *(esp + 3);
+	// int *esp = f->esp;
+	int sc_n, sc_n1, sc_n2, sc_n3;
+	// sc_n = *esp;
+	// sc_n1 = *(esp + 1);
+	// sc_n2 = *(esp + 2);
+	// sc_n3 = *(esp + 3);
+    get_user_quadbyte ((const uint8_t *) f->esp, &sc_n);
+    get_user_quadbyte ((const uint8_t *) (f->esp+4), &sc_n1);
+    get_user_quadbyte ((const uint8_t *) (f->esp+8), &sc_n2);
+    get_user_quadbyte ((const uint8_t *) (f->esp+12), &sc_n3);
 
 	if (sc_n == SYS_WRITE) {
 		f->eax = write(sc_n1, (void *) sc_n2, sc_n3);
@@ -108,21 +156,57 @@ int wait(pid_t p) {
     the process's parent waits for it this is the status that will be
     returned. Conventionally, a status of 0 indicates success and nonzero
     values indicate errors.
+
+    Closes all the open file descriptors (i.e., behaves like the Linux _exit
+    function).
  */
 void exit(int status) {
-	struct thread *t = thread_current();
+    struct thread *t = thread_current();
 
-	lock_acquire(&sys_lock);
+    lock_acquire(&sys_lock);
 
 #ifdef USERPROG
-	printf ("%s: exit(%d)\n", t->name, status);
+    printf ("%s: exit(%d)\n", t->name, status);
 #endif
 
-	thread_current()->status_on_exit = status;
-	lock_release(&sys_lock);
+    struct list_elem *elem;        
+    struct thread *mychild;
+    enum intr_level old_level;    
 
-	// Note that thread_exit closes all the open file decriptors. TODO not yet
-	thread_exit();
+    /*  Am I a process? Yes, and I'm calling this, exiting normally, not being terminated. */
+    /*  I can be both a child and a parent */
+    
+    /* I might be a parent process. Orphan any children. */    
+    /*  I'm clearly not in my children's sema-block lists, so just sema_up their may_i_dies and
+        disabling interrupts and unflagging their am_child, and unlinking my child list. 
+        This call CAN be interrupted by something trying to terminate the parent, hence this is 
+        critical code. Then re-enable interrupts and proceed normally. */
+    
+    old_level = intr_disable();        
+    elem = list_begin(&t->child_list);
+    while (elem != list_end(&t->child_list)) {        
+        mychild = list_entry(elem, struct thread, sibling_list);            
+        mychild->am_child = 0;
+        sema_up(&mychild->may_i_die);
+        elem = list_next(elem);           
+        list_remove(elem->prev);            
+    }                
+    intr_set_level(old_level);        
+
+    /*  Do not release files here; sometimes processes could be terminated by an external source and
+        that means that source is responsible for cleaning up after us. */    
+    t->voluntarily_exited = 1;
+    t->status_on_exit = status;
+    lock_release(&sys_lock);
+
+    if (t->am_child > 0) {
+        /* Am I a child process? Then don't kill me just yet, I might be needed later. */
+        sema_up(&t->i_am_done);
+        sema_down(&t->may_i_die);        
+    } 
+    
+    /* Proceed as normal */
+    thread_exit();
 }
 
 /*! Returns the size, in bytes, of the file open as fd. */
@@ -226,7 +310,6 @@ int write(int fd, const void *buffer, unsigned size) {
 		return size;
 	}
 
-	// TODO we only tested writing to the console.
 	for (l = list_begin(&(thread_current()->files));
 		 l != list_end(&(thread_current()->files));
 		 l = list_next(l)){
@@ -238,7 +321,7 @@ int write(int fd, const void *buffer, unsigned size) {
 				return -1;
 			}
 			lock_release(&sys_lock);
-			seek(fd, 0); // This is what overwrites the file. TODO NOT YET.
+			seek(fd, 0); // This is what overwrites the file.
 			return file_write(f, buffer, size);
 		}
 	}
@@ -360,7 +443,6 @@ unsigned tell(int fd){
     require a open system call.
  */
 bool create (const char *file, unsigned initial_size) {
-
 	bool success = false;
 	lock_acquire(&sys_lock);
 

@@ -100,12 +100,7 @@ static void start_process(void *file_name_) {
 */
 int process_wait(tid_t child_tid) {
     /* Search my child list for this child. If it exists, great. If not,
-       return -1 */
-
-	/* TODO old code, remove.
-	while(true);
-	return -1;
-	*/
+       return -1. */
 
     struct thread *t = thread_current();
     struct list_elem *elem = list_begin(&t->child_list);
@@ -501,11 +496,6 @@ static bool setup_stack(void **esp, const char *file_name) {
     if (kpage != NULL) {
         success = install_page(((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
         if (success) {
-
-            // TODO Temporary fix until argument passing is implemented
-            //*esp = PHYS_BASE - 12;
-
-        	// TODO maybe need to write with kpage as the offset?
 
             // Copy argv elements onto the stack as they're parsed out.
             for (token = strtok_r(fncopy, " ", &save_ptr);
