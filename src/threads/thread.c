@@ -11,6 +11,7 @@
 #include "threads/switch.h"
 #include "threads/synch.h"
 #include "threads/vaddr.h"
+#include "threads/malloc.c"
 
 #include "list.h"
 #include "userprog/syscall.h"
@@ -266,18 +267,13 @@ void thread_exit(void) {
     struct fd_element *r;
     lock_acquire(ptr_sys_lock());
 
-#ifdef USERPROG
-    // TODO it's OK to call printf here?
-    printf ("%s:exit(%d)\n", t->name, status);
-#endif
-
     // Close the open file descriptors.
     // TODO migrate this to thread_exit
     for (l = list_begin(&t->files);
              l != list_end(&t->files);
              l = list_next(l)) {
         r = list_entry(l, struct fd_element, l_elem);
-        close(r->fd);
+        sys_close(r->fd);
         free(r);
     }
     lock_release(ptr_sys_lock());    
@@ -450,7 +446,7 @@ static bool is_thread(struct thread *t) {
 }
 
 /*! Does basic initialization of T as a blocked thread named NAME. */
-static void init_thread(struct thread *t, const char *name, int priority) {
+static void init_thread(struct thread *t, const char *name, int priority, uint8_t flag_child, struct list *parents_child_list) {
     enum intr_level old_level;
 
     ASSERT(t != NULL);

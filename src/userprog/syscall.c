@@ -1,6 +1,6 @@
 #include "debug.h"
-#include "userprog/syscall.h"
 #include "lib/user/syscall.h"
+#include "userprog/syscall.h"
 #include "userprog/process.h"
 #include "lib/stdio.h"
 #include "lib/kernel/stdio.h"
@@ -73,40 +73,9 @@ bool get_user_quadbyte (const uint8_t *uaddr, int *arg) {
     return false;
 }
 
-void sc_handler(struct intr_frame *);
-void sys_halt(void);
-void sys_exit(int status);
-pid_t sys_exec(const char *file);
-int sys_wait(pid_t pid);
-bool sys_create(const char *file, unsigned initial_size);
-bool sys_remove (const char *file);
-int sys_open (const char *file);
-int sys_filesize(int fd);
-int sys_read(int fd, void *buffer, unsigned size);
-int sys_write(int fd, const void *buffer, unsigned size);
-void sys_seek(int fd, unsigned position);
-unsigned sys_tell(int fd);
-void sys_close(int fd);
-// mapid_t sys_mmap(int fd, void *addr);
-// void sys_munmap(mapid_t mapid);
-// bool sys_chdir(const char *dir);
-// bool sys_mkdir(const char *dir);
-// bool sys_readdir(int fd, char name[READDIR_MAX_LEN + 1]);
-// bool sys_isdir(int fd);
-// int sys_inumber(int fd);
-void sc_init(void);
-
-
 // TODO important: it appears that when files are opened they are added to
 // THIS instead of the thread struct's file list.
 struct list file_list;
-
-struct fd_element{
-	int fd;
-	struct file *file;
-	struct list_elem  t_elem;
-	struct list_elem  l_elem;
-};
 
 void sc_init(void){
     intr_register_int(0x30, 3, INTR_ON, sc_handler, "syscall");
@@ -283,10 +252,15 @@ void sys_halt (void) {
     Closes all the open file descriptors (i.e., behaves like the Linux _exit
     function).
  */
-void sys_exit(int status) {
-	struct thread *t = thread_current();
+void sys_exit(int status) {	
+    struct thread *t = thread_current();
 
 	t->status_on_exit = status;
+
+#ifdef USERPROG
+    // TODO it's OK to call printf here?
+    printf ("%s:exit(%d)\n", t->name, status);
+#endif
 
     struct list_elem *elem;        
     struct thread *mychild;
