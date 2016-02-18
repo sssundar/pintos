@@ -21,6 +21,32 @@
 
 struct lock sys_lock;
 
+static void sc_handler(struct intr_frame *f);
+void sys_halt(void);
+void sys_exit(int status);
+pid_t sys_exec(const char *file);
+int sys_wait(pid_t pid);
+bool sys_create(const char *file, unsigned initial_size);
+bool sys_remove (const char *file);
+int sys_open (const char *file);
+int sys_filesize(int fd);
+int sys_read(int fd, void *buffer, unsigned size);
+int sys_write(int fd, const void *buffer, unsigned size);
+void sys_seek(int fd, unsigned position);
+unsigned sys_tell(int fd);
+void sys_close(int fd);
+int get_user (const uint8_t *uaddr);
+bool put_user (uint8_t *udst, uint8_t byte);
+bool get_user_quadbyte (const uint8_t *uaddr, int *arg);
+struct lock* ptr_sys_lock(void);
+// mapid_t sys_mmap(int fd, void *addr);
+// void sys_munmap(mapid_t mapid);
+// bool sys_chdir(const char *dir);
+// bool sys_mkdir(const char *dir);
+// bool sys_readdir(int fd, char name[READDIR_MAX_LEN + 1]);
+// bool sys_isdir(int fd);
+// int sys_inumber(int fd);
+
 struct lock* ptr_sys_lock(void) {
     return &sys_lock;
 }

@@ -119,6 +119,8 @@ int process_wait(tid_t child_tid) {
     sema_up(&mychild->may_i_die);    
 
     intr_set_level(old_level);    
+
+    return result;
 }
 
 /*! Free the current process's resources. */

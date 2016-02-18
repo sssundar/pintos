@@ -11,7 +11,7 @@
 #include "threads/switch.h"
 #include "threads/synch.h"
 #include "threads/vaddr.h"
-#include "threads/malloc.c"
+#include "threads/malloc.h"
 
 #include "list.h"
 #include "userprog/syscall.h"
@@ -462,6 +462,18 @@ static void init_thread(struct thread *t, const char *name, int priority, uint8_
 
     old_level = intr_disable();    
     list_push_back(&all_list, &t->allelem);
+    /* Initialize process_wait() system call structures */
+    list_init(&t->child_list);
+    sema_init(&t->i_am_done, 0); /* Locked by child, implicitly */    
+    t->am_child = flag_child;     
+    if (flag_child > 0) {
+        list_push_back(parents_child_list, &t->sibling_list);
+        sema_init(&t->may_i_die, 0); /* Blocking child from death on sys_exit */    
+    } else {
+        sema_init(&t->may_i_die, 1); /* If process, sys_exit will not block for a parent's approval. */    
+        t->sibling_list.prev = NULL;
+        t->sibling_list.next = NULL;
+    }  
     intr_set_level(old_level);
 }
 
