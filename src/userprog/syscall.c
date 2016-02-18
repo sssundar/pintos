@@ -162,7 +162,6 @@ int wait(pid_t p) {
  */
 void exit(int status) {
     struct thread *t = thread_current();
-
     lock_acquire(&sys_lock);
 
 #ifdef USERPROG
@@ -173,14 +172,18 @@ void exit(int status) {
     struct thread *mychild;
     enum intr_level old_level;    
 
-    /*  Am I a process? Yes, and I'm calling this, exiting normally, not being terminated. */
+    /*  Am I a process? Yes, and I'm calling this, exiting normally, not being
+        terminated. */
+
     /*  I can be both a child and a parent */
     
-    /* I might be a parent process. Orphan any children. */    
-    /*  I'm clearly not in my children's sema-block lists, so just sema_up their may_i_dies and
-        disabling interrupts and unflagging their am_child, and unlinking my child list. 
-        This call CAN be interrupted by something trying to terminate the parent, hence this is 
-        critical code. Then re-enable interrupts and proceed normally. */
+    /*  I might be a parent process. Orphan any children. */
+
+    /*  I'm clearly not in my children's sema-block lists, so just sema_up
+        their may_i_dies and disabling interrupts and unflagging their
+        am_child, and unlinking my child list. This call CAN be interrupted
+        by something trying to terminate the parent, hence this is critical
+        code. Then re-enable interrupts and proceed normally. */
     
     old_level = intr_disable();        
     elem = list_begin(&t->child_list);
@@ -193,14 +196,16 @@ void exit(int status) {
     }                
     intr_set_level(old_level);        
 
-    /*  Do not release files here; sometimes processes could be terminated by an external source and
-        that means that source is responsible for cleaning up after us. */    
+    /*  Do not release files here; sometimes processes could be terminated by
+        an external source and that means that source is responsible for
+        cleaning up after us. */
     t->voluntarily_exited = 1;
     t->status_on_exit = status;
     lock_release(&sys_lock);
 
     if (t->am_child > 0) {
-        /* Am I a child process? Then don't kill me just yet, I might be needed later. */
+        /* Am I a child process? Then don't kill me just yet, I might be
+           needed later. */
         sema_up(&t->i_am_done);
         sema_down(&t->may_i_die);        
     } 
@@ -443,6 +448,7 @@ unsigned tell(int fd){
     require a open system call.
  */
 bool create (const char *file, unsigned initial_size) {
+
 	bool success = false;
 	lock_acquire(&sys_lock);
 
