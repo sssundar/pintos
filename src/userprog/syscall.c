@@ -360,7 +360,9 @@ unsigned tell(int fd){
     require a open system call.
  */
 bool create (const char *file, unsigned initial_size) {
-
+	if(!file){
+		exit(-1);
+	}
 	bool success = false;
 	lock_acquire(&sys_lock);
 
@@ -379,7 +381,9 @@ bool create (const char *file, unsigned initial_size) {
     closed, and removing an open file does not close it.
  */
 bool remove (const char *file) {
-
+	if(!file){
+		exit(-1);
+	}
 	bool success = false;
 	lock_acquire(&sys_lock);
 
