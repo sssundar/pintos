@@ -285,42 +285,7 @@ void thread_exit(void) {
     process_exit();
 #endif
 
-    /* Remove thread from all threads list, set our status to dying,
-       and schedule another process.  That process will destroy us
-       when it calls thread_schedule_tail(). */
     intr_disable();
-
-    /*  We might not have called this voluntarily, so check the voluntary_sys_exit flag. */        
-    /*  If we got here voluntarily we already cleaned up process relationships so we're just a thread */
-    struct list_elem *elem;     
-    struct thread *mychild;        
-
-    if (t->voluntarily_exited == 0) {
-        /*  If involuntary exit, are we a parent? That is, do we have children? Orphan them atomically. It's 
-            not possible I was waiting on them before I started terminating, whether or not it was voluntary,
-            as long as there are no related kernel bugs. See, we're running, so we aren't on any child's waiting list. 
-            Up their may_i_die sema and tell them they aren't children anymore, and whether or not they terminated
-            involuntarily they'll clean themselves up (see directly above). */                    
-        elem = list_begin(&t->child_list);
-        while (elem != list_end(&t->child_list)) {        
-            mychild = list_entry(elem, struct thread, sibling_list);            
-            mychild->am_child = 0;
-            sema_up(&mychild->may_i_die);
-            elem = list_next(elem);            
-            list_remove(elem->prev);            
-        }                
-
-        if (t->am_child > 0) {            
-            /*  If involuntary exit, are we a child? Set my exit code to -1 to signify termination, and block me, 
-                and sema_up i_am_done to unblock my parent if blocked, but then wait here, blocked not dying, 
-                until my parent manually destroys me. My parent now has the only pointer to me. */            
-            t->status_on_exit = -1;
-            sema_up(&t->i_am_done);
-            sema_down(&t->may_i_die);        
-        } 
-
-    }     
-
     list_remove(&thread_current()->allelem);
     thread_current()->status = THREAD_DYING;
     schedule();

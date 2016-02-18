@@ -37,10 +37,12 @@ bool uptr_is_valid (const void *uptr);
     pointer, in which case the caller should terminate the process/thread. */
 int get_user (const uint8_t *uaddr) {    
     int result = -1;
-    void *kaddr = pagedir_get_page(thread_current()->pagedir, uaddr);
-    if ((kaddr != NULL) && is_user_vaddr(uaddr)) {
-        result = (int) ( *((uint8_t *) kaddr) & ((unsigned int) 0xFF));        
-    } 
+    if (is_user_vaddr(uaddr)) {
+	    void *kaddr = pagedir_get_page(thread_current()->pagedir, uaddr);
+	    if (kaddr != NULL) {
+	        result = (int) ( *((uint8_t *) kaddr) & ((unsigned int) 0xFF));        
+	    } 	
+    }   
     return result;   
 }
 
@@ -50,11 +52,13 @@ int get_user (const uint8_t *uaddr) {
     termination. */
 bool put_user (uint8_t *udst, uint8_t byte) {        
     bool result = false;
-    void *kdst = pagedir_get_page(thread_current()->pagedir, udst);
-    if ((kdst != NULL) && is_user_vaddr(udst)) {
-        *((uint8_t *) udst) = byte;
-        result = true;
-    } 
+    if (is_user_vaddr(udst)) {
+	    void *kdst = pagedir_get_page(thread_current()->pagedir, udst);
+	    if (kdst != NULL) {
+	        *((uint8_t *) udst) = byte;
+	        result = true;
+	    } 	
+    }
     return result;
 }
 
@@ -89,24 +93,26 @@ static void sc_handler(struct intr_frame *f) {
 	// Don't need to run these through uptr_is_valid b/c they're generated
 	// in the kernel.
 	// int *esp = f->esp;
-	int sc_n, sc_n1, sc_n2, sc_n3, buffer_int;
+	int sc_n, sc_n1, sc_n2, sc_n3;
 	// sc_n = *esp;
 	// sc_n1 = *(esp + 1);
 	// sc_n2 = *(esp + 2);
 	// sc_n3 = *(esp + 3);
-    
-	// get_user_quadbyte ((const uint8_t *) f->esp, &sc_n);
- //    get_user_quadbyte ((const uint8_t *) (f->esp+4), &sc_n1);
- //    get_user_quadbyte ((const uint8_t *) (f->esp+8), &sc_n2);
- //    get_user_quadbyte ((const uint8_t *) (f->esp+12), &sc_n3);
 
-    if ( 	!get_user_quadbyte ((const uint8_t *) f->esp, &sc_n) 		|| 
-    		!get_user_quadbyte ((const uint8_t *) (f->esp+4), &sc_n1) 	|| 
+    if (!get_user_quadbyte ((const uint8_t *) f->esp, &sc_n)) {
+    	//thread_current()->voluntarily_exited = 0 is implicit
+    	exit(-1);
+    }
+
+    // Exit if the stack pointer is dangerously close to PHYS_BASE.
+    if ( ((void *) sc_n) >= (PHYS_BASE - 4) ) {
+    	exit(-1);
+    }
+
+    if ( 	!get_user_quadbyte ((const uint8_t *) (f->esp+4), &sc_n1) 	|| 
     		!get_user_quadbyte ((const uint8_t *) (f->esp+8), &sc_n2) 	|| 
-    		!get_user_quadbyte ((const uint8_t *) (f->esp+12), &sc_n3) 	||
-    		!get_user_quadbyte ((const uint8_t *) (f->esp+16), &buffer_int) ) {
-    	thread_current()->voluntarily_exited = 0;
-    	thread_exit();
+    		!get_user_quadbyte ((const uint8_t *) (f->esp+12), &sc_n3) ) {    		    	
+    	exit(-1);
     }
 
 	if (sc_n == SYS_WRITE) {
@@ -206,10 +212,6 @@ void exit(int status) {
     }                
     intr_set_level(old_level);        
 
-    /*  Do not release files here; sometimes processes could be terminated by
-        an external source and that means that source is responsible for
-        cleaning up after us. */
-    t->voluntarily_exited = 1;
     t->status_on_exit = status;
     lock_release(&sys_lock);
 
