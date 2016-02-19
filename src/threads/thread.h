@@ -99,26 +99,29 @@ struct fd_element{
 struct thread {
     /*! Owned by thread.c. */
     /**@{*/
-    tid_t tid;                          /*!< Thread identifier. */
-    enum thread_status status;          /*!< Thread state. */
-    char name[16];                      /*!< Name (for debugging purposes). */
-    uint8_t *stack;                     /*!< Saved stack pointer. */
-    int priority;                       /*!< Priority. */
-    struct list_elem allelem;           /*!< List element for all threads list. */
+    tid_t tid;                       /*!< Thread identifier. */
+    enum thread_status status;       /*!< Thread state. */
+    char name[16];                   /*!< Name (for debugging purposes). */
+    uint8_t *stack;                  /*!< Saved stack pointer. */
+    int priority;                    /*!< Priority. */
+    struct list_elem allelem;        /*!< List element for all threads list. */
     /**@}*/
 
     /*! Shared between thread.c and synch.c. */
     /**@{*/
-    struct list_elem elem;              /*!< List element. */
+    struct list_elem elem;           /*!< List element. */
     /**@}*/
 
 #ifdef USERPROG
     /*! Owned by userprog/process.c. */
     /**@{*/
-    uint32_t *pagedir;                  /*!< Page directory. */
+    uint32_t *pagedir;               /*!< Page directory. */
 
     /*! Status passed by exit call. */
     int status_on_exit;
+
+    /*! True if loaded successfully from disk. */
+    bool loaded;
 
     /*! Block parent till I exit, if parent waits */
     struct semaphore i_am_done;
@@ -126,11 +129,24 @@ struct thread {
     /*! Allow parent to keep us blocked during an exit */
     struct semaphore may_i_die;
 
+    /*! Lock for waiting for the child to load. */
+    struct semaphore load_child; // TODO new, remove?
+
+    /*! Parent thread. Needs to be set to NULL when parent exists. */
+    struct thread *parent; // TODO new, remove?
+    					   // TODO make sure is set to NULL when parent exists!
+
+    struct list_elem sibling_elem; // TODO new, remove?
+
     /*! Keep track of other children of my parent */
-    struct list_elem sibling_list;
+    struct list sibling_list;
+
+    struct list_elem chld_elem; // TODO new, remove?
 
     /*! Keep track of my children */
     struct list child_list;
+
+
 
     /*! Active high flag for whether I am a child */
     uint8_t am_child;
@@ -168,7 +184,8 @@ void thread_print_stats(void);
 typedef void thread_func(void *aux);
 tid_t thread_create(const char *name, int priority, thread_func *function,
                     void *aux, uint8_t flag_child,
-					struct list *parents_child_list);
+					struct list *parents_child_list,
+					struct thread *parent);
 
 void thread_block(void);
 void thread_unblock(struct thread *);

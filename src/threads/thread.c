@@ -24,9 +24,6 @@
     of thread.h for details. */
 #define THREAD_MAGIC 0xcd6abf4b
 
-/* The file system lock used in syscall.c. */
-// extern struct lock sys_lock; TODO uncomment eventually
-
 /*! List of processes in THREAD_READY state, that is, processes
     that are ready to run but not actually running. */
 static struct list ready_list;
@@ -70,7 +67,8 @@ static void kernel_thread(thread_func *, void *aux);
 static void idle(void *aux UNUSED);
 static struct thread *running_thread(void);
 static struct thread *next_thread_to_run(void);
-static void init_thread(struct thread *t, const char *name, int priority, uint8_t flag_child, struct list *parents_child_list);
+static void init_thread(struct thread *t, const char *name, int priority,
+		uint8_t flag_child, struct list *parents_child_list);
 static bool is_thread(struct thread *) UNUSED;
 static void *alloc_frame(struct thread *, size_t size);
 static void schedule(void);
@@ -111,7 +109,7 @@ void thread_start(void) {
     /* Create the idle thread. */
     struct semaphore idle_started;
     sema_init(&idle_started, 0);
-    thread_create("idle", PRI_MIN, idle, &idle_started, 0, NULL);
+    thread_create("idle", PRI_MIN, idle, &idle_started, 0, NULL, NULL);
 
     /* Start preemptive thread scheduling. */
     intr_enable();
@@ -162,7 +160,8 @@ void thread_print_stats(void) {
     goal of Problem 1-3. */
 tid_t thread_create(const char *name, int priority, thread_func *function,
                     void *aux, uint8_t flag_child,
-					struct list *parents_child_list) {
+					struct list *parents_child_list,
+					struct thread *parent) {
 
     struct thread *t;
     struct kernel_thread_frame *kf;
@@ -178,7 +177,8 @@ tid_t thread_create(const char *name, int priority, thread_func *function,
         return TID_ERROR;
 
     /* Initialize thread. */
-    init_thread(t, name, priority, flag_child, parents_child_list);    
+    init_thread(t, name, priority, flag_child, parents_child_list);
+    t->parent = parent;
     tid = t->tid = allocate_tid();
 
     /* Stack frame for kernel_thread(). */
@@ -195,6 +195,12 @@ tid_t thread_create(const char *name, int priority, thread_func *function,
     sf = alloc_frame(t, sizeof *sf);
     sf->eip = switch_entry;
     sf->ebp = 0;
+
+    /* Add to list of children of parent. */ // TODO new bad!?
+    //printf("==== process %d is adding process %d as a child.\n",
+    //		thread_current()->tid, t->tid);
+    list_push_back(&thread_current()->child_list,
+    		&t->chld_elem);
 
     /* Add to run queue. */
     thread_unblock(t);
@@ -265,23 +271,46 @@ tid_t thread_tid(void) {
     returns to the caller. */
 void thread_exit(void) {
     ASSERT(!intr_context());
+    struct list_elem *l;
+    struct thread *chld_t;
 
 #ifdef USERPROG
-    /* TODO eventually uncomment this
-	struct fd_element *r;
-	struct list_elem *l;
+    /* TODO eventually uncomment this?
 
 	// Close the open file descriptors.
 	lock_acquire(&sys_lock);
-	for (l = list_begin(&thread_current()->files);
-			 l != list_end(&thread_current()->files);
-			 l = list_next(l)) {
-		r = list_entry(l, struct fd_element, f_elem);
-		close(r->fd);
-		free(r);
+	for (l2 = list_begin(&thread_current()->files);
+			 l2 != list_end(&thread_current()->files);
+			 l2 = list_next(l2)) {
+		r2 = list_entry(l, struct fd_element, f_elem);
+		close(r2->fd);
+		free(r2);
 	}
 	lock_release(&sys_lock);
 	*/
+
+    // Tell parent function that I'm dying. Remove from its child list.
+    // TODO new...
+    if (thread_current()->parent != NULL) {
+		for (l = list_begin(&thread_current()->parent->child_list);
+				l != list_end(&thread_current()->parent->child_list);
+				l = list_next(l)) {
+			chld_t = list_entry(l, struct thread, chld_elem);
+			if (chld_t->tid == thread_current()->tid) {
+				list_remove(l);
+				break;
+			}
+		}
+    }
+
+    // Iterate over all children, setting their parent pointers to NULL.
+    // TODO new, remove?
+	for (l = list_begin(&thread_current()->child_list);
+			l != list_end(&thread_current()->child_list);
+			l = list_next(l)) {
+		chld_t = list_entry(l, struct thread, chld_elem);
+		chld_t->parent = NULL;
+	}
     process_exit();
 #endif
 
@@ -436,15 +465,24 @@ static void init_thread(struct thread *t, const char *name, int priority,
     /* Initialize process_wait() system call structures */
     list_init(&t->child_list);
     sema_init(&t->i_am_done, 0); /* Locked by child, implicitly */    
-    t->am_child = flag_child;     
+    sema_init(&t->load_child, 0); // TODO new, remove?
+    t->am_child = flag_child;  // TODO new remove?
+    t->loaded = false; // TODO new remove?
     if (flag_child > 0) {
-        list_push_back(parents_child_list, &t->sibling_list);
+
+    	/*
+		struct list_elem *l;
+		for (l = list_begin(parents_child_list); // TODO new, remove?
+				l != list_end(parents_child_list);
+				l = list_next(l)) {
+			list_push_back(&t->sibling_list, l);
+		}
+		*/
+
         sema_init(&t->may_i_die, 0); /* Blocking child from death on sys_exit */    
     } else {
     	/* If process, sys_exit will not block for a parent's approval. */
         sema_init(&t->may_i_die, 1);
-        t->sibling_list.prev = NULL;
-        t->sibling_list.next = NULL;
     }  
     intr_set_level(old_level);
 }
@@ -484,7 +522,8 @@ static struct thread * next_thread_to_run(void) {
    practice that means that printf()s should be added at the end of the
    function.
 
-   After this function and its caller returns, the thread switch is complete. */
+   After this function and its caller returns, the thread switch is
+   complete. */
 void thread_schedule_tail(struct thread *prev) {
     struct thread *cur = running_thread();
   

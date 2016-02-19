@@ -176,7 +176,7 @@ void exit(int status) {
     lock_acquire(&sys_lock);
 
 #ifdef USERPROG
-    printf ("%s: exit(%d)\n", t->name, status);
+    	printf ("%s: exit(%d)\n", t->name, status);
 #endif
 
     struct list_elem *elem;        
@@ -198,13 +198,15 @@ void exit(int status) {
     
     old_level = intr_disable();        
     elem = list_begin(&t->child_list);
+
     while (elem != list_end(&t->child_list)) {        
-        mychild = list_entry(elem, struct thread, sibling_list);            
+        mychild = list_entry(elem, struct thread, chld_elem);
         mychild->am_child = 0;
         sema_up(&mychild->may_i_die);
         elem = list_next(elem);           
         list_remove(elem->prev);            
     }                
+
     intr_set_level(old_level);        
 
     t->status_on_exit = status;

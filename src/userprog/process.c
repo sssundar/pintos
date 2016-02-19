@@ -32,6 +32,7 @@ tid_t process_execute(const char *file_name) {
     tid_t tid;
     char *progname;
     int i = 0;
+    bool found = false;
 
     /* Make a copy of FILE_NAME.
        Otherwise there's a race between the caller and load(). */
@@ -53,16 +54,40 @@ tid_t process_execute(const char *file_name) {
     /* Create a new thread to execute FILE_NAME, and make sure it knows it's
        our child */
     tid = thread_create(progname, PRI_DEFAULT, start_process, fn_copy, 1,
-    		&thread_current()->child_list);
+    		&thread_current()->child_list, thread_current()); // TODO new, rem?
+    // Wait for child to be loaded.
+    sema_down(&thread_current()->load_child); // TODO New, remove?
 
+    // Search the list of children for the one with the matching
+    // tid. Check its exit status. If bad, return -1. Otherwise return tid.
+    struct thread *chld_t;
+    struct list_elem *l;
+	for (l = list_begin(&thread_current()->child_list); // TODO new, remove?
+			l != list_end(&thread_current()->child_list);
+			l = list_next(l)) {
+		chld_t = list_entry(l, struct thread, chld_elem);
 
+		// TODO remove
+		//printf(">>>> process %d has child: %d\n",
+		//		thread_current()->tid, chld_t->tid);
+
+		if(chld_t->tid == tid) {
+			if(!chld_t->loaded) {
+				tid = -1;
+			}
+			found = true;
+			break;
+		}
+	}
+	if (!found)
+		tid = -1;
 
     if (tid == TID_ERROR)
-        palloc_free_page(fn_copy); 
+        palloc_free_page(fn_copy);
 
     if (progname != NULL)
     	palloc_free_page((void *) progname);
-    return tid;
+    return tid; // changed from current_thread()->tid
 }
 
 /*! A thread function that loads a user process and starts it running. */
@@ -78,10 +103,22 @@ static void start_process(void *file_name_) {
     if_.eflags = FLAG_IF | FLAG_MBS;
     success = load(file_name, &if_.eip, &if_.esp);
 
+    if (!success) { // TODO new remove?
+    	thread_current()->loaded = false; // TODO new remove?
+    }
+    else {
+    	thread_current()->loaded = true; // TODO new remove?
+    }
+
+    if (thread_current()->parent != NULL) {
+		sema_up(&thread_current()->parent->load_child); // TODO new remove?
+	}
+
     /* If load failed, quit. */
-    palloc_free_page(file_name);
-    if (!success)         
-        exit(-1);
+    //palloc_free_page(file_name);
+    if (!success) {
+    	thread_exit(); // TODO new used to be exit
+    }
 
     /* Start the user process by simulating a return from an
        interrupt, implemented by intr_exit (in
@@ -116,9 +153,8 @@ int process_wait(tid_t child_tid) {
 
     tid_t this_childs_tid; 
 
-
     while (elem != list_end(&t->child_list)) {        
-        mychild = list_entry(elem, struct thread, sibling_list);
+        mychild = list_entry(elem, struct thread, chld_elem);
         this_childs_tid = mychild->tid;
         if (this_childs_tid == child_tid) {
             found_tid = true;
@@ -126,6 +162,7 @@ int process_wait(tid_t child_tid) {
         }
         elem = list_next(elem);
     }
+
 
     if (!found_tid) {
     	// Possibly because of TID_ERROR, Child Termination, Child
@@ -506,7 +543,7 @@ static bool setup_stack(void **esp, const char *file_name) {
                  token != NULL; token = strtok_r(NULL, " ", &save_ptr)) {
 
                 start = ptr - strlen(token) - 1;
-                if ((void *)start < PHYS_BASE - 4096) {
+                if ((void *)start < PHYS_BASE - PGSIZE) {
                 	palloc_free_page((void *) fncopy);
                 	return false;
                 }
@@ -524,7 +561,7 @@ static bool setup_stack(void **esp, const char *file_name) {
             vptr--;
             vptr--; // This one is for the null-terminator of argv
             for (i = 0; i < argc; i++) {
-            	if ((void *) vptr < PHYS_BASE - 4096) {
+            	if ((void *) vptr < PHYS_BASE - PGSIZE) {
 					palloc_free_page((void *) fncopy);
 					return false;
 				}
@@ -534,13 +571,13 @@ static bool setup_stack(void **esp, const char *file_name) {
             }
 
             // Set up argv pointer, which is char **argv, and argc
-            if ((void *) vptr < PHYS_BASE - 4096) {
+            if ((void *) vptr < PHYS_BASE - PGSIZE) {
 				palloc_free_page((void *) fncopy);
 				return false;
 			}
             *vptr = (char *) (vptr + 1);
             vptr--;
-            if ((void *) vptr < PHYS_BASE - 4096) {
+            if ((void *) vptr < PHYS_BASE - PGSIZE) {
 				palloc_free_page((void *) fncopy);
 				return false;
 			}
