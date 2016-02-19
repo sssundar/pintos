@@ -1,0 +1,278 @@
+                     +--------------------------+
+                     |          CS 124          |
+                     | PROJECT 4: USER PROGRAMS |
+                     |     DESIGN DOCUMENT      |
+                     +--------------------------+
+
+---- GROUP ----
+
+>> Fill in the names and email addresses of your group members.
+
+Hamik Mukelyan <hamik@caltech.edu>
+Sushant Sundaresh <sushant.sundaresh@gmail.com>
+Dave Luo <dluo@caltech.edu>
+
+>> Specify how many late tokens you are using on this assignment: 
+2 
+
+>> What is the Git repository and commit hash for your submission?
+   (You only need to include the commit-hash in the file you submit
+   on Moodle.)
+
+   Repository URL: login.cms.caltech.edu:/cs/courses/cs124/teams/Curiosity
+   commit TODO
+
+---- PRELIMINARIES ----
+
+>> If you have any preliminary comments on your submission, notes for the
+>> TAs, or extra credit, please give them here.
+
+TODO
+
+>> Please cite any offline or online sources you consulted while
+>> preparing your submission, other than the Pintos documentation, course
+>> text, lecture notes, and course instructors.
+
+Wikipedia.
+
+			   USER PROGRAMS
+			   =============
+
+---- LOGISTICS ----
+
+These questions will help us to keep track of the difficulty level of
+assignments, as well as keeping track of which team members worked on
+which parts.
+
+>> L1: How many hours did each team member spend on this assignment?
+   Make sure that each member's total time is listed.
+   
+Hamik:   TODO
+
+Sushant: TODO
+
+Dave:    TODO
+
+>> L2: What did each team member focus on for this assignment?  Keep
+   descriptions to 25-30 words or less.
+   
+Hamik:   Implemented half of the syscalls, implemented argument passing, 
+         got a plurality of the tests to pass.
+         
+Sushant: TODO
+
+Dave:    TODO
+
+                           ARGUMENT PASSING
+                           ================
+
+---- DATA STRUCTURES ----
+
+>> A1: Copy here the declaration of each new or changed `struct' or
+>> `struct' member, global or static variable, `typedef', or
+>> enumeration.  Identify the purpose of each in 25 words or less.
+
+TODO
+
+---- ALGORITHMS ----
+
+>> A2: Briefly describe how you implemented argument parsing.  How do
+>> you arrange for the elements of argv[] to be in the right order?
+>> How do you avoid overflowing the stack page?
+
+As tokens are encountered I store them on the stack. So "echo x y z" would
+make the stack look like 
+
+Mem addr:    Value:      Type:    Reason: 
+===================================================
+0xbfffffff    '\0'       char
+0xbffffffe     'o'       char
+0xbffffffd     'h'       char
+0xbffffffc     'c'       char
+0xbffffffb     'e'       char
+     e        '\0'       char
+     t         'x'       char
+     c        '\0'       char
+     .         'y'       char
+     .        '\0'       char
+     .         'z'       char
+---------------------------------------------------
+                     later stuff
+
+I keep a pointer called "start" pointing at the beginning of the last arg,
+which is 'z' in this example. I also keep track of the number of arguments,
+insert zeroed word-alignment bytes, and a null-terminator for the argv
+array. Finally I make put the pointer "start" under the null-terminator, 
+increment start by the length of the string at "start", then repeat as many
+times as there are arguments. The final stack looks like:
+
+
+Mem addr:    Value:      Type:    Reason: 
+===================================================
+                    earlier stuff
+---------------------------------------------------
+     e         0         void *   zero to 12
+     t         0         void *   word-alignment
+     c         0         void *   byes
+     .         0         char *   null-terminator
+     .       argv[3]     char *   null-terminator
+     .       argv[2]     char *   null-terminator
+     .       argv[1]     char *   null-terminator
+     .       argv[0]     char *   null-terminator
+---------------------------------------------------
+                     later stuff 
+
+To avoid overflowing the stack page I check before each write to see if the
+pointer is below the bottom of the page. If it is I abort. It a better
+implementation we might request another page every time the previous page
+fills up.
+
+---- RATIONALE ----
+
+>> A3: Why does Pintos implement strtok_r() but not strtok()?
+
+Because the 'r' in strtok_r stands for reentrant. Reentrant is good :-).
+It means multiple threads can use it at once. Frankly the other one sucks.
+
+>> A4: In Pintos, the kernel separates commands into a executable name
+>> and arguments.  In Unix-like systems, the shell does this
+>> separation.  Identify at least two advantages of the Unix approach.
+
+1) The kernel needs to be as fast as possible. Doing the separation in the
+   kernel wastes time.
+   
+2) If the executable name is given as a relative path it will be easiest
+   for the user-space program to access the full path.
+   
+                             SYSTEM CALLS
+                             ============
+
+---- DATA STRUCTURES ----
+
+>> B1: Copy here the declaration of each new or changed `struct' or
+>> `struct' member, global or static variable, `typedef', or
+>> enumeration.  Identify the purpose of each in 25 words or less.
+
+TODO
+
+>> B2: Describe how file descriptors are associated with open files.
+>> Are file descriptors unique within the entire OS or just within a
+>> single process?
+
+They are unique per process. Each process keeps track of the highest fd
+assigned so far, then it assigns the next higher one to the next file
+opened. If files are closed their file descriptors are never reclaimed.
+
+---- ALGORITHMS ----
+
+>> B3: Describe your code for reading and writing user data from the
+>> kernel.
+
+TODO
+
+>> B4: Suppose a system call causes a full page (4,096 bytes) of data
+>> to be copied from user space into the kernel.  What is the least
+>> and the greatest possible number of inspections of the page table
+>> (e.g. calls to pagedir_get_page()) that might result?  What about
+>> for a system call that only copies 2 bytes of data?  Is there room
+>> for improvement in these numbers, and how much?
+
+TODO
+
+>> B5: Briefly describe your implementation of the "wait" system call
+>> and how it interacts with process termination.
+
+TODO
+
+>> B6: Any access to user program memory at a user-specified address
+>> can fail due to a bad pointer value.  Such accesses must cause the
+>> process to be terminated.  System calls are fraught with such
+>> accesses, e.g. a "write" system call requires reading the system
+>> call number from the user stack, then each of the call's three
+>> arguments, then an arbitrary amount of user memory, and any of
+>> these can fail at any point.  This poses a design and
+>> error-handling problem: how do you best avoid obscuring the primary
+>> function of code in a morass of error-handling?  Furthermore, when
+>> an error is detected, how do you ensure that all temporarily
+>> allocated resources (locks, buffers, etc.) are freed?  In a few
+>> paragraphs, describe the strategy or strategies you adopted for
+>> managing these issues.  Give an example.
+
+In a given function error condition-checks were interspersed through the code.
+When an error condition is triggered resources are freed immediately then
+the appropriate action is taken (e.g. a lock is released and the function
+exits). It might have been better to have modularized the resource
+de-allocation. TODO more?
+
+---- SYNCHRONIZATION ----
+
+>> B7: The "exec" system call returns -1 if loading the new executable
+>> fails, so it cannot return before the new executable has completed
+>> loading.  How does your code ensure this?  How is the load
+>> success/failure status passed back to the thread that calls "exec"?
+
+TODO
+
+>> B8: Consider parent process P with child process C.  How do you
+>> ensure proper synchronization and avoid race conditions when P
+>> calls wait(C) before C exits?  After C exits?  How do you ensure
+>> that all resources are freed in each case?  How about when P
+>> terminates without waiting, before C exits?  After C exits?  Are
+>> there any special cases?
+
+TODO
+
+---- RATIONALE ----
+
+>> B9: Why did you choose to implement access to user memory from the
+>> kernel in the way that you did?
+
+TODO
+
+>> B10: What advantages or disadvantages can you see to your design
+>> for file descriptors?
+
+TODO
+
+>> B11: The default tid_t to pid_t mapping is the identity mapping.
+>> If you changed it, what advantages are there to your approach?
+
+			  SURVEY QUESTIONS
+			  ================
+
+Answering these questions is optional, but it will help us improve the
+course in future years.  Feel free to tell us anything you want - these
+questions are just to spur your thoughts.  Also, feel free to be completely
+honest if there are issues with the assignment or the course - you won't be
+penalized.  We can't fix things until we know about them.  :-)
+
+>> In your opinion, was this assignment, or any of the parts of it, too
+>> easy or too hard?  Did it take too long or too little time?
+
+Too long :-(
+
+>> Did you find that working on a particular part of the assignment gave
+>> you greater insight into some aspect of OS design?
+
+Yes---wait.
+
+>> Were there any parts of the assignment that you felt were unnecessarily
+>> tedious or pointless?
+
+Argument passing.
+
+>> Is there some particular fact or hint we should give students in
+>> future quarters to help them solve the problems?  Conversely, did you
+>> find any of our guidance to be misleading?
+
+No.
+
+>> Do you have any suggestions for the instructor and/or TAs to more
+>> effectively assist students, either for future quarters or the remaining
+>> projects?
+
+No.
+
+>> Any other comments?
+
+Owie.

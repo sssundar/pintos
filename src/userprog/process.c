@@ -8,6 +8,7 @@
 #include "userprog/gdt.h"
 #include "userprog/pagedir.h"
 #include "userprog/tss.h"
+#include "lib/user/syscall.h"
 #include "filesys/directory.h"
 #include "filesys/file.h"
 #include "filesys/filesys.h"
@@ -502,6 +503,10 @@ static bool setup_stack(void **esp, const char *file_name) {
                  token != NULL; token = strtok_r(NULL, " ", &save_ptr)) {
 
                 start = ptr - strlen(token) - 1;
+                if ((void *)start < PHYS_BASE - 4096) {
+                	palloc_free_page((void *) fncopy);
+                	return false;
+                }
                 strlcpy(start, token, strlen(token) + 1);
                 ptr = start;
                 argc++;
@@ -516,14 +521,26 @@ static bool setup_stack(void **esp, const char *file_name) {
             vptr--;
             vptr--; // This one is for the null-terminator of argv
             for (i = 0; i < argc; i++) {
+            	if ((void *) vptr < PHYS_BASE - 4096) {
+					palloc_free_page((void *) fncopy);
+					return false;
+				}
                 *vptr = start;
                 start += strlen(start) + 1;
                 vptr--;
             }
 
             // Set up argv pointer, which is char **argv, and argc
+            if ((void *) vptr < PHYS_BASE - 4096) {
+				palloc_free_page((void *) fncopy);
+				return false;
+			}
             *vptr = (char *) (vptr + 1);
             vptr--;
+            if ((void *) vptr < PHYS_BASE - 4096) {
+				palloc_free_page((void *) fncopy);
+				return false;
+			}
             *vptr = (char *) argc;
 
             // The bogus return address.
