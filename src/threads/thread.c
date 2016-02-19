@@ -161,7 +161,8 @@ void thread_print_stats(void) {
     no actual priority scheduling is implemented.  Priority scheduling is the
     goal of Problem 1-3. */
 tid_t thread_create(const char *name, int priority, thread_func *function,
-                    void *aux, uint8_t flag_child, struct list *parents_child_list) {
+                    void *aux, uint8_t flag_child,
+					struct list *parents_child_list) {
 
     struct thread *t;
     struct kernel_thread_frame *kf;
@@ -264,7 +265,6 @@ tid_t thread_tid(void) {
     returns to the caller. */
 void thread_exit(void) {
     ASSERT(!intr_context());
-    struct thread *t = thread_current();
 
 #ifdef USERPROG
     /* TODO eventually uncomment this

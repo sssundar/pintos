@@ -54,6 +54,9 @@ tid_t process_execute(const char *file_name) {
        our child */
     tid = thread_create(progname, PRI_DEFAULT, start_process, fn_copy, 1,
     		&thread_current()->child_list);
+
+
+
     if (tid == TID_ERROR)
         palloc_free_page(fn_copy); 
 
