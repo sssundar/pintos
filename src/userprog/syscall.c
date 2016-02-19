@@ -335,7 +335,7 @@ int write(int fd, const void *buffer, unsigned size) {
 				return -1;
 			}
 			lock_release(&sys_lock);
-			seek(fd, 0); // This is what overwrites the file.
+			//seek(fd, 0); // This is what overwrites the file.
 			return file_write(f, buffer, size);
 		}
 	}
@@ -378,7 +378,7 @@ int read(int fd, void *buffer, unsigned size){
 			if (r->fd == fd) {
 				f = r->file;
 				lock_release (&sys_lock);
-				seek(r->fd, 0); // I.e., start reading from beginning of file.
+				//seek(r->fd, 0); // I.e., start reading from beginning of file.
 				return file_read(f, buffer, size);
 			}
 		}
