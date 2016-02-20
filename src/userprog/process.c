@@ -23,6 +23,9 @@
 static thread_func start_process NO_RETURN;
 static bool load(const char *cmdline, void (**eip)(void), void **esp);
 
+/*! Lock for the executing_files list. */
+struct lock eflock;
+
 /*! Check these before writing to files! */
 struct list executing_files;
 
@@ -144,13 +147,17 @@ static void start_process(void *file_name_) {
 bool process_fd_matches(int fd) {
 	struct fd_element *r;
 	struct list_elem *l;
+	lock_acquire(&eflock);
 	for (l = list_begin(&executing_files);
 			 l != list_end(&executing_files);
 			 l = list_next(l)) {
 		r = list_entry(l, struct fd_element, f_elem);
-		if (fd == r->fd)
+		if (fd == r->fd) {
+			lock_release(&eflock);
 			return true;
+		}
 	}
+	lock_release(&eflock);
 	return false;
 }
 
@@ -161,13 +168,17 @@ bool process_fd_matches(int fd) {
 int process_filename_matches(const char *filename) {
 	struct fd_element *r;
 	struct list_elem *l;
+	lock_acquire(&eflock);
 	for (l = list_begin(&executing_files);
 			 l != list_end(&executing_files);
 			 l = list_next(l)) {
 		r = list_entry(l, struct fd_element, f_elem);
-		if (strcmp(filename, r->filename) == 0)
+		if (strcmp(filename, r->filename) == 0) {
+			lock_release(&eflock);
 			return r->fd;
+		}
 	}
+	lock_release(&eflock);
 	return -1;
 }
 
@@ -370,13 +381,16 @@ bool load(const char *file_name, void (**eip) (void), void **esp) {
 	}
 	progname[i] = '\0';
 
+
     // Store the filename in the thread struct
+	lock_acquire(&eflock);
     if (thread_current()->tfile.filename != NULL) {
     	strlcpy(thread_current()->tfile.filename, progname,
     			strlen(progname) + 1);
     	// Store in the list of executing files.
     	list_push_back(&executing_files, &thread_current()->tfile.f_elem);
     }
+    lock_release(&eflock);
 
     file = filesys_open(progname);
     if (file == NULL) {

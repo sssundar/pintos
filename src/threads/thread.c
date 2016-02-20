@@ -43,6 +43,8 @@ static struct lock tid_lock;
 
 extern struct list executing_files;
 
+extern struct lock eflock;
+
 /*! Maximum file descriptor assigned so far. */
 int max_fd = 3;
 
@@ -101,6 +103,7 @@ void thread_init(void) {
     list_init(&ready_list);
     list_init(&all_list);
     list_init(&executing_files);
+    lock_init(&eflock);
 
     /* Set up a thread structure for the running thread. */
     initial_thread = running_thread();    
