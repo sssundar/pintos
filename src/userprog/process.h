@@ -9,6 +9,7 @@ void process_exit(void);
 void process_activate(void);
 bool process_fd_matches(int fd);
 int process_filename_matches(const char *filename);
+struct semaphore *file_match_sema(const char *filename);
 
 #endif /* userprog/process.h */
 

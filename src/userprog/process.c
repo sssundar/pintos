@@ -29,6 +29,8 @@ struct lock eflock;
 /*! Check these before writing to files! */
 struct list executing_files;
 
+extern struct lock sys_lock;
+
 /*! Starts a new thread running a user program loaded from FILENAME.  The new
     thread may be scheduled (and may even exit) before process_execute()
     returns.  Returns the new process's thread id, or TID_ERROR if the thread
@@ -159,6 +161,24 @@ bool process_fd_matches(int fd) {
 	}
 	lock_release(&eflock);
 	return false;
+}
+
+/*! Returns the matching file's semaphore. */
+struct semaphore *file_match_sema(const char *filename) {
+	struct fd_element *r;
+	struct list_elem *l;
+	lock_acquire(&eflock);
+	for (l = list_begin(&executing_files);
+			 l != list_end(&executing_files);
+			 l = list_next(l)) {
+		r = list_entry(l, struct fd_element, f_elem);
+		if (strcmp(filename, r->filename) == 0) {
+			lock_release(&eflock);
+			return &r->multfile_sema;
+		}
+	}
+	lock_release(&eflock);
+	return NULL;
 }
 
 /*! Returns the matching file descriptor if the given file name matches
@@ -392,11 +412,14 @@ bool load(const char *file_name, void (**eip) (void), void **esp) {
     }
     lock_release(&eflock);
 
+    lock_acquire(&sys_lock);
     file = filesys_open(progname);
     if (file == NULL) {
         printf("load: %s: open failed\n", progname);
+        lock_release(&sys_lock);
         goto done; 
     }
+    lock_release(&sys_lock);
 
     /* Read and verify executable header. */
     if (file_read(file, &ehdr, sizeof ehdr) != sizeof ehdr ||

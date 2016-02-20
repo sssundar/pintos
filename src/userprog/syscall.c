@@ -15,6 +15,7 @@
 #include "devices/input.h"
 #include "userprog/process.h"
 #include "lib/string.h"
+#include "threads/palloc.h"
 
 //----------------------------- Global variables ------------------------------
 
@@ -553,8 +554,31 @@ pid_t exec (const char *cmd_line) {
 		exit(-1);
 	}
 
+    // Find the program name, which is the first token.
+    char *progname = (char *) palloc_get_page(0);
+	if (progname == NULL)
+		return -1;
+	strlcpy(progname, cmd_line, PGSIZE);
+	int i = 0;
+	while (progname[i] != ' ' && progname[i] != '\0') {
+		i++;
+	}
+	progname[i] = '\0';
+
+	struct semaphore *fsema = file_match_sema(cmd_line);
+
+	if (progname != NULL)
+	    palloc_free_page((void *) progname);
+
 	lock_release(&sys_lock);
+
+	//if (fsema != NULL)
+		//sema_up(fsema);
+
 	tid = process_execute(cmd_line);
+
+	//if (fsema != NULL)
+		//sema_down(fsema);
 
 	return (pid_t) tid;
 }
