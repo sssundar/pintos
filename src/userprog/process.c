@@ -62,22 +62,18 @@ tid_t process_execute(const char *file_name) {
     /* Create a new thread to execute FILE_NAME, and make sure it knows it's
        our child */
     tid = thread_create(progname, PRI_DEFAULT, start_process, fn_copy, 1,
-    		&thread_current()->child_list, thread_current()); // TODO new, rem?
+    		&thread_current()->child_list, thread_current()); 
     // Wait for child to be loaded.
-    sema_down(&thread_current()->load_child); // TODO New, remove?
+    sema_down(&thread_current()->load_child); 
 
     // Search the list of children for the one with the matching
     // tid. Check its exit status. If bad, return -1. Otherwise return tid.
     struct thread *chld_t;
     struct list_elem *l;
-	for (l = list_begin(&thread_current()->child_list); // TODO new, remove?
+	for (l = list_begin(&thread_current()->child_list); 
 			l != list_end(&thread_current()->child_list);
 			l = list_next(l)) {
 		chld_t = list_entry(l, struct thread, chld_elem);
-
-		// TODO remove
-		//printf(">>>> process %d has child: %d\n",
-		//		thread_current()->tid, chld_t->tid);
 
 		if(chld_t->tid == tid) {
 			if(!chld_t->loaded) {
@@ -111,15 +107,15 @@ static void start_process(void *file_name_) {
     if_.eflags = FLAG_IF | FLAG_MBS;
     success = load(file_name, &if_.eip, &if_.esp);
 
-    if (!success) { // TODO new remove?
-    	thread_current()->loaded = false; // TODO new remove?
+    if (!success) { 
+    	thread_current()->loaded = false; 
     }
     else {
-    	thread_current()->loaded = true; // TODO new remove?
+    	thread_current()->loaded = true; 
     }
 
     if (thread_current()->parent != NULL) {
-		sema_up(&thread_current()->parent->load_child); // TODO new remove?
+		sema_up(&thread_current()->parent->load_child); 
 	}
 
     /* If load failed, quit. */
@@ -130,7 +126,7 @@ static void start_process(void *file_name_) {
     		palloc_free_page((void *) thread_current()->tfile.filename);
     	    thread_current()->tfile.filename = NULL;
     	}
-    	thread_exit(); // TODO new used to be exit
+    	thread_exit(); 
     }
 
     /* Start the user process by simulating a return from an

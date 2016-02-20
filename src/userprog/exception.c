@@ -115,9 +115,7 @@ static void page_fault(struct intr_frame *f) {
     bool not_present;  /* True: not-present page, false: writing r/o page. */
     bool write;        /* True: access was write, false: access was read. */
     bool user;         /* True: access by user, false: access by kernel. */
-    void *fault_addr;  /* Fault address. */
-
-    // TODO check if null, return if so
+    void *fault_addr;  /* Fault address. */    
 
     /* Obtain faulting address, the virtual address that was accessed to cause
        the fault.  It may point to code or to data.  It is not necessarily the

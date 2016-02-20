@@ -132,18 +132,17 @@ struct thread {
     struct semaphore may_i_die;
 
     /*! Lock for waiting for the child to load. */
-    struct semaphore load_child; // TODO new, remove?
+    struct semaphore load_child; 
 
     /*! Parent thread. Needs to be set to NULL when parent exists. */
-    struct thread *parent; // TODO new, remove?
-    					   // TODO make sure is set to NULL when parent exists!
+    struct thread *parent;     					   
 
-    struct list_elem sibling_elem; // TODO new, remove?
+    struct list_elem sibling_elem;
 
     /*! Keep track of other children of my parent */
     struct list sibling_list;
 
-    struct list_elem chld_elem; // TODO new, remove?
+    struct list_elem chld_elem; 
 
     /*! Keep track of my children */
     struct list child_list;

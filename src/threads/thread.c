@@ -205,9 +205,7 @@ tid_t thread_create(const char *name, int priority, thread_func *function,
     sf->eip = switch_entry;
     sf->ebp = 0;
 
-    /* Add to list of children of parent. */ // TODO new bad!?
-    //printf("==== process %d is adding process %d as a child.\n",
-    //		thread_current()->tid, t->tid);
+    /* Add to list of children of parent. */ 
     list_push_back(&thread_current()->child_list,
     		&t->chld_elem);
 
@@ -298,8 +296,7 @@ void thread_exit(void) {
 	lock_release(&sys_lock);
 	*/
 
-    // Tell parent function that I'm dying. Remove from its child list.
-    // TODO new...
+    // Tell parent function that I'm dying. Remove from its child list.    
     if (thread_current()->parent != NULL) {
 		for (l = list_begin(&thread_current()->parent->child_list);
 				l != list_end(&thread_current()->parent->child_list);
@@ -312,8 +309,7 @@ void thread_exit(void) {
 		}
     }
 
-    // Iterate over all children, setting their parent pointers to NULL.
-    // TODO new, remove?
+    // Iterate over all children, setting their parent pointers to NULL.    
 	for (l = list_begin(&thread_current()->child_list);
 			l != list_end(&thread_current()->child_list);
 			l = list_next(l)) {
@@ -484,9 +480,9 @@ static void init_thread(struct thread *t, const char *name, int priority,
     /* Initialize process_wait() system call structures */
     list_init(&t->child_list);
     sema_init(&t->i_am_done, 0); /* Locked by child, implicitly */    
-    sema_init(&t->load_child, 0); // TODO new, remove?
-    t->am_child = flag_child;  // TODO new remove?
-    t->loaded = false; // TODO new remove?
+    sema_init(&t->load_child, 0); 
+    t->am_child = flag_child;  
+    t->loaded = false; 
     sema_init(&t->tfile.multfile_sema, 0);
     // Store the filename in a newly allocated page.
     if(strcmp("main", name) != 0 && strcmp("init", name) != 0
@@ -506,16 +502,6 @@ static void init_thread(struct thread *t, const char *name, int priority,
     }
 
     if (flag_child > 0) {
-
-    	/*
-		struct list_elem *l;
-		for (l = list_begin(parents_child_list); // TODO new, remove?
-				l != list_end(parents_child_list);
-				l = list_next(l)) {
-			list_push_back(&t->sibling_list, l);
-		}
-		*/
-
         sema_init(&t->may_i_die, 0); /* Blocking child from death on sys_exit */    
     } else {
     	/* If process, sys_exit will not block for a parent's approval. */

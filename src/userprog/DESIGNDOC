@@ -27,7 +27,7 @@ Dave Luo <dluo@caltech.edu>
 >> If you have any preliminary comments on your submission, notes for the
 >> TAs, or extra credit, please give them here.
 
-TODO
+None.
 
 >> Please cite any offline or online sources you consulted while
 >> preparing your submission, other than the Pintos documentation, course
@@ -47,11 +47,11 @@ which parts.
 >> L1: How many hours did each team member spend on this assignment?
    Make sure that each member's total time is listed.
    
-Hamik:   TODO
+Hamik:   a zillion (he did a whole lot, but I think he forgot this field)
 
-Sushant: 48
+Sushant: 48 
 
-Dave:    TODO
+Dave:    a metric ton (I think he forgot this)
 
 >> L2: What did each team member focus on for this assignment?  Keep
    descriptions to 25-30 words or less.
@@ -62,7 +62,8 @@ Hamik:   Implemented half of the syscalls, implemented argument passing,
 Sushant: user space addresses, an unused variant of syscall infrastructure,
          wait(), debugging
 
-Dave:    TODO
+Dave:    syscall infrastructure we actually used, a lot of the file system calls
+         debugging
 
                            ARGUMENT PASSING
                            ================
@@ -73,7 +74,9 @@ Dave:    TODO
 >> `struct' member, global or static variable, `typedef', or
 >> enumeration.  Identify the purpose of each in 25 words or less.
 
-TODO
+Doesn't look like there are any here, but we absolutely store
+the filename in the thread struct and in the fd_element struct to keep
+track of running binaries.
 
 ---- ALGORITHMS ----
 
@@ -191,11 +194,11 @@ In thread.h, the struct thread was modified as follows:
       decide to call wait (or exit).
     
     struct semaphore load_child;
-      It's how the parent can block on process_execute until it's sure
-      the child has loaded (don't want to return a valid pid)
+      It's how our children can block on process_execute until they're sure
+      they have loaded (don't want to return a valid pid)
     
     struct thread *parent;
-      TODO
+      A pointer back to our parent for accessing it's load_child. 
 
     struct list child_list;
       It's how a process keeps track of its children.
@@ -310,7 +313,9 @@ de-allocation. TODO more?
 >> loading.  How does your code ensure this?  How is the load
 >> success/failure status passed back to the thread that calls "exec"?
 
-TODO
+We use the load_child sema and have the parent wait on the child till
+it confirms it loaded. It's passed back using the child's loaded thread
+structure field.
 
 >> B8: Consider parent process P with child process C.  How do you
 >> ensure proper synchronization and avoid race conditions when P
@@ -319,24 +324,63 @@ TODO
 >> terminates without waiting, before C exits?  After C exits?  Are
 >> there any special cases?
 
-TODO
+Parent waits before C exits?  
+Parent blocks on i_am_done (implicitly granted to the child on creation
+within an interrupt block, while the parent is waiting for a return value from
+init_thread). Child releases i_am_done once all it has left to do is clean up.
+
+Parent waits after C exits?  
+Child has already released i_am_done and blocked on may_i_die so parent
+can read status_on_exit at leisure and release may_i_die (implicitly granted
+to parent on init_thread of child) so child can clean up.
+
+How do you ensure that all resources are freed in each case?  
+Well, the normal exit process frees files, and children will free their
+internal resources before calling exit (and we'll deallocate all their pages 
+anyways). So since the child is only waiting for the parent's approval to die,
+we don't have to ensure anything out of the ordinary. 
+
+How about when P terminates without waiting, before C exits?  
+Well, then as part of it's exit, it releases may_i_die and let's C know it
+isn't a child anymore. This is done in an interrupt block so C is guaranteed
+to die either as a child or an orphan, but not some mix of both (since
+C will always block on may_i_die).
+
+We're assuming zero kernel bugs here that cause termination due to
+exception within the exit code.
+
+After C exits?  
+Then the parent just lets the child go - same process, but we don't bother
+getting the run status before we up may_i_die for the child.
+
+We're assuming zero kernel bugs here.
+
+Are there any special cases?
+Not that we know of. We're assuming zero kernel bugs here. Things will go
+very badly if the exit code has bugs. 
 
 ---- RATIONALE ----
 
 >> B9: Why did you choose to implement access to user memory from the
 >> kernel in the way that you did?
 
-TODO
+Because we were planning to extend it to check all bytes but it seems the
+tests don't test for it, so we never got around to it.
 
 >> B10: What advantages or disadvantages can you see to your design
 >> for file descriptors?
 
-TODO
+Advantages: easy to extend, no limit (except raw pages in memory limit) on 
+# files open. 
+
+Disadvantages: a malloc for each file, rather than a lookup in the thread struct
+Repeatedly opening/closing files will fragment the kernel heap.
 
 >> B11: The default tid_t to pid_t mapping is the identity mapping.
 >> If you changed it, what advantages are there to your approach?
 
-n/a
+We did not change it.
+
 			  SURVEY QUESTIONS
 			  ================
 
