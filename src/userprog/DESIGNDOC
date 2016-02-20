@@ -49,7 +49,7 @@ which parts.
    
 Hamik:   TODO
 
-Sushant: TODO
+Sushant: 48
 
 Dave:    TODO
 
@@ -59,7 +59,8 @@ Dave:    TODO
 Hamik:   Implemented half of the syscalls, implemented argument passing, 
          got a plurality of the tests to pass.
          
-Sushant: TODO
+Sushant: user space addresses, an unused variant of syscall infrastructure,
+         wait(), debugging
 
 Dave:    TODO
 
@@ -153,7 +154,68 @@ It means multiple threads can use it at once. Frankly the other one sucks.
 >> `struct' member, global or static variable, `typedef', or
 >> enumeration.  Identify the purpose of each in 25 words or less.
 
-TODO
+struct lock eflock;
+struct list executing_files;
+This is a locked executing_files list, since we are absolutely going
+to have cases where we're trying to exec('echo') while some other thread is
+trying to open('echo'). The list tracks which binaries are currently
+running.
+
+struct fd_element{
+  int fd;
+  struct file *file;
+  char *filename;
+  struct list_elem  f_elem;
+};
+This is a structure allowing processes to open many files. It is allocated
+using malloc for each file you open. 
+
+In syscalls.c, struct lock sys_lock was created to ensure syscalls could
+make sure they were the only copy running in any thread, e.g. when opening a 
+file or something like that.
+
+In thread.h, the struct thread was modified as follows:    
+    int status_on_exit; 
+      This is where the thread stores its exit() argument, for future
+      reading by its parent.
+
+    bool loaded;
+      This is how we communicate load failure during process_execute,
+      during the call to init_thread.
+    
+    struct semaphore i_am_done;
+      It's what a parent blocks on when waiting for a child to finish.
+    
+    struct semaphore may_i_die;
+      It's something a child blocks on when waiting for a parent to
+      decide to call wait (or exit).
+    
+    struct semaphore load_child;
+      It's how the parent can block on process_execute until it's sure
+      the child has loaded (don't want to return a valid pid)
+    
+    struct thread *parent;
+      TODO
+
+    struct list child_list;
+      It's how a process keeps track of its children.
+    struct list_elem chld_elem; 
+      It's how we know who our children are.
+    
+    uint8_t am_child;
+      Let's us know whether we need to wait for a parent's say so.
+    
+    uint8_t voluntarily_exited;
+      Doesn't look like we're using this anymore, since all cleanup routes
+      through exit() and we assume 0 kernel bugs.    
+    
+    struct list files;
+      All files the thread has open.
+    
+    struct fd_element tfile;
+      The filename and file descriptor of the file used to load
+        this thread.
+
 
 >> B2: Describe how file descriptors are associated with open files.
 >> Are file descriptors unique within the entire OS or just within a
@@ -168,7 +230,14 @@ opened. If files are closed their file descriptors are never reclaimed.
 >> B3: Describe your code for reading and writing user data from the
 >> kernel.
 
-TODO
+The put_user and get_user and get_user_quadbyte work without touching
+page faults. They simply check if a user-space pointer is (in the user's
+view) to user-space or kernel-space. If it's to user space, then they
+get the kernel-space virtual mapping using pagedir_getpage and the user
+processes page directory (current thread's pagedir). Then they either
+set or get a byte. get_user_quadbyte calls get_user repeatedly.
+
+On any failure these return error flags; they don't exit any threads themselves.
 
 >> B4: Suppose a system call causes a full page (4,096 bytes) of data
 >> to be copied from user space into the kernel.  What is the least
@@ -177,12 +246,42 @@ TODO
 >> for a system call that only copies 2 bytes of data?  Is there room
 >> for improvement in these numbers, and how much?
 
-TODO
+As far as I can tell, we would call put_user once (so one pagedir_get_page 
+call) then call putbuf directly. This is absolutely a security risk. The 
+same is true of the 2 byte copy case. One way to fix this would be to
+verify each byte meant to be written manually, then call putbuf, or, 
+more effectively, look at the user address. Get the address of the end
+of it's page (or # bytes to be written, whichever comes first). Confirm this
+end-address is also valid. Great, so all the bytes in between are valid, too.
+Then keep stepping, finding the next page mapping, making sure the start/end
+pt within that page are valid. This could save a lot of time - using two
+pagedir_get_page calls for both of the cases above, in the best case where
+we write one contiguous page. 
 
 >> B5: Briefly describe your implementation of the "wait" system call
 >> and how it interacts with process termination.
 
-TODO
+Wait depends on two semas - may_i_die and i_am_done. A child is loaded
+with i_am_done held and may_i_die unheld. It is also linked to its parents
+child list. A child, once loaded, proceeds until it wants to call exit() or 
+has exit() called for it by an interrupt handler. It then releases i_am_done 
+and tries to capture may_i_die. A parent who has not waited in the child will 
+not notice either of these events, but the child thread will remain allocated.
+
+When the parent wants to wait on the child, it will try and capture i_am_done.
+If the child is still running it blocks till the child releases the same. 
+If the child is waiting on may_i_die it gets the sema immediatey. When it's done
+processing the child, in wait, it removes the child from it's child list so
+that it can never call wait on the child again. It then wakes the child
+blocked on may_i_die.
+
+If a parent terminates earlier than a child it will still release may_i_die,
+implicitly within it's control already, so that when the child eventually
+dies it is allowed to clean up without intervention from a dead and reaped
+parent.
+
+Children can be parents too, so we handle parent business before child business.
+Both can block.
 
 >> B6: Any access to user program memory at a user-specified address
 >> can fail due to a bad pointer value.  Such accesses must cause the
@@ -237,6 +336,7 @@ TODO
 >> B11: The default tid_t to pid_t mapping is the identity mapping.
 >> If you changed it, what advantages are there to your approach?
 
+n/a
 			  SURVEY QUESTIONS
 			  ================
 
