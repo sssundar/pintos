@@ -23,6 +23,9 @@
 static thread_func start_process NO_RETURN;
 static bool load(const char *cmdline, void (**eip)(void), void **esp);
 
+/*! Check these before writing to files! */
+struct list executing_files;
+
 /*! Starts a new thread running a user program loaded from FILENAME.  The new
     thread may be scheduled (and may even exit) before process_execute()
     returns.  Returns the new process's thread id, or TID_ERROR if the thread
@@ -117,6 +120,11 @@ static void start_process(void *file_name_) {
     /* If load failed, quit. */
     //palloc_free_page(file_name);
     if (!success) {
+    	if (thread_current()->tfile.filename != NULL) {
+    		list_remove(&thread_current()->tfile.f_elem);
+    		palloc_free_page((void *) thread_current()->tfile.filename);
+    	    thread_current()->tfile.filename = NULL;
+    	}
     	thread_exit(); // TODO new used to be exit
     }
 
@@ -128,6 +136,39 @@ static void start_process(void *file_name_) {
        and jump to it. */
     asm volatile ("movl %0, %%esp; jmp intr_exit" : : "g" (&if_) : "memory");
     NOT_REACHED();
+}
+
+/*! Returns true if the given file descriptor matches the one assigned to
+    the file that was loaded into a running process.
+ */
+bool process_fd_matches(int fd) {
+	struct fd_element *r;
+	struct list_elem *l;
+	for (l = list_begin(&executing_files);
+			 l != list_end(&executing_files);
+			 l = list_next(l)) {
+		r = list_entry(l, struct fd_element, f_elem);
+		if (fd == r->fd)
+			return true;
+	}
+	return false;
+}
+
+/*! Returns the matching file descriptor if the given file name matches
+    one used to load one (or more) of the running process(es). Otherwise
+    return -1.
+ */
+int process_filename_matches(const char *filename) {
+	struct fd_element *r;
+	struct list_elem *l;
+	for (l = list_begin(&executing_files);
+			 l != list_end(&executing_files);
+			 l = list_next(l)) {
+		r = list_entry(l, struct fd_element, f_elem);
+		if (strcmp(filename, r->filename) == 0)
+			return r->fd;
+	}
+	return -1;
 }
 
 /*! Waits for thread TID to die and returns its exit status.  If it was
@@ -192,6 +233,13 @@ int process_wait(tid_t child_tid) {
 void process_exit(void) {
     struct thread *cur = thread_current();
     uint32_t *pd;
+
+    if (thread_current()->tfile.filename != NULL) {
+    	list_remove(&thread_current()->tfile.f_elem);
+    	// TODO figure out how to free this later, causes panic for now.
+    	//palloc_free_page((void *) thread_current()->tfile.filename);
+    	thread_current()->tfile.filename = NULL;
+    }
 
     /* Destroy the current process's page directory and switch back
        to the kernel-only page directory. */
@@ -321,6 +369,14 @@ bool load(const char *file_name, void (**eip) (void), void **esp) {
 		i++;
 	}
 	progname[i] = '\0';
+
+    // Store the filename in the thread struct
+    if (thread_current()->tfile.filename != NULL) {
+    	strlcpy(thread_current()->tfile.filename, progname,
+    			strlen(progname) + 1);
+    	// Store in the list of executing files.
+    	list_push_back(&executing_files, &thread_current()->tfile.f_elem);
+    }
 
     file = filesys_open(progname);
     if (file == NULL) {

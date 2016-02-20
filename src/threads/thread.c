@@ -41,6 +41,11 @@ static struct thread *initial_thread;
 /*! Lock used by allocate_tid(). */
 static struct lock tid_lock;
 
+extern struct list executing_files;
+
+/*! Maximum file descriptor assigned so far. */
+int max_fd = 3;
+
 /*! Stack frame for kernel_thread(). */
 struct kernel_thread_frame {
     void *eip;                  /*!< Return address. */
@@ -95,6 +100,7 @@ void thread_init(void) {
     lock_init(&tid_lock);
     list_init(&ready_list);
     list_init(&all_list);
+    list_init(&executing_files);
 
     /* Set up a thread structure for the running thread. */
     initial_thread = running_thread();    
@@ -311,6 +317,10 @@ void thread_exit(void) {
 		chld_t = list_entry(l, struct thread, chld_elem);
 		chld_t->parent = NULL;
 	}
+
+	if (thread_current()->tfile.filename != NULL)
+	    palloc_free_page((void *) thread_current()->tfile.filename);
+
     process_exit();
 #endif
 
@@ -340,9 +350,15 @@ void thread_yield(void) {
 /*! Invoke function 'func' on all threads, passing along 'aux'.
     This function must be called with interrupts off. */
 void thread_foreach(thread_action_func *func, void *aux) {
-    struct list_elem *e;
+	// struct list_elem *e;
 
     ASSERT(intr_get_level() == INTR_OFF);
+
+    thread_foreach_danger_edition(func, aux);
+}
+
+void thread_foreach_danger_edition(thread_action_func *func, void *aux) {
+    struct list_elem *e;
 
     for (e = list_begin(&all_list); e != list_end(&all_list);
          e = list_next(e)) {
@@ -444,7 +460,7 @@ static bool is_thread(struct thread *t) {
 
 /*! Does basic initialization of T as a blocked thread named NAME. */
 static void init_thread(struct thread *t, const char *name, int priority,
-		uint8_t flag_child, struct list *parents_child_list) {
+		uint8_t flag_child, struct list *parents_child_list UNUSED) {
     enum intr_level old_level;
 
     ASSERT(t != NULL);
@@ -458,7 +474,7 @@ static void init_thread(struct thread *t, const char *name, int priority,
     t->priority = priority;
     t->magic = THREAD_MAGIC;
     list_init(&(t->files));
-    t->max_fd = 3; // This is the first available fd after debug, which is 2
+    //t->max_fd = 3; // This is the first available fd after debug, which is 2
     old_level = intr_disable();
     t->voluntarily_exited = 0;
     list_push_back(&all_list, &t->allelem);
@@ -468,6 +484,24 @@ static void init_thread(struct thread *t, const char *name, int priority,
     sema_init(&t->load_child, 0); // TODO new, remove?
     t->am_child = flag_child;  // TODO new remove?
     t->loaded = false; // TODO new remove?
+
+    // Store the filename in a newly allocated page.
+    if(strcmp("main", name) != 0 && strcmp("init", name) != 0
+    		&& strcmp("idle", name) != 0) {
+		t->tfile.filename = palloc_get_page(0);
+		if(t->tfile.filename == NULL) {
+			t->tfile.fd = -1;
+			printf("Couldn't get page for thread's filename :-(.\n");
+		}
+		else {
+			t->tfile.fd = max_fd++;
+		}
+    }
+    else {
+    	t->tfile.fd = -1;
+    	t->tfile.filename = NULL;
+    }
+
     if (flag_child > 0) {
 
     	/*

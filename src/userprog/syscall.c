@@ -14,10 +14,13 @@
 #include "threads/malloc.h"
 #include "devices/input.h"
 #include "userprog/process.h"
+#include "lib/string.h"
 
 //----------------------------- Global variables ------------------------------
 
 struct lock sys_lock;
+
+extern int max_fd;
 
 //---------------------------- Function prototypes ----------------------------
 
@@ -27,6 +30,7 @@ int get_user (const uint8_t *uaddr);
 bool put_user (uint8_t *udst, uint8_t byte);
 bool get_user_quadbyte (const uint8_t *uaddr, int *arg);
 bool uptr_is_valid (const void *uptr);
+//void func(struct thread *t, void *matches);
 
 //---------------------------- Function definitions ---------------------------
 
@@ -265,6 +269,7 @@ int open(const char *file){
 	struct fd_element *fd_elem;
 
 	lock_acquire(&sys_lock);
+
 	if (!uptr_is_valid(file)) {
 		lock_release(&sys_lock);
 		exit(-1);
@@ -287,14 +292,44 @@ int open(const char *file){
 		return -1;
 	}
 
-	fd_elem->fd = thread_current()->max_fd;
-	thread_current()->max_fd++;
+    int matching_fd;
+    if ((matching_fd = process_filename_matches(file)) >= 3) {
+    	fd_elem->fd = matching_fd;
+    }
+    else {
+    	fd_elem->fd = max_fd++;
+    }
+
+	//fd_elem->fd = thread_current()->max_fd;
+	//thread_current()->max_fd++;
 	fd_elem->file = f;
 	list_push_back(&thread_current()->files, &fd_elem->f_elem);
 
 	lock_release(&sys_lock);
 	return fd_elem->fd;
 }
+
+/*! This is a callback function for "thread_foreach". It checks to see if
+    the given thread was loaded from a file with the given file descriptor.
+    If it was then the function needs to say there was a match, which it
+    communicates by setting "matches" to the sentinel value of -100.
+ */
+/*
+void func(struct thread *t, void *matches) {
+
+	// If we already saw a matching file descriptor, don't try matching again.
+	//if(*((int *) matches) == FUNC_SENTINEL) {
+	//	return;
+	//}
+
+	if (t->filename == NULL || matches == NULL)
+		return;
+
+	if(strcmp(t->filename, (char *) matches) == 0) {
+		*((unsigned int *) matches) = (unsigned int) FUNC_SENTINEL;
+	}
+}
+*/
 
 /*! Writes size bytes from buffer to the open file fd. Returns the number of
     bytes actually written, which may be less than size if some bytes could
@@ -311,14 +346,25 @@ int write(int fd, const void *buffer, unsigned size) {
 	struct fd_element *r;
 	struct list_elem *l;
 
-	lock_acquire(&sys_lock);
-
 	if (!uptr_is_valid(buffer)) {
-		lock_release(&sys_lock);
 		exit(-1);
 	}
 
-	if (fd == STDOUT_FILENO){
+	// TODO nb got rid of interrupts
+	/*
+	void *aux = (void *) buffer;
+	thread_foreach_danger_edition(func, aux);
+	if ((*(unsigned int *) aux) == (unsigned int) FUNC_SENTINEL) {
+		return 0;
+	}*/
+
+	// If this fd matches with an executing process's fd...
+	if (process_fd_matches(fd)) {
+		return 0;
+	}
+
+	lock_acquire(&sys_lock);
+	if (fd == STDOUT_FILENO) {
 		putbuf(buffer, size);
 		lock_release(&sys_lock);
 		return size;
@@ -340,7 +386,7 @@ int write(int fd, const void *buffer, unsigned size) {
 		}
 	}
 	lock_release(&sys_lock);
-	return -1;
+	return 0;
 }
 
 /*! Reads size bytes from the file open as fd into buffer. Returns the number
@@ -502,13 +548,14 @@ bool remove (const char *file) {
 pid_t exec (const char *cmd_line) {
 	tid_t tid;
 	lock_acquire(&sys_lock);
-
 	if (!uptr_is_valid(cmd_line)) {
 		lock_release(&sys_lock);
 		exit(-1);
 	}
+
 	lock_release(&sys_lock);
 	tid = process_execute(cmd_line);
+
 	return (pid_t) tid;
 }
 

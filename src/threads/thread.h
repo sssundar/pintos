@@ -33,6 +33,7 @@ typedef int tid_t;
 struct fd_element{
 	int fd;
 	struct file *file;
+	char *filename;
 	struct list_elem  f_elem;
 };
 
@@ -146,8 +147,6 @@ struct thread {
     /*! Keep track of my children */
     struct list child_list;
 
-
-
     /*! Active high flag for whether I am a child */
     uint8_t am_child;
 
@@ -159,8 +158,10 @@ struct thread {
     /*! All the files that this thread has open. */
     struct list files;
 
-    /*! This is the highest file descriptor assigned so far. */
-    int max_fd;
+    /*! The filename and file descriptor of the file used to load
+        this thread. */
+    struct fd_element tfile;
+
     /**@}*/
 #endif
 
@@ -201,6 +202,7 @@ void thread_yield(void);
 typedef void thread_action_func(struct thread *t, void *aux);
 
 void thread_foreach(thread_action_func *, void *);
+void thread_foreach_danger_edition(thread_action_func *func, void *aux);
 
 int thread_get_priority(void);
 void thread_set_priority(int);
