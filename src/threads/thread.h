@@ -34,6 +34,7 @@ struct fd_element{
 	int fd;
 	struct file *file;
 	char *filename;
+	struct semaphore multfile_sema;
 	struct list_elem  f_elem;
 };
 
