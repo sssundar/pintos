@@ -349,15 +349,7 @@ int write(int fd, const void *buffer, unsigned size) {
 
 	if (!uptr_is_valid(buffer)) {
 		exit(-1);
-	}
-
-	// TODO nb got rid of interrupts
-	/*
-	void *aux = (void *) buffer;
-	thread_foreach_danger_edition(func, aux);
-	if ((*(unsigned int *) aux) == (unsigned int) FUNC_SENTINEL) {
-		return 0;
-	}*/
+	}	
 
 	// If this fd matches with an executing process's fd...
 	if (process_fd_matches(fd)) {
