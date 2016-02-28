@@ -12,6 +12,7 @@
 #include "threads/synch.h"
 #include "threads/vaddr.h"
 #include "threads/malloc.h"
+#include "lib/user/syscall.h"
 
 #include "list.h"
 #include "userprog/syscall.h"
@@ -282,19 +283,8 @@ void thread_exit(void) {
     struct thread *chld_t;
 
 #ifdef USERPROG
-    /* TODO eventually uncomment this?
 
-	// Close the open file descriptors.
-	lock_acquire(&sys_lock);
-	for (l2 = list_begin(&thread_current()->files);
-			 l2 != list_end(&thread_current()->files);
-			 l2 = list_next(l2)) {
-		r2 = list_entry(l, struct fd_element, f_elem);
-		close(r2->fd);
-		free(r2);
-	}
-	lock_release(&sys_lock);
-	*/
+	// Close the open file descriptors? TODO
 
     // Tell parent function that I'm dying. Remove from its child list.    
     if (thread_current()->parent != NULL) {
@@ -541,12 +531,12 @@ static struct thread * next_thread_to_run(void) {
     before returning, but the first time a thread is scheduled it is called by
     switch_entry() (see switch.S).
 
-   It's not safe to call printf() until the thread switch is complete.  In
-   practice that means that printf()s should be added at the end of the
-   function.
+    It's not safe to call printf() until the thread switch is complete.  In
+    practice that means that printf()s should be added at the end of the
+    function.
 
-   After this function and its caller returns, the thread switch is
-   complete. */
+    After this function and its caller returns, the thread switch is
+    complete. */
 void thread_schedule_tail(struct thread *prev) {
     struct thread *cur = running_thread();
   

@@ -59,8 +59,8 @@ tid_t process_execute(const char *file_name) {
 	}
 	progname[i] = '\0';
 
-    /* Create a new thread to execute FILE_NAME, and make sure it knows it's
-       our child */
+    // Create a new thread to execute FILE_NAME, and make sure it knows it's
+    // our child
     tid = thread_create(progname, PRI_DEFAULT, start_process, fn_copy, 1,
     		&thread_current()->child_list, thread_current()); 
     // Wait for child to be loaded.
@@ -119,7 +119,6 @@ static void start_process(void *file_name_) {
 	}
 
     /* If load failed, quit. */
-    //palloc_free_page(file_name);
     if (!success) {
     	if (thread_current()->tfile.filename != NULL) {
     		list_remove(&thread_current()->tfile.f_elem);
@@ -263,8 +262,6 @@ void process_exit(void) {
 
     if (thread_current()->tfile.filename != NULL) {
     	list_remove(&thread_current()->tfile.f_elem);
-    	// TODO figure out how to free this later, causes panic for now.
-    	//palloc_free_page((void *) thread_current()->tfile.filename);
     	thread_current()->tfile.filename = NULL;
     }
 

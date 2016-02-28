@@ -31,7 +31,6 @@ int get_user (const uint8_t *uaddr);
 bool put_user (uint8_t *udst, uint8_t byte);
 bool get_user_quadbyte (const uint8_t *uaddr, int *arg);
 bool uptr_is_valid (const void *uptr);
-//void func(struct thread *t, void *matches);
 
 //---------------------------- Function definitions ---------------------------
 
@@ -99,19 +98,15 @@ static void sc_handler(struct intr_frame *f) {
 	// in the kernel.
 	// int *esp = f->esp;
 	int sc_n, sc_n1, sc_n2, sc_n3;
-	// sc_n = *esp;
-	// sc_n1 = *(esp + 1);
-	// sc_n2 = *(esp + 2);
-	// sc_n3 = *(esp + 3);
 
     if (!get_user_quadbyte ((const uint8_t *) f->esp, &sc_n)) {
     	//thread_current()->voluntarily_exited = 0 is implicit
     	exit(-1);
     }
 
-    if ( 	!get_user_quadbyte ((const uint8_t *) (f->esp+4), &sc_n1) 	|| 
-    		!get_user_quadbyte ((const uint8_t *) (f->esp+8), &sc_n2) 	|| 
-    		!get_user_quadbyte ((const uint8_t *) (f->esp+12), &sc_n3) ) {    		    	
+    if (!get_user_quadbyte ((const uint8_t *) (f->esp+4), &sc_n1)
+    		|| !get_user_quadbyte ((const uint8_t *) (f->esp+8), &sc_n2)
+			|| !get_user_quadbyte ((const uint8_t *) (f->esp+12), &sc_n3)) {
     	exit(-1);
     }
 
@@ -309,28 +304,6 @@ int open(const char *file){
 	lock_release(&sys_lock);
 	return fd_elem->fd;
 }
-
-/*! This is a callback function for "thread_foreach". It checks to see if
-    the given thread was loaded from a file with the given file descriptor.
-    If it was then the function needs to say there was a match, which it
-    communicates by setting "matches" to the sentinel value of -100.
- */
-/*
-void func(struct thread *t, void *matches) {
-
-	// If we already saw a matching file descriptor, don't try matching again.
-	//if(*((int *) matches) == FUNC_SENTINEL) {
-	//	return;
-	//}
-
-	if (t->filename == NULL || matches == NULL)
-		return;
-
-	if(strcmp(t->filename, (char *) matches) == 0) {
-		*((unsigned int *) matches) = (unsigned int) FUNC_SENTINEL;
-	}
-}
-*/
 
 /*! Writes size bytes from buffer to the open file fd. Returns the number of
     bytes actually written, which may be less than size if some bytes could
@@ -557,20 +530,11 @@ pid_t exec (const char *cmd_line) {
 	}
 	progname[i] = '\0';
 
-	struct semaphore *fsema = file_match_sema(cmd_line);
-
 	if (progname != NULL)
 	    palloc_free_page((void *) progname);
 
 	lock_release(&sys_lock);
-
-	//if (fsema != NULL)
-		//sema_up(fsema);
-
 	tid = process_execute(cmd_line);
-
-	//if (fsema != NULL)
-		//sema_down(fsema);
 
 	return (pid_t) tid;
 }
