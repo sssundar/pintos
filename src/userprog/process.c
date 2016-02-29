@@ -580,6 +580,9 @@ static bool load_segment(struct file *file, off_t ofs, uint8_t *upage,
             return false;
 
         /* Load this page. */
+        // TODO replace this with allocation of suppl. page table entry
+        // TODO We don't want to do file_read yet because we want to load
+        //      lazily!
         if (file_read(file, kpage, page_read_bytes) != (int) page_read_bytes) {
             palloc_free_page(kpage);
             return false;
@@ -591,10 +594,6 @@ static bool load_segment(struct file *file, off_t ofs, uint8_t *upage,
             palloc_free_page(kpage);
             return false; 
         }
-
-        // TODO initialize the corresponding frame table element here?
-
-        // TODO initialize the corresponding supplemental page table element?
 
         /* Advance. */
         read_bytes -= page_read_bytes;
@@ -622,6 +621,7 @@ static bool setup_stack(void **esp, const char *file_name) {
     strlcpy(fncopy, file_name, PGSIZE);
 
     // Setup the stack.
+    // TODO replace this with call to fr_alloc_page
     kpage = palloc_get_page(PAL_USER | PAL_ZERO);
     if (kpage != NULL) {
         success = install_page(((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);

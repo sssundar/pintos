@@ -9,6 +9,7 @@
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <hash.h>
 #include "filesys/file.h"
 #include "vm/page.h"
 #include "vm/frame.h"

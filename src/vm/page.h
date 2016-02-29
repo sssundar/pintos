@@ -36,47 +36,49 @@
 */
 enum pgtype { MMAPD_FILE_PG, EXECD_FILE_PG, ZERO_PG, OTHER_PG };
 
-/*! Supplemental page table element. These are loaded up into an array...
+/*! Supplemental page table element. There is one of these per allocated page
+    for each user process. They are loaded up in a hash table and live in
+    the user pool of pages.
 
 	TODO use a single global mutex for evictions (i.e. do one eviction at a
 	time by acquiring the lock before performing eviction)
 
-	TODO Donnie suggested that we use these elements:
-	  - physical addr (use this to get to frame to do concurrency control)
-	  - user virtual addr
-	  - readonly or writable?
-	  - where is data from?
-	  - # bytes to read
-	  - starting offset in file
-	  - file that this page is from
-	  - hash table element
+	TODO Donnie suggested that we use these elements:                  INCLUDED
+	  - physical addr (use this to get to frame to do concurrency control) x
+	  - user virtual addr												   x
+	  - readonly or writable? 											   x
+	  - where is data from? 											   x
+	  - # bytes to read											           x
+	  - starting offset in file											   x
+	  - file that this page is from										   x
+	  - hash table element        										   x
 
 	TODO note that we have kernel malloc
-
-	TODO note that we have ONE OF THESE FOR EACH PAGE
-
  */
 struct spgtbl_elem {
 	/*! Owned by frame.c. */
 	/**@{*/
 
-	void *start;			/*!< Start of this memory segment. */
-	void *end; 				/*!< End of this memory segment. */
-	uint32_t prot;        	/*!< Readable/writable flags. */
+	void *paddr;			/*!< Physical address of this page. */
+	void *vaddr; 			/*!< Virtual address of this page. */
+	bool writable; 			/*!< If true is read/write, else is read only. */
+
 	enum pgtype type;		/*!< The sort of page this is. */
 
 	//--------------------- File related data below ---------------------------
 	int fd;					/*!< File descriptor for src file. -1 if none. */
 	struct file *src_file;  /*!< Source file, could be null if none. */
-	/*! The number of zeroes that follow the last bit of this page. Will be set
-	    to 0 for (most) pages because they're fully used, but the last page
+	/*! The number of zeroes that follow the last bit. Will be set to 0 for
+	    most pages of a file because they're fully used, but the last page
 	    for a given file will have a trailing zeroes count between 0 and
-	    PGSIZE, inclusive.
+	    PGSIZE, inclusive. To get the number of bytes that were read for this
+	    supplemental page table entry just do PGSIZE - trailing_zeroes.
 	 */
 	uint32_t trailing_zeroes;
 	off_t offset;			/*!< Offset in the corresponding src file. */
 	//--------------------- File related data above ---------------------------
 
+	struct hash_elem helm;  /*!< Is a Pintos hash element. */
 	/**@}*/
 };
 

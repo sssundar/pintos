@@ -6,6 +6,7 @@
  */
 
 #include <stdbool.h>
+#include <hash.h>
 #include "threads/vaddr.h"
 #include "filesys/file.h"
 #include "vm/page.h"
