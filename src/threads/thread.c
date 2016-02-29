@@ -474,6 +474,7 @@ static void init_thread(struct thread *t, const char *name, int priority,
     t->am_child = flag_child;  
     t->loaded = false; 
     sema_init(&t->tfile.multfile_sema, 0);
+
     // Store the filename in a newly allocated page.
     if(strcmp("main", name) != 0 && strcmp("init", name) != 0
     		&& strcmp("idle", name) != 0) {

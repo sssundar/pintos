@@ -394,7 +394,6 @@ bool load(const char *file_name, void (**eip) (void), void **esp) {
 	}
 	progname[i] = '\0';
 
-
     // Store the filename in the thread struct
 	lock_acquire(&eflock);
     if (thread_current()->tfile.filename != NULL) {
@@ -592,6 +591,10 @@ static bool load_segment(struct file *file, off_t ofs, uint8_t *upage,
             palloc_free_page(kpage);
             return false; 
         }
+
+        // TODO initialize the corresponding frame table element here?
+
+        // TODO initialize the corresponding supplemental page table element?
 
         /* Advance. */
         read_bytes -= page_read_bytes;
