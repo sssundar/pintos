@@ -66,5 +66,6 @@ bool fr_is_used(struct ftbl_elem *ftbl);
 bool fr_is_pinned(struct ftbl_elem *ftbl);
 void fr_set_pin(struct ftbl_elem *ftbl, bool pinned);
 void fr_set_used(struct ftbl_elem *ftbl, bool used);
+void *fr_alloc_page(void *vaddr, enum pgtype type);
 
 #endif /* SRC_VM_FRAME_H_ */

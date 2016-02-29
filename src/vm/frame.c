@@ -7,7 +7,10 @@
 
 #include <inttypes.h>
 #include <stdbool.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include "filesys/file.h"
+#include "vm/page.h"
 #include "vm/frame.h"
 
 bool fr_is_used(struct ftbl_elem *ftbl) {
@@ -43,4 +46,15 @@ void fr_set_used(struct ftbl_elem *ftbl, bool used) {
 	else {
 		ftbl->flags &= ~IN_USE_MASK;
 	}
+}
+
+/*! Replaces calls to palloc_get_page by allocating a user pool page AND
+    making/initializing a frame table entry. Evicts a page if there isn't
+    enough room in physical memory for this allocation request.
+ */
+void *fr_alloc_page(void *vaddr, enum pgtype type) {
+
+	// TODO
+
+	return NULL;
 }

@@ -11,7 +11,7 @@
 #include "vm/page.h"
 
 /*! Returns true if the given address is in the current stack. */
-bool pg_valid_stack_addr(void *addr, void *stack_ptr) {
+bool pg_is_valid_stack_addr(void *addr, void *stack_ptr) {
 	return addr >= stack_ptr - MAX_STACK_DELTA &&
 			addr < PHYS_BASE && addr >= LOWEST_STACK_ADDR;
 }
