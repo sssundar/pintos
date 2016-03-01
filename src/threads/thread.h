@@ -165,6 +165,13 @@ struct thread {
     /**@}*/
 #endif
 
+#ifdef VM
+
+    /*! The supplemental page table for this process. */
+    struct hash *spgtbl;
+
+#endif
+
     /*! Owned by thread.c. */
     /**@{*/
     unsigned magic;                     /* Detects stack overflow. */

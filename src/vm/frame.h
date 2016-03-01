@@ -64,8 +64,14 @@ struct ftbl_elem {
 
 bool fr_is_used(struct ftbl_elem *ftbl);
 bool fr_is_pinned(struct ftbl_elem *ftbl);
+
 void fr_set_pin(struct ftbl_elem *ftbl, bool pinned);
 void fr_set_used(struct ftbl_elem *ftbl, bool used);
+
+uint32_t fr_get_corr_idx(void *paddr);
+void *fr_get_corr_phys_addr(int idx);
+
+void fr_init_tbl(void);
 void *fr_alloc_page(void *vaddr, enum pgtype type);
 
 #endif /* SRC_VM_FRAME_H_ */

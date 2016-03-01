@@ -1,6 +1,7 @@
 #include "threads/thread.h"
 #include <debug.h>
 #include <stddef.h>
+#include <hash.h>
 #include <random.h>
 #include <stdio.h>
 #include <string.h>
@@ -13,6 +14,13 @@
 #include "threads/vaddr.h"
 #include "threads/malloc.h"
 #include "lib/user/syscall.h"
+#include "filesys/file.h"
+
+#ifdef VM
+
+#include "vm/page.h"
+
+#endif
 
 #include "list.h"
 #include "userprog/syscall.h"
@@ -478,7 +486,7 @@ static void init_thread(struct thread *t, const char *name, int priority,
     // Store the filename in a newly allocated page.
     if(strcmp("main", name) != 0 && strcmp("init", name) != 0
     		&& strcmp("idle", name) != 0) {
-		t->tfile.filename = palloc_get_page(0);
+		t->tfile.filename = palloc_get_page(0); // TODO maybe remove later
 		if(t->tfile.filename == NULL) {
 			t->tfile.fd = -1;
 			printf("Couldn't get page for thread's filename :-(.\n");
@@ -498,6 +506,11 @@ static void init_thread(struct thread *t, const char *name, int priority,
     	/* If process, sys_exit will not block for a parent's approval. */
         sema_init(&t->may_i_die, 1);
     }  
+
+    // Initialize the supplemental page table.
+    t->spgtbl = (struct hash *) malloc(sizeof (struct hash));
+    hash_init(t->spgtbl, pg_hash_func, pg_hash_less, NULL, 1 << 10);
+
     intr_set_level(old_level);
 }
 

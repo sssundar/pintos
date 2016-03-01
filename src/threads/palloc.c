@@ -25,6 +25,12 @@
 #include "threads/synch.h"
 #include "threads/vaddr.h"
 
+/*! Starting address of the user pages in physical memory. */
+void *start_of_user_pages_phys;
+
+/*! Number of user pages in physical memory. */
+size_t num_user_pages;
+
 /*! A memory pool. */
 struct pool {
     struct lock lock;                   /*!< Mutual exclusion. */
@@ -56,6 +62,10 @@ void palloc_init(size_t user_page_limit) {
     init_pool(&kernel_pool, free_start, kernel_pages, "kernel pool");
     init_pool(&user_pool, free_start + kernel_pages * PGSIZE,
               user_pages, "user pool");
+
+    // These are used in frame.c
+    start_of_user_pages_phys = free_start + kernel_pages * PGSIZE;
+    num_user_pages = user_pages;
 }
 
 /*! Obtains and returns a group of PAGE_CNT contiguous free pages.

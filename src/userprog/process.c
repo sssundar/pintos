@@ -64,7 +64,7 @@ tid_t process_execute(const char *file_name) {
     tid = thread_create(progname, PRI_DEFAULT, start_process, fn_copy, 1,
     		&thread_current()->child_list, thread_current()); 
     // Wait for child to be loaded.
-    sema_down(&thread_current()->load_child); 
+    sema_down(&thread_current()->load_child);
 
     // Search the list of children for the one with the matching
     // tid. Check its exit status. If bad, return -1. Otherwise return tid.
@@ -620,9 +620,13 @@ static bool setup_stack(void **esp, const char *file_name) {
         return false;
     strlcpy(fncopy, file_name, PGSIZE);
 
-    // Setup the stack.
+    /* Setup the stack. */
+
+    //kpage = fr_alloc_page()
     // TODO replace this with call to fr_alloc_page
-    kpage = palloc_get_page(PAL_USER | PAL_ZERO);
+    // kpage = palloc_get_page(PAL_USER | PAL_ZERO);
+
+
     if (kpage != NULL) {
         success = install_page(((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
         if (success) {

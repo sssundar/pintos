@@ -7,6 +7,8 @@
 #include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <inttypes.h>
+#include <hash.h>
 #include <string.h>
 #include "devices/kbd.h"
 #include "devices/input.h"
@@ -22,6 +24,7 @@
 #include "threads/palloc.h"
 #include "threads/pte.h"
 #include "threads/thread.h"
+#include "filesys/file.h"
 
 #ifdef USERPROG
 
@@ -34,6 +37,14 @@
 #else
 
 #include "tests/threads/tests.h"
+
+#endif
+
+#ifdef VM
+
+#include "vm/page.h"
+#include "vm/frame.h"
+#include "vm/swap.h"
 
 #endif
 
@@ -104,6 +115,11 @@ int main(void) {
     palloc_init(user_page_limit);
     malloc_init();
     paging_init();
+
+    fr_init_tbl();
+    // TODO init the bitmap for swap
+    // TODO (not as important) initialize a table of file mappings so that
+    // file reads from multiple processes don't always have to be from disk
 
     /* Segmentation. */
 #ifdef USERPROG

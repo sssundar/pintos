@@ -38,29 +38,17 @@ enum pgtype { MMAPD_FILE_PG, EXECD_FILE_PG, ZERO_PG, OTHER_PG };
 
 /*! Supplemental page table element. There is one of these per allocated page
     for each user process. They are loaded up in a hash table and live in
-    the user pool of pages.
+    the kernel pool of pages.
 
 	TODO use a single global mutex for evictions (i.e. do one eviction at a
 	time by acquiring the lock before performing eviction)
-
-	TODO Donnie suggested that we use these elements:                  INCLUDED
-	  - physical addr (use this to get to frame to do concurrency control) x
-	  - user virtual addr												   x
-	  - readonly or writable? 											   x
-	  - where is data from? 											   x
-	  - # bytes to read											           x
-	  - starting offset in file											   x
-	  - file that this page is from										   x
-	  - hash table element        										   x
-
-	TODO note that we have kernel malloc
  */
 struct spgtbl_elem {
 	/*! Owned by frame.c. */
 	/**@{*/
 
 	void *paddr;			/*!< Physical address of this page. */
-	void *vaddr; 			/*!< Virtual address of this page. */
+	void *vaddr; 			/*!< Virtual address of this page. "Key". */
 	bool writable; 			/*!< If true is read/write, else is read only. */
 
 	enum pgtype type;		/*!< The sort of page this is. */
@@ -82,8 +70,11 @@ struct spgtbl_elem {
 	/**@}*/
 };
 
-bool pg_is_readable(struct spgtbl_elem *spgtbl);
-bool pg_is_writable(struct spgtbl_elem *spgtbl);
+bool pg_hash_less (const struct hash_elem *a,
+		const struct hash_elem *b, void *aux);
+
+unsigned pg_hash_func (const struct hash_elem *e, void *aux);
+
 bool pg_is_valid_stack_addr(void *addr, void *stack_ptr);
 
 #endif /* SRC_VM_PAGE_H_ */

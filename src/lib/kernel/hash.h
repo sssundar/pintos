@@ -75,7 +75,8 @@ struct hash_iterator
   };
 
 /* Basic life cycle. */
-bool hash_init (struct hash *, hash_hash_func *, hash_less_func *, void *aux);
+bool hash_init (struct hash *h, hash_hash_func *hash, hash_less_func *less,
+		void *aux, uint32_t def_num_buckets);
 void hash_clear (struct hash *, hash_action_func *);
 void hash_destroy (struct hash *, hash_action_func *);
 
