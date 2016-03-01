@@ -69,6 +69,7 @@ void fr_set_pin(struct ftbl_elem *ftbl, bool pinned);
 void fr_set_used(struct ftbl_elem *ftbl, bool used);
 
 uint32_t fr_get_corr_idx(void *paddr);
+struct ftbl_elem *fr_get_corr_ftbl_elem(void *vaddr);
 void *fr_get_corr_phys_addr(int idx);
 
 void fr_init_tbl(void);

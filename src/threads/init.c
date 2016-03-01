@@ -116,7 +116,7 @@ int main(void) {
     malloc_init();
     paging_init();
 
-    fr_init_tbl();
+    fr_init_tbl(); // TODO uncomment
     // TODO init the bitmap for swap
     // TODO (not as important) initialize a table of file mappings so that
     // file reads from multiple processes don't always have to be from disk

@@ -3,6 +3,7 @@
 #include <inttypes.h>
 #include <round.h>
 #include <stdio.h>
+#include <hash.h>
 #include <stdlib.h>
 #include "lib/string.h"
 #include "userprog/gdt.h"
@@ -19,6 +20,8 @@
 #include "threads/thread.h"
 #include "threads/synch.h"
 #include "threads/vaddr.h"
+#include "vm/page.h"
+#include "vm/frame.h"
 
 static thread_func start_process NO_RETURN;
 static bool load(const char *cmdline, void (**eip)(void), void **esp);
@@ -61,8 +64,7 @@ tid_t process_execute(const char *file_name) {
 
     // Create a new thread to execute FILE_NAME, and make sure it knows it's
     // our child
-    tid = thread_create(progname, PRI_DEFAULT, start_process, fn_copy, 1,
-    		&thread_current()->child_list, thread_current()); 
+    tid = thread_create(progname, PRI_DEFAULT, start_process, fn_copy, 1, &thread_current()->child_list, thread_current());
     // Wait for child to be loaded.
     sema_down(&thread_current()->load_child);
 
@@ -622,10 +624,9 @@ static bool setup_stack(void **esp, const char *file_name) {
 
     /* Setup the stack. */
 
-    //kpage = fr_alloc_page()
-    // TODO replace this with call to fr_alloc_page
+    kpage = fr_alloc_page(PHYS_BASE - PGSIZE, OTHER_PG);
+    // Replaced this with call to fr_alloc_page.
     // kpage = palloc_get_page(PAL_USER | PAL_ZERO);
-
 
     if (kpage != NULL) {
         success = install_page(((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
@@ -684,6 +685,7 @@ static bool setup_stack(void **esp, const char *file_name) {
         else
             palloc_free_page(kpage);
     }
+
     palloc_free_page((void *) fncopy);
     return success;
 }

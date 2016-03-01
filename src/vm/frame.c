@@ -14,6 +14,8 @@
 #include "threads/malloc.h"
 #include "threads/vaddr.h"
 #include "threads/synch.h"
+#include "threads/palloc.h"
+#include "threads/thread.h"
 
 #include "vm/page.h"
 #include "vm/frame.h"
@@ -80,27 +82,55 @@ uint32_t fr_get_corr_idx(void *paddr) {
 }
 
 void fr_init_tbl(void) {
+
+	lock_init(&ftbl_lock);
+
 	// Allocate space for the frame table array.
 	ftbl = (struct ftbl_elem *) calloc (num_user_pages,
 			sizeof (struct ftbl_elem));
 }
 
+// TODO make a version of fr_alloc_page which also takes params related to
+// the file from which the page comes. Use them to init fields like fd,
+// src_file, etc.
+
 /*! Replaces calls to palloc_get_page by allocating a user pool page AND
     making/initializing a frame table entry. Evicts a page if there isn't
     enough room in physical memory for this allocation request.
- */
-void *fr_alloc_page(void *vaddr, enum pgtype type) {
 
-	int i;
+    RETURNS A PINNED frame. User needs to unpin it after s/he is done setting
+    it up.
+ */
+void *fr_alloc_page(void *vaddr, enum pgtype type UNUSED) {
+	uint32_t i;
+	void *rtn = NULL;
 
 	// Find an open frame table entry.
 	// TODO for now, we're going to assume that there is DEFINITELY an open one
 	lock_acquire(&ftbl_lock);
-	//for (i = 0; i < )
+	for (i = 0; i < num_user_pages; i++) {
+		if (!fr_is_used(&ftbl[i]) && !fr_is_pinned(&ftbl[i])) {
+			rtn = palloc_get_page(PAL_USER | PAL_ZERO);
+			if (rtn != NULL) {
+				ftbl[i].corr_vaddr = vaddr;
+				fr_set_pin(&ftbl[i], true);
+				fr_set_used(&ftbl[i], true);
+				ftbl[i].tinfo = thread_current();
+				break;
+			}
+			else {
+				PANIC("Couldn't palloc a user page in fr_alloc_page :-(");
+				NOT_REACHED();
+			}
+		}
+	}
 	lock_release(&ftbl_lock);
 
-
 	// TODO handle eviction case here.
+	if (rtn == NULL) {
+		PANIC("Couldn't find open frame, need to evict but not implemented.");
+		NOT_REACHED();
+	}
 
-	return NULL;
+	return rtn;
 }
