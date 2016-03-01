@@ -1,10 +1,18 @@
 #include "userprog/exception.h"
 #include <inttypes.h>
 #include <stdio.h>
+#include <hash.h>
 #include "userprog/gdt.h"
+#include "userprog/pagedir.h"
+#include "userprog/process.h"
 #include "threads/interrupt.h"
 #include "threads/thread.h"
+#include "threads/vaddr.h"
 #include "lib/user/syscall.h"
+#include "lib/string.h"
+#include "filesys/file.h"
+#include "vm/page.h"
+#include "vm/frame.h"
 
 /*! Number of page faults processed. */
 static long long page_fault_cnt;
@@ -100,12 +108,8 @@ static void kill(struct intr_frame *f) {
     }
 }
 
-/*! Page fault handler.  This is a skeleton that must be filled in
-    to implement virtual memory.  Some solutions to project 2 may
-    also require modifying this code.
-
-    At entry, the address that faulted is in CR2 (Control Register
-    2) and information about the fault, formatted as described in
+/*! Page fault handler. At entry, the address that faulted is in CR2 (Control
+    Register 2) and information about the fault, formatted as described in
     the PF_* macros in exception.h, is in F's error_code member.  The
     example code here shows how to parse that information.  You
     can find more information about both of these in the
@@ -136,14 +140,71 @@ static void page_fault(struct intr_frame *f) {
     write = (f->error_code & PF_W) != 0;
     user = (f->error_code & PF_U) != 0;
 
-    /* To implement virtual memory, delete the rest of the function
-       body, and replace it with code that brings in the page to
-       which fault_addr refers. */
+    /* Virtual memory code: bring in the page to which fault_addr refers. */
+
+    // Get the supplemental page corresponding with the faulting address.
+    struct spgtbl_elem *s = (struct spgtbl_elem *) pagedir_get_page(
+    		thread_current()->pagedir, fault_addr);
+    if (s == NULL) {
+    	PANIC("Supplemental page entry was NULL.");
+    	NOT_REACHED();
+    }
+    if (s->magic != PG_MAGIC) {
+    	PANIC("Couldn't find supplemental page entry. Magic is missing.");
+    	NOT_REACHED();
+    }
+    if (not_present) {
+    	void *kpage = fr_alloc_page((void *)(((uint32_t)fault_addr) >> PGBITS),
+    			EXECD_FILE_PG);
+		if (kpage == NULL) {
+			// TODO eventually evict, don't just panic.
+			PANIC("Couldn't alloc user page in page fault handler.");
+			NOT_REACHED();
+		}
+
+		// Handle the page based on its type.
+		if (s->type == EXECD_FILE_PG) {
+
+			if (file_read(s->src_file, kpage, PGSIZE - s->trailing_zeroes) !=
+					(int) (PGSIZE - s->trailing_zeroes)) {
+				// palloc_free_page(kpage);
+				// return false;
+				PANIC("Couldn't read page from file.");
+				NOT_REACHED();
+			}
+
+			memset(kpage + (PGSIZE - s->trailing_zeroes),
+					0, s->trailing_zeroes);
+
+			if (!install_page(s->vaddr, kpage, s->writable, false)) {
+				// palloc_free_page(kpage);
+				PANIC("Couldn't install page in page fault handler.");
+				NOT_REACHED();
+			}
+		}
+		else if (s->type == ZERO_PG) {
+			memset(kpage, 0, PGSIZE);
+		}
+		else if (s->type == MMAPD_FILE_PG) {
+			// TODO merge with EXECD_FILE_PG?
+		}
+		else if (s->type == OTHER_PG) {
+			// TODO
+		}
+		else {
+			PANIC("Impossible page type.");
+			NOT_REACHED();
+		}
+    }
+
+
+
+    // TODO eventually remove this. Useful for debugging for now.
     printf("Page fault at %p: %s error %s page in %s context.\n",
            fault_addr,
            not_present ? "not present" : "rights violation",
            write ? "writing" : "reading",
            user ? "user" : "kernel");    
-    kill(f);
+    // kill(f);
 }
 

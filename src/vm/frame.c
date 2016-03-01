@@ -43,8 +43,7 @@ bool fr_is_pinned(struct ftbl_elem *ftbl) {
 /*! Sets the pinned flag for the given frame. If it's set that means this frame
     can't be evicted. If it's not set then it can be evicted. The pinned flag
     can be set even if the page is empty; if it's empty and pinned then the
-    page can't be allocated.
- */
+    page can't be allocated. */
 void fr_set_pin(struct ftbl_elem *ftbl, bool pinned) {
 	if (pinned) {
 		ftbl->flags |= PIN_MASK;
@@ -56,8 +55,7 @@ void fr_set_pin(struct ftbl_elem *ftbl, bool pinned) {
 
 /*! Sets the used flag for the given frame. If it's set that means this frame
     is currently being used and can't be allocated unless it's evicted. If
-    it's not set then it's not in use and can be allocated.
- */
+    it's not set then it's not in use and can be allocated. */
 void fr_set_used(struct ftbl_elem *ftbl, bool used) {
 	if (used) {
 		ftbl->flags |= IN_USE_MASK;
@@ -68,15 +66,13 @@ void fr_set_used(struct ftbl_elem *ftbl, bool used) {
 }
 
 /*! Gets the physical address corresponding to the given index in the frame
-    table.
- */
+    table. */
 void *fr_get_corr_phys_addr(int idx) {
 	return start_of_user_pages_phys + idx * PGSIZE;
 }
 
 /*! Gets the index in the frame table corresponding to the given physical
-    address.
- */
+    address. */
 uint32_t fr_get_corr_idx(void *paddr) {
 	return (uint32_t)(paddr - start_of_user_pages_phys) / PGSIZE;
 }
@@ -99,9 +95,8 @@ void fr_init_tbl(void) {
     enough room in physical memory for this allocation request.
 
     RETURNS A PINNED frame. User needs to unpin it after s/he is done setting
-    it up.
- */
-void *fr_alloc_page(void *vaddr, enum pgtype type UNUSED) {
+    it up. */
+void *fr_alloc_page(void *vaddr, enum pgtype type) {
 	uint32_t i;
 	void *rtn = NULL;
 
@@ -110,7 +105,7 @@ void *fr_alloc_page(void *vaddr, enum pgtype type UNUSED) {
 	lock_acquire(&ftbl_lock);
 	for (i = 0; i < num_user_pages; i++) {
 		if (!fr_is_used(&ftbl[i]) && !fr_is_pinned(&ftbl[i])) {
-			rtn = palloc_get_page(PAL_USER | PAL_ZERO);
+			rtn = palloc_get_page(PAL_USER | (type != ZERO_PG ? 0 : PAL_ZERO));
 			if (rtn != NULL) {
 				ftbl[i].corr_vaddr = vaddr;
 				fr_set_pin(&ftbl[i], true);

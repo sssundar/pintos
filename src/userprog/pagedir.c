@@ -86,12 +86,17 @@ static uint32_t * lookup_page(uint32_t *pd, const void *vaddr, bool create) {
     KPAGE should probably be a page obtained from the user pool
     with palloc_get_page().
     If WRITABLE is true, the new page is read/write; otherwise it is read-only.
-    Returns true if successful, false if memory allocation failed. */
-bool pagedir_set_page(uint32_t *pd, void *upage, void *kpage, bool writable) {
+    Returns true if successful, false if memory allocation failed.
+    If SUPPLEMENTAL is true doesn't create a user page. */
+bool pagedir_set_page(uint32_t *pd, void *upage, void *kpage, bool writable,
+		bool supplemental) {
     uint32_t *pte;
 
     ASSERT(pg_ofs(upage) == 0);
-    ASSERT(pg_ofs(kpage) == 0);
+    if (!supplemental) {
+    	ASSERT(pg_ofs(kpage) == 0);
+    	// TODO should there be a check for supplemental pages?
+    }
     ASSERT(is_user_vaddr(upage));
     ASSERT(vtop(kpage) >> PTSHIFT < init_ram_pages);
     ASSERT(pd != init_page_dir);
@@ -100,7 +105,12 @@ bool pagedir_set_page(uint32_t *pd, void *upage, void *kpage, bool writable) {
 
     if (pte != NULL) {
         ASSERT((*pte & PTE_P) == 0);
-        *pte = pte_create_user(kpage, writable);
+        if (!supplemental) {
+        	*pte = pte_create_user(kpage, writable);
+        }
+        else {
+        	*pte = (uint32_t) kpage;
+        }
         return true;
     }
     else {

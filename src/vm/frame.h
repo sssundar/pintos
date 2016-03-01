@@ -23,8 +23,7 @@
 
     Note that, by our convention, kernel pages are not page-able (i.e.,
     evict-able) because they are not present in the frame table. The evicting
-    code will never see them.
-*/
+    code will never see them. */
 struct ftbl_elem {
 	/*! Owned by frame.c. */
 	/**@{*/
@@ -33,8 +32,7 @@ struct ftbl_elem {
 
 	/*! Info about the owning thread including its page directory pointer,
 	    which is needed to access the dirty and accessed bits in the
-	    corresponding page table entry.
-	 */
+	    corresponding page table entry. */
 	struct thread *tinfo;
 
 	/*! Contains flags for this frame table element:
@@ -53,8 +51,7 @@ struct ftbl_elem {
 	/*! The number of zeroes that follow the last bit of this page. Will be set
 	    to 0 for (most) pages because they're fully used, but the last page
 	    for a given file will have a trailing zeroes count between 0 and
-	    PGSIZE, inclusive.
-	 */
+	    PGSIZE, inclusive. */
 	uint32_t trailing_zeroes;
 	off_t offset;			/*!< Offset in the corresponding src file. */
 	//--------------------- File related data above ---------------------------

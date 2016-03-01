@@ -10,6 +10,8 @@ void process_activate(void);
 bool process_fd_matches(int fd);
 int process_filename_matches(const char *filename);
 struct semaphore *file_match_sema(const char *filename);
+bool install_page(void *upage, void *kpage, bool writable,
+		bool supplemental);
 
 #endif /* userprog/process.h */
 

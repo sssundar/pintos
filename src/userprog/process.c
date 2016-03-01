@@ -16,6 +16,7 @@
 #include "threads/flags.h"
 #include "threads/init.h"
 #include "threads/interrupt.h"
+#include "threads/malloc.h"
 #include "threads/palloc.h"
 #include "threads/thread.h"
 #include "threads/synch.h"
@@ -64,7 +65,8 @@ tid_t process_execute(const char *file_name) {
 
     // Create a new thread to execute FILE_NAME, and make sure it knows it's
     // our child
-    tid = thread_create(progname, PRI_DEFAULT, start_process, fn_copy, 1, &thread_current()->child_list, thread_current());
+    tid = thread_create(progname, PRI_DEFAULT, start_process, fn_copy, 1,
+    		&thread_current()->child_list, thread_current());
     // Wait for child to be loaded.
     sema_down(&thread_current()->load_child);
 
@@ -502,8 +504,6 @@ done:
 
 /* load() helpers. */
 
-static bool install_page(void *upage, void *kpage, bool writable);
-
 /*! Checks whether PHDR describes a valid, loadable segment in
     FILE and returns true if so, false otherwise. */
 static bool validate_segment(const struct Elf32_Phdr *phdr,
@@ -567,6 +567,7 @@ static bool load_segment(struct file *file, off_t ofs, uint8_t *upage,
     ASSERT((read_bytes + zero_bytes) % PGSIZE == 0);
     ASSERT(pg_ofs(upage) == 0);
     ASSERT(ofs % PGSIZE == 0);
+    int i = 0;
 
     file_seek(file, ofs);
     while (read_bytes > 0 || zero_bytes > 0) {
@@ -576,26 +577,18 @@ static bool load_segment(struct file *file, off_t ofs, uint8_t *upage,
         size_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
         size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
-        /* Get a page of memory. */
-        uint8_t *kpage = palloc_get_page(PAL_USER);
-        if (kpage == NULL)
-            return false;
+        /* Allocate a supplemental page table entry. */
+        // TODO just added this
+        struct spgtbl_elem *s;
 
-        /* Load this page. */
-        // TODO replace this with allocation of suppl. page table entry
-        // TODO We don't want to do file_read yet because we want to load
-        //      lazily!
-        if (file_read(file, kpage, page_read_bytes) != (int) page_read_bytes) {
-            palloc_free_page(kpage);
-            return false;
-        }
-        memset(kpage + page_read_bytes, 0, page_zero_bytes);
+        // TODO ofs needs to travel with
+        s = pg_put(-1, ofs + PGSIZE * i++, NULL, upage,file, page_zero_bytes,
+        		writable, page_read_bytes == 0 ? ZERO_PG : EXECD_FILE_PG);
 
-        /* Add the page to the process's address space. */
-        if (!install_page(upage, kpage, writable)) {
-            palloc_free_page(kpage);
-            return false; 
-        }
+        if (!install_page(upage, (void *) s, writable, true)) {
+			free(s);
+			return false;
+		}
 
         /* Advance. */
         read_bytes -= page_read_bytes;
@@ -625,11 +618,13 @@ static bool setup_stack(void **esp, const char *file_name) {
     /* Setup the stack. */
 
     kpage = fr_alloc_page(PHYS_BASE - PGSIZE, OTHER_PG);
-    // Replaced this with call to fr_alloc_page.
+    // Replaced this with call to fr_alloc_page, which was confirmed to work
+    // before modification of load_segment.
     // kpage = palloc_get_page(PAL_USER | PAL_ZERO);
 
     if (kpage != NULL) {
-        success = install_page(((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
+        success = install_page(((uint8_t *) PHYS_BASE) - PGSIZE, kpage,
+        		true, false);
         if (success) {
 
             // Copy argv elements onto the stack as they're parsed out.
@@ -699,11 +694,13 @@ static bool setup_stack(void **esp, const char *file_name) {
     with palloc_get_page().
     Returns true on success, false if UPAGE is already mapped or
     if memory allocation fails. */
-static bool install_page(void *upage, void *kpage, bool writable) {
+bool install_page(void *upage, void *kpage, bool writable,
+		bool supplemental) {
     struct thread *t = thread_current();
 
     /* Verify that there's not already a page at that virtual
        address, then map our page there. */
     return (pagedir_get_page(t->pagedir, upage) == NULL &&
-            pagedir_set_page(t->pagedir, upage, kpage, writable));
+            pagedir_set_page(t->pagedir, upage, kpage, writable,
+            		supplemental));
 }
