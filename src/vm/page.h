@@ -39,8 +39,9 @@
 enum pgtype { MMAPD_FILE_PG, EXECD_FILE_PG, ZERO_PG, OTHER_PG };
 
 /*! Supplemental page table element. There is one of these per allocated page
-    for each user process. They are loaded up in a hash table and live in
-    the kernel pool of pages. */
+    for each user process. Instead of putting these in a hash table we
+    put them somewhere in kernel space then pack a pointer to each in its
+    corresponding page table entry. */
 struct spgtbl_elem {
 	/*! Owned by frame.c. */
 	/**@{*/
@@ -66,16 +67,12 @@ struct spgtbl_elem {
 	//--------------------- File related data above ---------------------------
 
 	uint32_t magic;
-	struct hash_elem helm;  /*!< Is a Pintos hash element. */
 	/**@}*/
 };
 
-bool pg_hash_less (const struct hash_elem *a,
-		const struct hash_elem *b, void *aux);
-unsigned pg_hash_func (const struct hash_elem *e, void *aux);
-
-void *pg_put(int fd, off_t ofs, void *paddr, void *vaddr, struct file *file,
-		uint32_t num_trailing_zeroes, bool writable, enum pgtype type);
+struct spgtbl_elem *pg_put(int fd, off_t ofs, void *paddr, void *vaddr,
+		struct file *file, uint32_t num_trailing_zeroes, bool writable,
+		enum pgtype type);
 bool pg_is_valid_stack_addr(void *addr, void *stack_ptr);
 
 #endif /* SRC_VM_PAGE_H_ */

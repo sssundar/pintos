@@ -1,7 +1,6 @@
 #include "threads/thread.h"
 #include <debug.h>
 #include <stddef.h>
-#include <hash.h>
 #include <random.h>
 #include <stdio.h>
 #include <string.h>
@@ -494,10 +493,6 @@ static void init_thread(struct thread *t, const char *name, int priority,
 		else {
 			t->tfile.fd = max_fd++;
 		}
-
-	    // Initialize the supplemental page table.
-	    t->spgtbl = (struct hash *) malloc(sizeof (struct hash));
-	    hash_init(t->spgtbl, pg_hash_func, pg_hash_less, NULL, 1 << 10);
     }
     else {
     	t->tfile.fd = -1;

@@ -108,6 +108,16 @@ static void kill(struct intr_frame *f) {
     }
 }
 
+/*! Simple debug message. */
+static void debug_helper(void *fault_addr, bool not_present,
+		bool write, bool user) {
+    printf("Page fault at %p: %s error %s page in %s context.\n",
+           fault_addr,
+           not_present ? "not present" : "rights violation",
+           write ? "writing" : "reading",
+           user ? "user" : "kernel");
+}
+
 /*! Page fault handler. At entry, the address that faulted is in CR2 (Control
     Register 2) and information about the fault, formatted as described in
     the PF_* macros in exception.h, is in F's error_code member.  The
@@ -142,20 +152,29 @@ static void page_fault(struct intr_frame *f) {
 
     /* Virtual memory code: bring in the page to which fault_addr refers. */
 
-    // Get the supplemental page corresponding with the faulting address.
-    struct spgtbl_elem *s = (struct spgtbl_elem *) pagedir_get_page(
-    		thread_current()->pagedir, fault_addr);
+    // Get the supplemental page corresponding to the faulting address.
+    struct thread *t = thread_current();
+    struct spgtbl_elem *s =
+    		(struct spgtbl_elem *) pagedir_get_page(t->pagedir, fault_addr);
+
+    // hash_find(t->spgtbl, &s->helm); TODO remove if works
+
     if (s == NULL) {
-    	PANIC("Supplemental page entry was NULL.");
+    	debug_helper(fault_addr, not_present, write, user);
+    	PANIC("Supplemental page entry was NULL.\n");
     	NOT_REACHED();
     }
     if (s->magic != PG_MAGIC) {
+    	debug_helper(fault_addr, not_present, write, user);
     	PANIC("Couldn't find supplemental page entry. Magic is missing.");
     	NOT_REACHED();
     }
+
     if (not_present) {
-    	void *kpage = fr_alloc_page((void *)(((uint32_t)fault_addr) >> PGBITS),
+    	void *kpage = fr_alloc_page(
+    			(void *)(((uint32_t) fault_addr) & 0xFFFFF000),
     			EXECD_FILE_PG);
+
 		if (kpage == NULL) {
 			// TODO eventually evict, don't just panic.
 			PANIC("Couldn't alloc user page in page fault handler.");
@@ -165,8 +184,10 @@ static void page_fault(struct intr_frame *f) {
 		// Handle the page based on its type.
 		if (s->type == EXECD_FILE_PG) {
 
-			if (file_read(s->src_file, kpage, PGSIZE - s->trailing_zeroes) !=
-					(int) (PGSIZE - s->trailing_zeroes)) {
+			file_seek(s->src_file, s->offset);
+
+			if (file_read(s->src_file, kpage, PGSIZE - s->trailing_zeroes)
+					!= (int) (PGSIZE - s->trailing_zeroes)) {
 				// palloc_free_page(kpage);
 				// return false;
 				PANIC("Couldn't read page from file.");
@@ -176,14 +197,26 @@ static void page_fault(struct intr_frame *f) {
 			memset(kpage + (PGSIZE - s->trailing_zeroes),
 					0, s->trailing_zeroes);
 
-			if (!install_page(s->vaddr, kpage, s->writable, false)) {
+			// Overwrite the old page table entry.
+			if (!pagedir_set_page(
+					t->pagedir, s->vaddr, kpage, s->writable, false)) {
 				// palloc_free_page(kpage);
 				PANIC("Couldn't install page in page fault handler.");
 				NOT_REACHED();
 			}
+
+			// TODO unpin the frame table entry here.
 		}
 		else if (s->type == ZERO_PG) {
 			memset(kpage, 0, PGSIZE);
+
+			// Overwrite the old page table entry.
+			if (!pagedir_set_page(
+					t->pagedir, s->vaddr, kpage, s->writable, false)) {
+				// palloc_free_page(kpage);
+				PANIC("Couldn't install page in page fault handler.");
+				NOT_REACHED();
+			}
 		}
 		else if (s->type == MMAPD_FILE_PG) {
 			// TODO merge with EXECD_FILE_PG?
@@ -197,14 +230,6 @@ static void page_fault(struct intr_frame *f) {
 		}
     }
 
-
-
-    // TODO eventually remove this. Useful for debugging for now.
-    printf("Page fault at %p: %s error %s page in %s context.\n",
-           fault_addr,
-           not_present ? "not present" : "rights violation",
-           write ? "writing" : "reading",
-           user ? "user" : "kernel");    
-    // kill(f);
+    // debug_helper(fault_addr, not_present, write, user);
 }
 

@@ -127,10 +127,21 @@ void * pagedir_get_page(uint32_t *pd, const void *uaddr) {
     ASSERT(is_user_vaddr(uaddr));
 
     pte = lookup_page(pd, uaddr, false);
-    if (pte != NULL && (*pte & PTE_P) != 0)
+    if (pte == NULL)
+    	return NULL;
+
+    // If pte isn't null there are two options. Either the entry is present,
+    // in which case it's a normal entry and we should return physical address
+    // + offset, or it's not present and IT'S A SUPPLEMENTAL PAGE TABLE
+    // ENTRY.
+    if ((*pte & PTE_P) != 0)
         return pte_get_page(*pte) + pg_ofs(uaddr);
-    else
-        return NULL;
+    else if ((void*) (*pte) != NULL) {
+        return (void *) *pte;
+    }
+    else {
+    	return NULL;
+    }
 }
 
 /*! Marks user virtual page UPAGE "not present" in page directory PD.  Later

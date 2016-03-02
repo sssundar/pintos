@@ -498,7 +498,8 @@ done:
 		palloc_free_page((void *) progname);
 	}
     /* We arrive here whether the load is successful or not. */
-    file_close(file);
+    // file_close(file); TODO we're NOT CLOSING IT HERE BECAUSE
+	//                        the page fault handler needs it!!!!
     return success;
 }
 
@@ -577,14 +578,19 @@ static bool load_segment(struct file *file, off_t ofs, uint8_t *upage,
         size_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
         size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
-        /* Allocate a supplemental page table entry. */
-        // TODO just added this
-        struct spgtbl_elem *s;
+        /* Allocate a supplemental page table entry into the kernel pool. */
+        // TODO just added strt
+        struct spgtbl_elem *s = (struct spgtbl_elem *) pg_put(
+        		-1,
+        		page_read_bytes == 0 ? -1 : ofs + PGSIZE * i++,
+        		NULL,
+				upage,
+				page_read_bytes == 0 ? NULL : file,
+				page_zero_bytes,
+        		writable,
+				page_read_bytes == 0 ? ZERO_PG : EXECD_FILE_PG);
 
-        // TODO ofs needs to travel with
-        s = pg_put(-1, ofs + PGSIZE * i++, NULL, upage,file, page_zero_bytes,
-        		writable, page_read_bytes == 0 ? ZERO_PG : EXECD_FILE_PG);
-
+        /* Now install it into the PTE. This is how we can avoid hashing! */
         if (!install_page(upage, (void *) s, writable, true)) {
 			free(s);
 			return false;
@@ -616,12 +622,7 @@ static bool setup_stack(void **esp, const char *file_name) {
     strlcpy(fncopy, file_name, PGSIZE);
 
     /* Setup the stack. */
-
     kpage = fr_alloc_page(PHYS_BASE - PGSIZE, OTHER_PG);
-    // Replaced this with call to fr_alloc_page, which was confirmed to work
-    // before modification of load_segment.
-    // kpage = palloc_get_page(PAL_USER | PAL_ZERO);
-
     if (kpage != NULL) {
         success = install_page(((uint8_t *) PHYS_BASE) - PGSIZE, kpage,
         		true, false);
@@ -680,6 +681,8 @@ static bool setup_stack(void **esp, const char *file_name) {
         else
             palloc_free_page(kpage);
     }
+
+    // TODO unpin the page from fr_alloc_page!
 
     palloc_free_page((void *) fncopy);
     return success;
