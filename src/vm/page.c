@@ -9,8 +9,16 @@
 #include "threads/vaddr.h"
 #include "threads/malloc.h"
 #include "threads/thread.h"
+#include "threads/synch.h"
 #include "filesys/file.h"
 #include "vm/page.h"
+
+/*! Use this whenever tinkering with page directory. */
+struct lock pglock;
+
+void pg_init(void) { lock_init(&pglock); }
+void pg_lock_pd(void) { lock_acquire(&pglock); }
+void pg_release_pd(void) { lock_release(&pglock); }
 
 /*! Allocate and populate a new supplemental page table element (SPGTE). Put
     it in kernel space instead of into a hash table. The caller should pack

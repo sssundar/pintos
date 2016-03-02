@@ -503,7 +503,6 @@ done:
 	// on it staying open until the page fault handler loads everything up.
 	// Now we store the file pointer in the thread struct and close it when
 	// the thread exits.
-	thread_current()->loaded_from = file;
 
     return success;
 }
@@ -584,7 +583,6 @@ static bool load_segment(struct file *file, off_t ofs, uint8_t *upage,
         size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
         /* Allocate a supplemental page table entry into the kernel pool. */
-        // TODO just added strt
         struct spgtbl_elem *s = (struct spgtbl_elem *) pg_put(
         		-1,
         		page_read_bytes == 0 ? -1 : ofs + PGSIZE * i++,
@@ -595,7 +593,7 @@ static bool load_segment(struct file *file, off_t ofs, uint8_t *upage,
         		writable,
 				page_read_bytes == 0 ? ZERO_PG : EXECD_FILE_PG);
 
-        /* Now install it into the PTE. This is how we can avoid hashing! */
+        /* Now install it into the PTE. This is how we avoid hashing! */
         if (!install_page(upage, (void *) s, writable, true)) {
 			free(s);
 			return false;

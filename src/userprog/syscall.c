@@ -1,27 +1,29 @@
-#include "lib/user/syscall.h"
 #include "userprog/syscall.h"
+#include "userprog/process.h"
+#include "userprog/pagedir.h"
 #include "lib/stdio.h"
 #include "lib/syscall-nr.h"
+#include "lib/string.h"
+#include "lib/user/syscall.h"
+#include "lib/kernel/stdio.h"
 #include "threads/interrupt.h"
 #include "threads/thread.h"
-#include "userprog/pagedir.h"
 #include "threads/vaddr.h"
 #include "threads/synch.h"
-#include "lib/kernel/stdio.h"
+#include "threads/palloc.h"
+#include "threads/malloc.h"
 #include "filesys/file.h"
 #include "filesys/filesys.h"
 #include "devices/shutdown.h"
-#include "threads/malloc.h"
 #include "devices/input.h"
-#include "userprog/process.h"
-#include "lib/string.h"
-#include "threads/palloc.h"
+#include "vm/page.h"
 
 //----------------------------- Global variables ------------------------------
 
 struct lock sys_lock;
 
 extern int max_fd;
+extern int max_mid;
 
 //---------------------------- Function prototypes ----------------------------
 
@@ -31,6 +33,8 @@ int get_user (const uint8_t *uaddr);
 bool put_user (uint8_t *udst, uint8_t byte);
 bool get_user_quadbyte (const uint8_t *uaddr, int *arg);
 bool uptr_is_valid (const void *uptr);
+static struct file *find_matching_file(int fd);
+static void find_matching_mmaped_file(int mid, size_t *size, void **addr);
 
 //---------------------------- Function definitions ---------------------------
 
@@ -230,7 +234,6 @@ int filesize(int fd){
 	struct list_elem *l;
 
 	lock_acquire(&sys_lock);
-
 	for (l = list_begin(&thread_current()->files);
 			l != list_end(&thread_current()->files);
 			l = list_next(l)) {
@@ -296,8 +299,6 @@ int open(const char *file){
     	fd_elem->fd = max_fd++;
     }
 
-	//fd_elem->fd = thread_current()->max_fd;
-	//thread_current()->max_fd++;
 	fd_elem->file = f;
 	list_push_back(&thread_current()->files, &fd_elem->f_elem);
 
@@ -502,6 +503,139 @@ bool remove (const char *file) {
 	success = filesys_remove(file);
 	lock_release(&sys_lock);
 	return success;
+}
+
+/*! Gets the matching file pointer. */
+static struct file *find_matching_file(int fd) {
+	struct fd_element *r;
+	struct list_elem *l;
+
+	if (fd == -1) {
+		return NULL;
+	}
+
+	lock_acquire(&sys_lock);
+	for (l = list_begin(&thread_current()->files);
+			l != list_end(&thread_current()->files);
+			l = list_next(l)) {
+		r = list_entry(l, struct fd_element, f_elem);
+		if (r->fd == fd) {
+			lock_release(&sys_lock);
+			return r->file;
+		}
+	}
+	lock_release(&sys_lock);
+	return NULL;
+}
+
+mapid_t mmap(int fd, void *addr) {
+	uint32_t read_bytes = filesize(fd);
+	uint32_t zero_bytes =
+			read_bytes % PGSIZE == 0 ? 0 : PGSIZE - read_bytes % PGSIZE;
+	off_t ofs = 0;
+	int i = 0;
+
+	struct file *file = find_matching_file(fd);
+	if (file == NULL) {
+		PANIC("File wasn't opened before mmap.");
+		NOT_REACHED();
+	}
+
+	lock_acquire(&sys_lock);
+	while (read_bytes > 0 || zero_bytes > 0) {
+		/* Calculate how to fill this page.
+		   We will read PAGE_READ_BYTES bytes from FILE
+		   and zero the final PAGE_ZERO_BYTES bytes. */
+		size_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
+		size_t page_zero_bytes = PGSIZE - page_read_bytes;
+
+		/* Allocate a supplemental page table entry into the kernel pool. */
+		struct spgtbl_elem *s = (struct spgtbl_elem *) pg_put(
+				fd,
+				page_read_bytes == 0 ? -1 : ofs + PGSIZE * i++,
+				NULL,
+				addr,
+				page_read_bytes == 0 ? NULL : file,
+				page_zero_bytes,
+				true,
+				page_read_bytes == 0 ? ZERO_PG : EXECD_FILE_PG);
+
+		/* Now install it into the PTE. This is how we avoid hashing! */
+		if (!install_page(addr, (void *) s, true, true)) {
+			free(s);
+			return -1;
+		}
+
+		/* Advance. */
+		read_bytes -= page_read_bytes;
+		zero_bytes -= page_zero_bytes;
+		addr += PGSIZE;
+	}
+
+	struct mmap_element *melm = (struct mmap_element *) malloc
+			(sizeof(struct mmap_element));
+	if (melm == NULL) {
+		lock_release(&sys_lock);
+		return -1;
+	}
+	melm->fd = fd;
+	melm->addr = addr;
+	melm->mid = max_mid++;
+	melm->size = filesize(fd);
+	list_push_back(&thread_current()->mmapped_files, &melm->m_elem);
+
+	lock_release(&sys_lock);
+
+	return melm->mid;
+}
+
+/*! Gets the matching memory mapped file's beginning address and size. */
+static void find_matching_mmaped_file(int mid, size_t *size, void **addr) {
+	struct mmap_element *m;
+	struct list_elem *l;
+
+	lock_acquire(&sys_lock);
+	if (mid != -1) {
+		for (l = list_begin(&thread_current()->mmapped_files);
+				l != list_end(&thread_current()->mmapped_files);
+				l = list_next(l)) {
+			m = list_entry(l, struct mmap_element, m_elem);
+			if (m->mid == mid) {
+				*size = m->size;
+				*addr = m->addr;
+				lock_release(&sys_lock);
+				return;
+			}
+		}
+	}
+	*size = 0;
+	*addr = NULL;
+	lock_release(&sys_lock);
+}
+
+void munmap(mapid_t mid) {
+	void *addr;
+	size_t size, num_pages;
+	find_matching_mmaped_file(mid, &size, &addr);
+	void *curr_base;
+
+	if(size == 0 || addr == NULL) {
+		PANIC("Couldn't find memory-mapped file.");
+		NOT_REACHED();
+	}
+
+	pg_lock_pd();
+	num_pages = size % PGSIZE == 0 ? size / PGSIZE : size / PGSIZE + 1;
+	palloc_free_multiple(addr, num_pages);
+	// Iterate over all the pages in the memory-mapped region, setting the
+	// present bit for each one to 0 in the page directory.
+	for(curr_base = addr;
+			curr_base < (void *)((uint32_t) addr +
+					(uint32_t) (num_pages * PGSIZE));
+			curr_base = (void *)((uint32_t) curr_base + PGSIZE)) {
+		pagedir_clear_page(thread_current()->pagedir, curr_base);
+	}
+	pg_release_pd();
 }
 
 /*! Runs the executable whose name is given in cmd_line, passing any given

@@ -30,12 +30,21 @@ typedef int tid_t;
 #define PRI_MAX 63                      /*!< Highest priority. */
 
 /* File list struct. */
-struct fd_element{
+struct fd_element {
 	int fd;
 	struct file *file;
 	char *filename;
 	struct semaphore multfile_sema;
 	struct list_elem  f_elem;
+};
+
+/*! Element in per-thread list of memory-mapped files. */
+struct mmap_element {
+	int mid;
+	int fd;
+	void *addr;
+	size_t size;
+	struct list_elem m_elem;
 };
 
 /*! A kernel thread or user process.
@@ -162,8 +171,8 @@ struct thread {
         this thread. */
     struct fd_element tfile;
 
-    /*! File from which this was loaded. */
-    struct file *loaded_from;
+    /*! List of all memory-mapped files. */
+    struct list mmapped_files;
 
     /**@}*/
 #endif
@@ -201,14 +210,14 @@ const char *thread_name(void);
 void thread_exit(void) NO_RETURN;
 void thread_yield(void);
 
+int thread_get_priority(void);
+void thread_set_priority(int);
+
 /*! Performs some operation on thread t, given auxiliary data AUX. */
 typedef void thread_action_func(struct thread *t, void *aux);
 
-void thread_foreach(thread_action_func *, void *);
 void thread_foreach_danger_edition(thread_action_func *func, void *aux);
-
-int thread_get_priority(void);
-void thread_set_priority(int);
+void thread_foreach(thread_action_func *, void *);
 
 int thread_get_nice(void);
 void thread_set_nice(int);

@@ -56,6 +56,9 @@ extern struct lock eflock;
 /*! Maximum file descriptor assigned so far. */
 int max_fd = 3;
 
+/*! Max mmemory mapped file ID. */
+int max_mid = 3;
+
 /*! Stack frame for kernel_thread(). */
 struct kernel_thread_frame {
     void *eip;                  /*!< Return address. */
@@ -324,8 +327,10 @@ void thread_exit(void) {
     // the end of process.c's load function, but after on-demand paging was
     // implemented we needed to wait until the page fault handler could load
     // first. Therefore we close here now.
-    if (thread_current()->loaded_from != NULL)
-    	file_close(thread_current()->loaded_from);
+    if (thread_current()->tfile.file != NULL)
+    	file_close(thread_current()->tfile.file);
+
+    // TODO close mmapped_element list?
 
     intr_disable();
     list_remove(&thread_current()->allelem);
@@ -348,26 +353,6 @@ void thread_yield(void) {
     cur->status = THREAD_READY;
     schedule();
     intr_set_level(old_level);
-}
-
-/*! Invoke function 'func' on all threads, passing along 'aux'.
-    This function must be called with interrupts off. */
-void thread_foreach(thread_action_func *func, void *aux) {
-	// struct list_elem *e;
-
-    ASSERT(intr_get_level() == INTR_OFF);
-
-    thread_foreach_danger_edition(func, aux);
-}
-
-void thread_foreach_danger_edition(thread_action_func *func, void *aux) {
-    struct list_elem *e;
-
-    for (e = list_begin(&all_list); e != list_end(&all_list);
-         e = list_next(e)) {
-        struct thread *t = list_entry(e, struct thread, allelem);
-        func(t, aux);
-    }
 }
 
 /*! Sets the current thread's priority to NEW_PRIORITY. */
@@ -477,10 +462,10 @@ static void init_thread(struct thread *t, const char *name, int priority,
     t->priority = priority;
     t->magic = THREAD_MAGIC;
     list_init(&(t->files));
-    //t->max_fd = 3; // This is the first available fd after debug, which is 2
     old_level = intr_disable();
     t->voluntarily_exited = 0;
     list_push_back(&all_list, &t->allelem);
+
     /* Initialize process_wait() system call structures */
     list_init(&t->child_list);
     sema_init(&t->i_am_done, 0); /* Locked by child, implicitly */    
@@ -500,7 +485,6 @@ static void init_thread(struct thread *t, const char *name, int priority,
 		else {
 			t->tfile.fd = max_fd++;
 		}
-		t->loaded_from = NULL;
     }
     else {
     	t->tfile.fd = -1;
@@ -611,6 +595,22 @@ static tid_t allocate_tid(void) {
     lock_release(&tid_lock);
 
     return tid;
+}
+
+void thread_foreach_danger_edition(thread_action_func *func, void *aux) {
+    struct list_elem *e;
+    for (e = list_begin(&all_list); e != list_end(&all_list);
+         e = list_next(e)) {
+        struct thread *t = list_entry(e, struct thread, allelem);
+        func(t, aux);
+    }
+}
+
+/*! Invoke function 'func' on all threads, passing along 'aux'.
+    This function must be called with interrupts off. */
+void thread_foreach(thread_action_func *func, void *aux) {
+    ASSERT(intr_get_level() == INTR_OFF);
+    thread_foreach_danger_edition(func, aux);
 }
 
 /*! Offset of `stack' member within `struct thread'.

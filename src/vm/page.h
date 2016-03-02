@@ -68,6 +68,9 @@ struct spgtbl_elem {
 	/**@}*/
 };
 
+void pg_init(void);
+void pg_lock_pd(void);
+void pg_release_pd(void);
 struct spgtbl_elem *pg_put(int fd, off_t ofs, void *paddr, void *vaddr,
 		struct file *file, uint32_t num_trailing_zeroes, bool writable,
 		enum pgtype type);
