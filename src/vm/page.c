@@ -28,6 +28,7 @@ struct spgtbl_elem *pg_put(int fd, off_t ofs, void *paddr, void *vaddr,
 		struct file *file, uint32_t num_trailing_zeroes, bool writable,
 		enum pgtype type) {
 
+	pg_lock_pd();
 	struct spgtbl_elem *s = (struct spgtbl_elem *) malloc(
 	        		sizeof(struct spgtbl_elem));
 
@@ -69,6 +70,7 @@ struct spgtbl_elem *pg_put(int fd, off_t ofs, void *paddr, void *vaddr,
 	s->trailing_zeroes = num_trailing_zeroes;
 	s->type = type;
 	s->writable = writable;
+	pg_release_pd();
 
 	return s;
 }

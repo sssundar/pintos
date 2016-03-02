@@ -462,6 +462,7 @@ static void init_thread(struct thread *t, const char *name, int priority,
     t->priority = priority;
     t->magic = THREAD_MAGIC;
     list_init(&(t->files));
+    list_init(&(t->mmapped_files));
     old_level = intr_disable();
     t->voluntarily_exited = 0;
     list_push_back(&all_list, &t->allelem);

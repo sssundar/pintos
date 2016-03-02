@@ -34,7 +34,8 @@ bool put_user (uint8_t *udst, uint8_t byte);
 bool get_user_quadbyte (const uint8_t *uaddr, int *arg);
 bool uptr_is_valid (const void *uptr);
 static struct file *find_matching_file(int fd);
-static void find_matching_mmaped_file(int mid, size_t *size, void **addr);
+static struct list_elem *find_matching_mmaped_file(
+		int mid, size_t *size, void **addr);
 
 //---------------------------- Function definitions ---------------------------
 
@@ -152,6 +153,12 @@ static void sc_handler(struct intr_frame *f) {
 	} 
 	else if (sc_n == SYS_WAIT) {
 		f->eax = wait((pid_t) sc_n1);
+	}
+	else if (sc_n == SYS_MMAP) {
+		f->eax = mmap((int) sc_n1, (void *) sc_n2);
+	}
+	else if (sc_n == SYS_MUNMAP) {
+		munmap((mapid_t) sc_n1);
 	}
 }
 
@@ -563,7 +570,7 @@ mapid_t mmap(int fd, void *addr) {
 		/* Now install it into the PTE. This is how we avoid hashing! */
 		if (!install_page(addr, (void *) s, true, true)) {
 			free(s);
-			return -1;
+			return MAP_FAILED;
 		}
 
 		/* Advance. */
@@ -576,21 +583,21 @@ mapid_t mmap(int fd, void *addr) {
 			(sizeof(struct mmap_element));
 	if (melm == NULL) {
 		lock_release(&sys_lock);
-		return -1;
+		return MAP_FAILED;
 	}
 	melm->fd = fd;
 	melm->addr = addr;
 	melm->mid = max_mid++;
-	melm->size = filesize(fd);
-	list_push_back(&thread_current()->mmapped_files, &melm->m_elem);
-
 	lock_release(&sys_lock);
 
+	melm->size = filesize(fd);
+	list_push_back(&thread_current()->mmapped_files, &melm->m_elem);
 	return melm->mid;
 }
 
 /*! Gets the matching memory mapped file's beginning address and size. */
-static void find_matching_mmaped_file(int mid, size_t *size, void **addr) {
+static struct list_elem *find_matching_mmaped_file(
+		int mid, size_t *size, void **addr) {
 	struct mmap_element *m;
 	struct list_elem *l;
 
@@ -604,29 +611,33 @@ static void find_matching_mmaped_file(int mid, size_t *size, void **addr) {
 				*size = m->size;
 				*addr = m->addr;
 				lock_release(&sys_lock);
-				return;
+				return l;
 			}
 		}
 	}
 	*size = 0;
 	*addr = NULL;
 	lock_release(&sys_lock);
+	return NULL;
 }
 
 void munmap(mapid_t mid) {
 	void *addr;
 	size_t size, num_pages;
-	find_matching_mmaped_file(mid, &size, &addr);
+	struct list_elem *l;
+	l = find_matching_mmaped_file(mid, &size, &addr);
 	void *curr_base;
 
-	if(size == 0 || addr == NULL) {
+	if(l == NULL || size == 0 || addr == NULL) {
 		PANIC("Couldn't find memory-mapped file.");
 		NOT_REACHED();
 	}
 
 	pg_lock_pd();
 	num_pages = size % PGSIZE == 0 ? size / PGSIZE : size / PGSIZE + 1;
-	palloc_free_multiple(addr, num_pages);
+
+	// TODO don't need to palloc_free the pages???
+
 	// Iterate over all the pages in the memory-mapped region, setting the
 	// present bit for each one to 0 in the page directory.
 	for(curr_base = addr;
@@ -635,6 +646,7 @@ void munmap(mapid_t mid) {
 			curr_base = (void *)((uint32_t) curr_base + PGSIZE)) {
 		pagedir_clear_page(thread_current()->pagedir, curr_base);
 	}
+	list_remove(l);
 	pg_release_pd();
 }
 
