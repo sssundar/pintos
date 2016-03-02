@@ -155,6 +155,12 @@ static void page_fault(struct intr_frame *f) {
 
     //------------------------ Virtual memory code ----------------------------
 
+    if (!is_user_vaddr(fault_addr)) {
+    	kill(f);
+    	// PANIC("Faulted on a kernel address.");
+    	NOT_REACHED();
+    }
+
     // Get the stack pointer. Apply a heuristic to see if this address faulted
     // because we need to allocate a new stack page. If so then allocate a
     // new page for the stack and install it, then exit the page fault handler.

@@ -5,6 +5,7 @@
 #include "tests/vm/sample.inc"
 #include "tests/lib.h"
 #include "tests/main.h"
+#include <stdio.h>
 
 #define ACTUAL ((void *) 0x10000000)
 
@@ -18,6 +19,9 @@ test_main (void)
   CHECK ((map = mmap (handle, ACTUAL)) != MAP_FAILED, "mmap \"sample.txt\"");
 
   munmap (map);
+
+  //printf("--> munmap succeeded????\n");
+  //printf("trying to access the location: %d\n", *(int *) ACTUAL);
 
   fail ("unmapped memory is readable (%d)", *(int *) ACTUAL);
 }
