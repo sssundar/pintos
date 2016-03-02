@@ -162,6 +162,9 @@ struct thread {
         this thread. */
     struct fd_element tfile;
 
+    /*! File from which this was loaded. */
+    struct file *loaded_from;
+
     /**@}*/
 #endif
 

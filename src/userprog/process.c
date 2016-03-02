@@ -498,8 +498,14 @@ done:
 		palloc_free_page((void *) progname);
 	}
     /* We arrive here whether the load is successful or not. */
-    // file_close(file); TODO we're NOT CLOSING IT HERE BECAUSE
-	//                        the page fault handler needs it!!!!
+
+	// TODO make sure this works...
+	// We used to close the executable file here but can't because we depend
+	// on it staying open until the page fault handler loads everything up.
+	// Now we store the file pointer in the thread struct and close it when
+	// the thread exits.
+	thread_current()->loaded_from = file;
+
     return success;
 }
 
@@ -682,7 +688,8 @@ static bool setup_stack(void **esp, const char *file_name) {
             palloc_free_page(kpage);
     }
 
-    // TODO unpin the page from fr_alloc_page!
+    // After we're done setting up the stack we unpin it so it can be paged.
+   	fr_unpin(kpage);
 
     palloc_free_page((void *) fncopy);
     return success;

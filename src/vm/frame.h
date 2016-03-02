@@ -59,15 +59,10 @@ struct ftbl_elem {
 	/**@}*/
 };
 
-bool fr_is_used(struct ftbl_elem *ftbl);
-bool fr_is_pinned(struct ftbl_elem *ftbl);
-
-void fr_set_pin(struct ftbl_elem *ftbl, bool pinned);
-void fr_set_used(struct ftbl_elem *ftbl, bool used);
-
-uint32_t fr_get_corr_idx(void *paddr);
-struct ftbl_elem *fr_get_corr_ftbl_elem(void *vaddr);
-void *fr_get_corr_phys_addr(int idx);
+void fr_use(void *paddr);
+void fr_unuse(void *paddr);
+void fr_pin(void *paddr);
+void fr_unpin(void *paddr);
 
 void fr_init_tbl(void);
 void *fr_alloc_page(void *vaddr, enum pgtype type);

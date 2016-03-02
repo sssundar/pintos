@@ -14,6 +14,9 @@
 #include "vm/page.h"
 #include "vm/frame.h"
 
+/*! The (file) system lock from syscall.c. */
+extern struct lock sys_lock;
+
 /*! Number of page faults processed. */
 static long long page_fault_cnt;
 
@@ -157,8 +160,6 @@ static void page_fault(struct intr_frame *f) {
     struct spgtbl_elem *s =
     		(struct spgtbl_elem *) pagedir_get_page(t->pagedir, fault_addr);
 
-    // hash_find(t->spgtbl, &s->helm); TODO remove if works
-
     if (s == NULL) {
     	debug_helper(fault_addr, not_present, write, user);
     	PANIC("Supplemental page entry was NULL.\n");
@@ -176,7 +177,6 @@ static void page_fault(struct intr_frame *f) {
     			EXECD_FILE_PG);
 
 		if (kpage == NULL) {
-			// TODO eventually evict, don't just panic.
 			PANIC("Couldn't alloc user page in page fault handler.");
 			NOT_REACHED();
 		}
@@ -184,15 +184,15 @@ static void page_fault(struct intr_frame *f) {
 		// Handle the page based on its type.
 		if (s->type == EXECD_FILE_PG) {
 
+			// Seek to correct offset in file and read.
+			lock_acquire(&sys_lock);
 			file_seek(s->src_file, s->offset);
-
 			if (file_read(s->src_file, kpage, PGSIZE - s->trailing_zeroes)
 					!= (int) (PGSIZE - s->trailing_zeroes)) {
-				// palloc_free_page(kpage);
-				// return false;
 				PANIC("Couldn't read page from file.");
 				NOT_REACHED();
 			}
+			lock_release(&sys_lock);
 
 			memset(kpage + (PGSIZE - s->trailing_zeroes),
 					0, s->trailing_zeroes);
@@ -200,12 +200,9 @@ static void page_fault(struct intr_frame *f) {
 			// Overwrite the old page table entry.
 			if (!pagedir_set_page(
 					t->pagedir, s->vaddr, kpage, s->writable, false)) {
-				// palloc_free_page(kpage);
 				PANIC("Couldn't install page in page fault handler.");
 				NOT_REACHED();
 			}
-
-			// TODO unpin the frame table entry here.
 		}
 		else if (s->type == ZERO_PG) {
 			memset(kpage, 0, PGSIZE);

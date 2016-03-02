@@ -320,6 +320,14 @@ void thread_exit(void) {
     process_exit();
 #endif
 
+    // TODO make sure this works
+    // We used to close the executable from which this thread was loaded at
+    // the end of process.c's load function, but after on-demand paging was
+    // implemented we needed to wait until the page fault handler could load
+    // first. Therefore we close here now.
+    if (thread_current()->loaded_from != NULL)
+    	file_close(thread_current()->loaded_from);
+
     intr_disable();
     list_remove(&thread_current()->allelem);
     thread_current()->status = THREAD_DYING;
@@ -493,6 +501,7 @@ static void init_thread(struct thread *t, const char *name, int priority,
 		else {
 			t->tfile.fd = max_fd++;
 		}
+		t->loaded_from = NULL;
     }
     else {
     	t->tfile.fd = -1;

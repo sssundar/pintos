@@ -41,7 +41,7 @@ struct spgtbl_elem *pg_put(int fd, off_t ofs, void *paddr, void *vaddr,
 		ASSERT(num_trailing_zeroes == PGSIZE);
 		ASSERT(fd == -1);
 		ASSERT(ofs == -1);
-		ASSERT(paddr == NULL); // TODO needs to be set in page fault handler
+		ASSERT(paddr == NULL);
 		ASSERT(file == NULL);
 		break;
 	case OTHER_PG:
@@ -55,7 +55,7 @@ struct spgtbl_elem *pg_put(int fd, off_t ofs, void *paddr, void *vaddr,
 	s->magic = PG_MAGIC;
 	s->fd = fd;
 	s->offset = ofs;
-	s->paddr = paddr; // TODO needs to be set in page fault handler
+	s->paddr = paddr;
 	s->vaddr = vaddr;
 	s->src_file = file;
 	s->trailing_zeroes = num_trailing_zeroes;

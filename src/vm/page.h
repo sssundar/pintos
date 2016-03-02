@@ -35,7 +35,6 @@
     files that are loaded as executables, anonymous files (for pages that will
     be zeroed), and "other" sources for pages that are used to e.g. extend
     the stack. */
-// TODO do we actually need to keep track of the page type?
 enum pgtype { MMAPD_FILE_PG, EXECD_FILE_PG, ZERO_PG, OTHER_PG };
 
 /*! Supplemental page table element. There is one of these per allocated page
@@ -53,7 +52,6 @@ struct spgtbl_elem {
 	enum pgtype type;		/*!< The sort of page this is. */
 
 	//--------------------- File related data below ---------------------------
-	// TODO might not need fd?
 	int fd;					/*!< File descriptor for src file. -1 if none. */
 	struct file *src_file;  /*!< Source file, could be null if none. */
 	/*! The number of zeroes that follow the last bit. Will be set to 0 for
