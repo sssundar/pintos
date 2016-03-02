@@ -24,9 +24,9 @@ void pg_release_pd(void) { lock_release(&pglock); }
     it in kernel space instead of into a hash table. The caller should pack
     a pointer to this SPGTE into the user space page table element. Return a
     pointer to this SPGTE. */
-struct spgtbl_elem *pg_put(int fd, off_t ofs, void *paddr, void *vaddr,
-		struct file *file, uint32_t num_trailing_zeroes, bool writable,
-		enum pgtype type) {
+struct spgtbl_elem *pg_put(int mid, int fd, off_t ofs, void *paddr,
+		void *vaddr, struct file *file, uint32_t num_trailing_zeroes,
+		bool writable, enum pgtype type) {
 
 	pg_lock_pd();
 	struct spgtbl_elem *s = (struct spgtbl_elem *) malloc(
@@ -60,7 +60,7 @@ struct spgtbl_elem *pg_put(int fd, off_t ofs, void *paddr, void *vaddr,
 		PANIC("Impossible page type in pg_put.");
 		NOT_REACHED();
 	}
-
+	s->mid = mid;
 	s->magic = PG_MAGIC;
 	s->fd = fd;
 	s->offset = ofs;

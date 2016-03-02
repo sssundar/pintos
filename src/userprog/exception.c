@@ -198,12 +198,27 @@ static void page_fault(struct intr_frame *f) {
 		}
 
 		// Handle the page based on its type.
-		if (s->type == EXECD_FILE_PG) {
+		if (s->type == EXECD_FILE_PG || s->type == MMAPD_FILE_PG) {
+
+			struct file *src = s->src_file;
+
+			// If the file-descriptor isn't null we assume it was
+			// memory-mapped. Then we must look up info about the file using
+			// a syscall.
+			if(s->fd != -1) {
+				size_t dsz;   // Dummy variable.
+				void *daddr; // Dummy variable.
+				src = list_entry(
+						find_matching_mmaped_file(s->mid, &dsz, &daddr),
+						struct mmap_element,
+						m_elem)->file;
+			}
 
 			// Seek to correct offset in file and read.
 			lock_acquire(&sys_lock);
-			file_seek(s->src_file, s->offset);
-			if (file_read(s->src_file, kpage, PGSIZE - s->trailing_zeroes)
+			file_seek(src, s->offset);
+
+			if (file_read(src, kpage, PGSIZE - s->trailing_zeroes)
 					!= (int) (PGSIZE - s->trailing_zeroes)) {
 				PANIC("Couldn't read page from file.");
 				NOT_REACHED();
@@ -232,9 +247,6 @@ static void page_fault(struct intr_frame *f) {
 				PANIC("Couldn't install page in page fault handler.");
 				NOT_REACHED();
 			}
-		}
-		else if (s->type == MMAPD_FILE_PG) {
-			// TODO merge with EXECD_FILE_PG?
 		}
 		else if (s->type == OTHER_PG) {
 			// TODO

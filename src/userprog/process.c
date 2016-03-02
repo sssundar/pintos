@@ -585,6 +585,7 @@ static bool load_segment(struct file *file, off_t ofs, uint8_t *upage,
         /* Allocate a supplemental page table entry into the kernel pool. */
         struct spgtbl_elem *s = (struct spgtbl_elem *) pg_put(
         		-1,
+        		-1,
         		page_read_bytes == 0 ? -1 : ofs + PGSIZE * i++,
         		NULL,
 				upage,

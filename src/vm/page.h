@@ -52,6 +52,7 @@ struct spgtbl_elem {
 	enum pgtype type;		/*!< The sort of page this is. */
 
 	//--------------------- File related data below ---------------------------
+	int mid;				/*!< Mmap'd file id. */
 	int fd;					/*!< File descriptor for src file. -1 if none. */
 	struct file *src_file;  /*!< Source file, could be null if none. */
 	/*! The number of zeroes that follow the last bit. Will be set to 0 for
@@ -71,8 +72,9 @@ struct spgtbl_elem {
 void pg_init(void);
 void pg_lock_pd(void);
 void pg_release_pd(void);
-struct spgtbl_elem *pg_put(int fd, off_t ofs, void *paddr, void *vaddr,
-		struct file *file, uint32_t num_trailing_zeroes, bool writable,
+struct spgtbl_elem *pg_put(int mid, int fd, off_t ofs, void *paddr,
+		void *vaddr, struct file *file, uint32_t num_trailing_zeroes,
+		bool writable,
 		enum pgtype type);
 bool pg_is_valid_stack_addr(void *addr, void *stack_ptr);
 

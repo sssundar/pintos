@@ -14,6 +14,7 @@
 #include "threads/malloc.h"
 #include "filesys/file.h"
 #include "filesys/filesys.h"
+#include "filesys/inode.h"
 #include "devices/shutdown.h"
 #include "devices/input.h"
 #include "vm/page.h"
@@ -33,9 +34,7 @@ int get_user (const uint8_t *uaddr);
 bool put_user (uint8_t *udst, uint8_t byte);
 bool get_user_quadbyte (const uint8_t *uaddr, int *arg);
 bool uptr_is_valid (const void *uptr);
-static struct file *find_matching_file(int fd);
-static struct list_elem *find_matching_mmaped_file(
-		int mid, size_t *size, void **addr);
+static struct file *copy_file_info(int fd);
 
 //---------------------------- Function definitions ---------------------------
 
@@ -398,7 +397,6 @@ int read(int fd, void *buffer, unsigned size){
 			if (r->fd == fd) {
 				f = r->file;
 				lock_release (&sys_lock);
-				//seek(r->fd, 0); // I.e., start reading from beginning of file.
 				return file_read(f, buffer, size);
 			}
 		}
@@ -428,6 +426,54 @@ void close(int fd) {
     }
 
 	lock_release(&sys_lock);
+}
+
+/*! Assuming the given file is still open AND WE ALREADY HAVE A SYS_LOCK,
+    deep-copy the file and return a pointer to it.
+ */
+static struct file *copy_file_info(int fd) {
+	struct fd_element *r;
+	struct list_elem *l;
+	struct thread *t;
+	struct file *f;
+	struct file *new_file;
+	struct inode *inner_inode;
+
+	t = thread_current();
+
+	for (l = list_begin(&t->files);
+			l != list_end(&t->files);
+			l = list_next(l)) {
+		r = list_entry(l, struct fd_element, f_elem);
+		if (r->fd == fd) {
+
+			new_file = (struct file *) malloc (sizeof(struct file));
+			inner_inode = (struct inode *) malloc (sizeof(struct inode));
+			if (new_file == NULL || inner_inode == NULL) {
+				PANIC("Couldn't deep-copy the mmap'd file struct.");
+				NOT_REACHED();
+			}
+			// TODO free these allocations
+			f = r->file;
+
+			inner_inode->data.length = f->inode->data.length;
+			inner_inode->data.magic = f->inode->data.magic;
+			inner_inode->data.start = f->inode->data.start;
+			// inner_inode->data.unused = NULL;
+			inner_inode->deny_write_cnt = f->inode->deny_write_cnt;
+			inner_inode->elem = f->inode->elem;
+			inner_inode->open_cnt = f->inode->open_cnt;
+			inner_inode->removed = f->inode->removed;
+			inner_inode->sector = f->inode->sector;
+
+			new_file->deny_write = f->deny_write;
+			new_file->inode = inner_inode;
+			new_file->pos =  f->pos;
+
+			return new_file;
+		}
+    }
+	return NULL;
 }
 
 void seek(int fd, unsigned position) {
@@ -513,7 +559,7 @@ bool remove (const char *file) {
 }
 
 /*! Gets the matching file pointer. */
-static struct file *find_matching_file(int fd) {
+struct file *find_matching_file(int fd) {
 	struct fd_element *r;
 	struct list_elem *l;
 
@@ -558,6 +604,7 @@ mapid_t mmap(int fd, void *addr) {
 
 		/* Allocate a supplemental page table entry into the kernel pool. */
 		struct spgtbl_elem *s = (struct spgtbl_elem *) pg_put(
+				max_mid,
 				fd,
 				page_read_bytes == 0 ? -1 : ofs + PGSIZE * i++,
 				NULL,
@@ -588,6 +635,14 @@ mapid_t mmap(int fd, void *addr) {
 	melm->fd = fd;
 	melm->addr = addr;
 	melm->mid = max_mid++;
+
+	struct file *newfile = copy_file_info(fd);
+	if (newfile == NULL) {
+		PANIC("Couldn't deep-copy the mmap'd file struct.");
+		NOT_REACHED();
+	}
+
+	melm->file = newfile;
 	lock_release(&sys_lock);
 
 	melm->size = filesize(fd);
@@ -596,7 +651,7 @@ mapid_t mmap(int fd, void *addr) {
 }
 
 /*! Gets the matching memory mapped file's beginning address and size. */
-static struct list_elem *find_matching_mmaped_file(
+struct list_elem *find_matching_mmaped_file(
 		int mid, size_t *size, void **addr) {
 	struct mmap_element *m;
 	struct list_elem *l;

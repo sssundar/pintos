@@ -43,6 +43,7 @@ struct mmap_element {
 	int mid;
 	int fd;
 	void *addr;
+	struct file *file;
 	size_t size;
 	struct list_elem m_elem;
 };

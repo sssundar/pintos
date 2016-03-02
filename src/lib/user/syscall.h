@@ -1,6 +1,7 @@
 #ifndef __LIB_USER_SYSCALL_H
 #define __LIB_USER_SYSCALL_H
 
+#include <stdlib.h>
 #include <stdbool.h>
 #include <debug.h>
 
@@ -44,6 +45,11 @@ bool mkdir(const char *dir);
 bool readdir(int fd, char name[READDIR_MAX_LEN + 1]);
 bool isdir(int fd);
 int inumber(int fd);
+
+// Custom
+struct file *find_matching_file(int fd);
+struct list_elem *find_matching_mmaped_file(
+		int mid, size_t *size, void **addr);
 
 #endif /* lib/user/syscall.h */
 
