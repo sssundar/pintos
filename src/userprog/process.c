@@ -499,7 +499,6 @@ done:
 	}
     /* We arrive here whether the load is successful or not. */
 
-	// TODO make sure this works...
 	// We used to close the executable file here but can't because we depend
 	// on it staying open until the page fault handler loads everything up.
 	// Now we store the file pointer in the thread struct and close it when

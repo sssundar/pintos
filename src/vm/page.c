@@ -65,7 +65,8 @@ struct spgtbl_elem *pg_put(int fd, off_t ofs, void *paddr, void *vaddr,
 	return s;
 }
 
-/*! Returns true if the given address is in the current stack. */
+/*! Heuristic for stack accesses. Returns true if the given address is in
+    the current stack. */
 bool pg_is_valid_stack_addr(void *addr, void *stack_ptr) {
 	return addr >= stack_ptr - MAX_STACK_DELTA &&
 			addr < PHYS_BASE && addr >= LOWEST_STACK_ADDR;

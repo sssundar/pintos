@@ -153,7 +153,23 @@ static void page_fault(struct intr_frame *f) {
     write = (f->error_code & PF_W) != 0;
     user = (f->error_code & PF_U) != 0;
 
-    /* Virtual memory code: bring in the page to which fault_addr refers. */
+    //------------------------ Virtual memory code ----------------------------
+
+    // Get the stack pointer. Apply a heuristic to see if this address faulted
+    // because we need to allocate a new stack page. If so then allocate a
+    // new page for the stack and install it, then exit the page fault handler.
+    if (pg_is_valid_stack_addr(fault_addr, f->esp)) {
+    	void *base_of_page = (void *)((uint32_t)fault_addr & 0xFFFFF000);
+    	void *kpage = fr_alloc_page(base_of_page, OTHER_PG);
+    	if (!install_page(base_of_page, kpage, true, false)) {
+    		PANIC("Couldn't install a new stack page.");
+    		NOT_REACHED();
+    	}
+    	else {
+    		fr_unpin(kpage);
+    		return;
+    	}
+    }
 
     // Get the supplemental page corresponding to the faulting address.
     struct thread *t = thread_current();
@@ -203,6 +219,8 @@ static void page_fault(struct intr_frame *f) {
 				PANIC("Couldn't install page in page fault handler.");
 				NOT_REACHED();
 			}
+
+			fr_unpin(kpage);
 		}
 		else if (s->type == ZERO_PG) {
 			memset(kpage, 0, PGSIZE);
