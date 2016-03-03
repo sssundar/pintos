@@ -617,6 +617,7 @@ mapid_t mmap(int fd, void *addr) {
 		/* Now install it into the PTE. This is how we avoid hashing! */
 		if (!install_page(addr, (void *) s, true, true)) {
 			free(s);
+			lock_release(&sys_lock);
 			return MAP_FAILED;
 		}
 
