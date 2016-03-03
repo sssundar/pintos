@@ -22,6 +22,7 @@
 //----------------------------- Global variables ------------------------------
 
 struct lock sys_lock;
+struct lock close_lock;
 
 extern int max_fd;
 extern int max_mid;
@@ -35,6 +36,7 @@ bool put_user (uint8_t *udst, uint8_t byte);
 bool get_user_quadbyte (const uint8_t *uaddr, int *arg);
 bool uptr_is_valid (const void *uptr);
 static struct file *copy_file_info(int fd);
+static int get_mid_from_fd(int fd);
 
 //---------------------------- Function definitions ---------------------------
 
@@ -94,6 +96,7 @@ bool get_user_quadbyte (const uint8_t *uaddr, int *arg) {
 void sc_init(void) {
     intr_register_int(0x30, 3, INTR_ON, sc_handler, "syscall");
     lock_init(&sys_lock);
+    lock_init(&close_lock);
 }
 
 static void sc_handler(struct intr_frame *f) {
@@ -420,9 +423,26 @@ void close(int fd) {
 	struct list_elem *l;
 	struct thread *t;
 
+	lock_acquire(&close_lock);
+
+	// If this file is memory-mapped then touch all of its pages so they're
+	// faulted into memory.
+	int mid = get_mid_from_fd(fd);
+	struct mmap_element * m = find_matching_mmapped_file(mid, &l);
+	void *addr = m->addr;
+	volatile uint32_t dummy UNUSED;
+	if (mid != MAP_FAILED) {
+		int size = filesize(fd);
+		int num_pages = size % PGSIZE == 0 ? size / PGSIZE : size / PGSIZE + 1;
+		int i;
+		for (i = 0; i < num_pages; i++) {
+			dummy = *((uint32_t *)addr);
+			addr = (void *) (((uint32_t)addr) + PGSIZE);
+		}
+	}
+
 	lock_acquire(&sys_lock);
 	t = thread_current();
-
 	for (l = list_begin(&t->files);
 			l != list_end(&t->files);
 			l = list_next(l)) {
@@ -434,8 +454,8 @@ void close(int fd) {
 			break;
 		}
     }
-
 	lock_release(&sys_lock);
+	lock_release(&close_lock);
 }
 
 /*! Assuming the given file is still open AND WE ALREADY HAVE A SYS_LOCK,
@@ -679,18 +699,29 @@ mapid_t mmap(int fd, void *vaddr) {
 	return melm->mid;
 }
 
-/*! Gets various file-related pieces of data from the memory-mapped file
-    with map id MID. SIZE, ADDR, and FILE are out parameters.
-
-    DO NOT ENTER THIS FUNCTION WITH A FILESYSTEM LOCK. */
-struct mmap_element *find_matching_mmapped_file(int mid,
-		struct list_elem **l_out) {
-
+static int get_mid_from_fd(int fd) {
 	struct mmap_element *m;
 	struct list_elem *l;
 
-	lock_acquire(&sys_lock);
-	pg_lock_pd();
+	// Iterate over the list of memory mapped files.
+	for (l = list_begin(&thread_current()->mmapped_files);
+			l != list_end(&thread_current()->mmapped_files);
+			l = list_next(l)) {
+		m = list_entry(l, struct mmap_element, m_elem);
+		if (m->fd == fd) {
+			return m->mid;
+		}
+	}
+	return MAP_FAILED;
+}
+
+/*! Gets various file-related pieces of data from the memory-mapped file
+    with map id MID. SIZE, ADDR, and FILE are out parameters. */
+struct mmap_element *find_matching_mmapped_file(int mid,
+		struct list_elem **l_out) {
+	struct mmap_element *m;
+	struct list_elem *l;
+
 	if (mid != -1) {
 
 		// Iterate over the list of memory mapped files.
@@ -700,15 +731,11 @@ struct mmap_element *find_matching_mmapped_file(int mid,
 			m = list_entry(l, struct mmap_element, m_elem);
 			if (m->mid == mid) {
 				*l_out = l;
-				lock_release(&sys_lock);
-				pg_release_pd();
 				return m;
 			}
 		}
 	}
 	*l_out = NULL;
-	lock_release(&sys_lock);
-	pg_release_pd();
 	return NULL;
 }
 

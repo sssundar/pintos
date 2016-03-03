@@ -6,6 +6,7 @@
 #include "tests/vm/sample.inc"
 #include "tests/lib.h"
 #include "tests/main.h"
+#include <stdio.h>
 
 void
 test_main (void)
@@ -30,6 +31,7 @@ test_main (void)
   CHECK (create ("another", 4096 * 10), "create \"another\"");
 
   /* Check that mapped data is correct. */
+
   if (memcmp (actual, sample, strlen (sample)))
     fail ("read of mmap'd file reported bad data");
 
