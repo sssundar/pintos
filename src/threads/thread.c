@@ -317,16 +317,6 @@ void thread_exit(void) {
 		chld_t->parent = NULL;
 	}
 
-    // Unmap the remaining mmapped files so they can be written to disk if
-    // necessary.
-	struct mmap_element *m;
-	for (l = list_begin(&thread_current()->mmapped_files);
-			l != list_end(&thread_current()->mmapped_files);
-			l = list_next(l)) {
-		m = list_entry(l, struct mmap_element, m_elem);
-		munmap(m->mid);
-	}
-
 	if (thread_current()->tfile.filename != NULL)
 	    palloc_free_page((void *) thread_current()->tfile.filename);
 

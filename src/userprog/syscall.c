@@ -222,6 +222,17 @@ void exit(int status) {
     t->status_on_exit = status;
     lock_release(&sys_lock);
 
+    // Unmap the remaining mmapped files so they can be written to disk if
+    // necessary.
+	struct mmap_element *m;
+	struct list_elem *l;
+	for (l = list_begin(&thread_current()->mmapped_files);
+			l != list_end(&thread_current()->mmapped_files);
+			l = list_next(l)) {
+		m = list_entry(l, struct mmap_element, m_elem);
+		munmap(m->mid);
+	}
+
     if (t->am_child > 0) {
         /* Am I a child process? Then don't kill me just yet, I might be
            needed later. */
@@ -590,8 +601,7 @@ mapid_t mmap(int fd, void *vaddr) {
 
 	struct file *file = find_matching_file(fd);
 	if (file == NULL) {
-		PANIC("File wasn't opened before mmap.");
-		NOT_REACHED();
+		exit(-1);
 	}
 
 	lock_acquire(&sys_lock);
@@ -696,6 +706,7 @@ void munmap(mapid_t mid) {
 	struct list_elem *l;
 	struct mmap_element *m;
 	void *curr_base;
+	int w;
 
 	m = find_matching_mmapped_file(mid, &l);
 
@@ -707,6 +718,7 @@ void munmap(mapid_t mid) {
 	addr = m->addr;
 
 	pg_lock_pd();
+	lock_acquire(&sys_lock);
 
 	num_pages = size % PGSIZE == 0 ? size / PGSIZE : size / PGSIZE + 1;
 
@@ -723,19 +735,19 @@ void munmap(mapid_t mid) {
 		// then is was never paged in, so ignore it.
 		if (pagedir_is_present(thread_current()->pagedir, curr_base)
 				&& pagedir_is_dirty(thread_current()->pagedir, curr_base)) {
-			int w;
 			file_seek(m->file, (off_t)(curr_base - m->addr));
+
 			if((w = file_write(m->file, curr_base, PGSIZE)) <= 0
 					|| w > PGSIZE) {
 				PANIC("Couldn't write PGSIZE bytes to disk after munmap.");
 				NOT_REACHED();
 			}
 		}
-
 		pagedir_clear_page(thread_current()->pagedir, curr_base);
 	}
 	list_remove(l);
 	pg_release_pd();
+	lock_release(&sys_lock);
 }
 
 /*! Runs the executable whose name is given in cmd_line, passing any given

@@ -157,7 +157,6 @@ static void page_fault(struct intr_frame *f) {
 
     if (!is_user_vaddr(fault_addr)) {
     	exit(-1);
-    	NOT_REACHED();
     }
 
     pg_lock_pd();
@@ -184,17 +183,9 @@ static void page_fault(struct intr_frame *f) {
     struct spgtbl_elem *s =
     		(struct spgtbl_elem *) pagedir_get_page(t->pagedir, fault_addr);
 
-    if (s == NULL) {
-    	debug_helper(fault_addr, not_present, write, user);
-    	PANIC("Supplemental page entry was NULL.\n");
-    	NOT_REACHED();
-    }
-
     // If magic is missing then we couldn't find the supplemental page table
     // entry. Exit, since there's nothing else we can do.
-    if (s->magic != PG_MAGIC) {
-    	// debug_helper(fault_addr, not_present, write, user);
-    	// PANIC("Couldn't find supplemental page entry. Magic is missing.");
+    if (s == NULL || s->magic != PG_MAGIC) {
     	pg_release_pd();
     	exit(-1);
     }
@@ -258,7 +249,7 @@ static void page_fault(struct intr_frame *f) {
 			// Overwrite the old page table entry.
 			if (!pagedir_set_page(
 					t->pagedir, s->vaddr, kpage, s->writable, false)) {
-				// palloc_free_page(kpage);
+				debug_helper(fault_addr, not_present, write, user);
 				PANIC("Couldn't install page in page fault handler.");
 				NOT_REACHED();
 			}

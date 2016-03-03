@@ -206,9 +206,6 @@ int process_filename_matches(const char *filename) {
     If TID is invalid or if it was not a child of the calling process, or if
     process_wait() has already been successfully called for the given TID,
     returns -1 immediately, without waiting.
-
-    This function will be implemented in problem 2-2.  For now, it does
-    nothing.
 */
 int process_wait(tid_t child_tid) {
     /* Search my child list for this child. If it exists, great. If not,
