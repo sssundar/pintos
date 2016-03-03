@@ -630,6 +630,10 @@ mapid_t mmap(int fd, void *vaddr) {
 		exit(-1);
 	}
 
+	if(filesize(fd) == 0) {
+		return MAP_FAILED;
+	}
+
 	lock_acquire(&sys_lock);
 	pg_lock_pd();
 	while (read_bytes > 0 || zero_bytes > 0) {
