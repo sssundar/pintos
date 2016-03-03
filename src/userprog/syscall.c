@@ -627,7 +627,13 @@ mapid_t mmap(int fd, void *vaddr) {
 				page_read_bytes == 0 ? ZERO_PG : EXECD_FILE_PG);
 		pg_lock_pd();
 
-		/* Now install it into the PTE. This is how we avoid hashing! */
+		/* Now install it into the PTE. This is how we avoid hashing!
+		   Don't allow non-page-aligned installs */
+		if ((((uint32_t) vaddr) & 0x00000FFF) != 0) {
+			lock_release(&sys_lock);
+			pg_release_pd();
+			return MAP_FAILED;
+		}
 		if (!install_page(vaddr, (void *) s, true, true)) {
 			free(s);
 			lock_release(&sys_lock);
