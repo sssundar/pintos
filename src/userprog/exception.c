@@ -160,6 +160,8 @@ static void page_fault(struct intr_frame *f) {
     	NOT_REACHED();
     }
 
+    pg_lock_pd();
+
     // Get the stack pointer. Apply a heuristic to see if this address faulted
     // because we need to allocate a new stack page. If so then allocate a
     // new page for the stack and install it, then exit the page fault handler.
@@ -172,6 +174,7 @@ static void page_fault(struct intr_frame *f) {
     	}
     	else {
     		fr_unpin(kpage);
+    		pg_release_pd();
     		return;
     	}
     }
@@ -186,10 +189,14 @@ static void page_fault(struct intr_frame *f) {
     	PANIC("Supplemental page entry was NULL.\n");
     	NOT_REACHED();
     }
+
+    // If magic is missing then we couldn't find the supplemental page table
+    // entry. Exit, since there's nothing else we can do.
     if (s->magic != PG_MAGIC) {
-    	debug_helper(fault_addr, not_present, write, user);
-    	PANIC("Couldn't find supplemental page entry. Magic is missing.");
-    	NOT_REACHED();
+    	// debug_helper(fault_addr, not_present, write, user);
+    	// PANIC("Couldn't find supplemental page entry. Magic is missing.");
+    	pg_release_pd();
+    	exit(-1);
     }
 
     if (not_present) {
@@ -207,16 +214,19 @@ static void page_fault(struct intr_frame *f) {
 
 			struct file *src = s->src_file;
 
-			// If the file-descriptor isn't null we assume it was
+			// If the file-descriptor isn't -1 we assume it was
 			// memory-mapped. Then we must look up info about the file using
 			// a syscall.
 			if(s->fd != -1) {
-				size_t dsz;   // Dummy variable.
-				void *daddr; // Dummy variable.
-				src = list_entry(
-						find_matching_mmaped_file(s->mid, &dsz, &daddr),
-						struct mmap_element,
-						m_elem)->file;
+				struct list_elem *l_dummy;
+				struct mmap_element *m;
+				pg_release_pd();
+				m = find_matching_mmapped_file(s->mid, &l_dummy);
+				if (m == NULL) {
+					PANIC("what?");
+				}
+				pg_lock_pd();
+				src = m->file;
 			}
 
 			// Seek to correct offset in file and read.
@@ -262,6 +272,7 @@ static void page_fault(struct intr_frame *f) {
 		}
     }
 
+    pg_release_pd();
     // debug_helper(fault_addr, not_present, write, user);
 }
 

@@ -354,7 +354,6 @@ int write(int fd, const void *buffer, unsigned size) {
 				return -1;
 			}
 			lock_release(&sys_lock);
-			//seek(fd, 0); // This is what overwrites the file.
 			return file_write(f, buffer, size);
 		}
 	}
@@ -581,12 +580,13 @@ struct file *find_matching_file(int fd) {
 	return NULL;
 }
 
-mapid_t mmap(int fd, void *addr) {
+mapid_t mmap(int fd, void *vaddr) {
 	uint32_t read_bytes = filesize(fd);
 	uint32_t zero_bytes =
 			read_bytes % PGSIZE == 0 ? 0 : PGSIZE - read_bytes % PGSIZE;
 	off_t ofs = 0;
 	int i = 0;
+	void *addr = vaddr;
 
 	struct file *file = find_matching_file(fd);
 	if (file == NULL) {
@@ -595,6 +595,7 @@ mapid_t mmap(int fd, void *addr) {
 	}
 
 	lock_acquire(&sys_lock);
+	pg_lock_pd();
 	while (read_bytes > 0 || zero_bytes > 0) {
 		/* Calculate how to fill this page.
 		   We will read PAGE_READ_BYTES bytes from FILE
@@ -603,34 +604,38 @@ mapid_t mmap(int fd, void *addr) {
 		size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
 		/* Allocate a supplemental page table entry into the kernel pool. */
+		pg_release_pd();
 		struct spgtbl_elem *s = (struct spgtbl_elem *) pg_put(
 				max_mid,
 				fd,
 				page_read_bytes == 0 ? -1 : ofs + PGSIZE * i++,
 				NULL,
-				addr,
+				vaddr,
 				page_read_bytes == 0 ? NULL : file,
 				page_zero_bytes,
 				true,
 				page_read_bytes == 0 ? ZERO_PG : EXECD_FILE_PG);
+		pg_lock_pd();
 
 		/* Now install it into the PTE. This is how we avoid hashing! */
-		if (!install_page(addr, (void *) s, true, true)) {
+		if (!install_page(vaddr, (void *) s, true, true)) {
 			free(s);
 			lock_release(&sys_lock);
+			pg_release_pd();
 			return MAP_FAILED;
 		}
 
 		/* Advance. */
 		read_bytes -= page_read_bytes;
 		zero_bytes -= page_zero_bytes;
-		addr += PGSIZE;
+		vaddr += PGSIZE;
 	}
 
 	struct mmap_element *melm = (struct mmap_element *) malloc
 			(sizeof(struct mmap_element));
 	if (melm == NULL) {
 		lock_release(&sys_lock);
+		pg_release_pd();
 		return MAP_FAILED;
 	}
 	melm->fd = fd;
@@ -645,35 +650,43 @@ mapid_t mmap(int fd, void *addr) {
 
 	melm->file = newfile;
 	lock_release(&sys_lock);
+	pg_release_pd();
 
 	melm->size = filesize(fd);
 	list_push_back(&thread_current()->mmapped_files, &melm->m_elem);
 	return melm->mid;
 }
 
-/*! Gets the matching memory mapped file's beginning address and size. */
-struct list_elem *find_matching_mmaped_file(
-		int mid, size_t *size, void **addr) {
+/*! Gets various file-related pieces of data from the memory-mapped file
+    with map id MID. SIZE, ADDR, and FILE are out parameters.
+
+    DO NOT ENTER THIS FUNCTION WITH A FILESYSTEM LOCK. */
+struct mmap_element *find_matching_mmapped_file(int mid,
+		struct list_elem **l_out) {
+
 	struct mmap_element *m;
 	struct list_elem *l;
 
 	lock_acquire(&sys_lock);
+	pg_lock_pd();
 	if (mid != -1) {
+
+		// Iterate over the list of memory mapped files.
 		for (l = list_begin(&thread_current()->mmapped_files);
 				l != list_end(&thread_current()->mmapped_files);
 				l = list_next(l)) {
 			m = list_entry(l, struct mmap_element, m_elem);
 			if (m->mid == mid) {
-				*size = m->size;
-				*addr = m->addr;
+				*l_out = l;
 				lock_release(&sys_lock);
-				return l;
+				pg_release_pd();
+				return m;
 			}
 		}
 	}
-	*size = 0;
-	*addr = NULL;
+	*l_out = NULL;
 	lock_release(&sys_lock);
+	pg_release_pd();
 	return NULL;
 }
 
@@ -681,18 +694,21 @@ void munmap(mapid_t mid) {
 	void *addr;
 	size_t size, num_pages;
 	struct list_elem *l;
-	l = find_matching_mmaped_file(mid, &size, &addr);
+	struct mmap_element *m;
 	void *curr_base;
 
-	if(l == NULL || size == 0 || addr == NULL) {
+	m = find_matching_mmapped_file(mid, &l);
+
+	if(m == NULL || m->size == 0 || m->addr == NULL) {
 		PANIC("Couldn't find memory-mapped file.");
 		NOT_REACHED();
 	}
+	size = m->size;
+	addr = m->addr;
 
 	pg_lock_pd();
-	num_pages = size % PGSIZE == 0 ? size / PGSIZE : size / PGSIZE + 1;
 
-	// TODO don't need to palloc_free the pages???
+	num_pages = size % PGSIZE == 0 ? size / PGSIZE : size / PGSIZE + 1;
 
 	// Iterate over all the pages in the memory-mapped region, setting the
 	// present bit for each one to 0 in the page directory.
@@ -700,6 +716,22 @@ void munmap(mapid_t mid) {
 			curr_base < (void *)((uint32_t) addr +
 					(uint32_t) (num_pages * PGSIZE));
 			curr_base = (void *)((uint32_t) curr_base + PGSIZE)) {
+
+		// TODO the following assumes that the page was never evicted to swap...
+
+		// Write the page to disk if it's dirty. If it's not present
+		// then is was never paged in, so ignore it.
+		if (pagedir_is_present(thread_current()->pagedir, curr_base)
+				&& pagedir_is_dirty(thread_current()->pagedir, curr_base)) {
+			int w;
+			file_seek(m->file, (off_t)(curr_base - m->addr));
+			if((w = file_write(m->file, curr_base, PGSIZE)) <= 0
+					|| w > PGSIZE) {
+				PANIC("Couldn't write PGSIZE bytes to disk after munmap.");
+				NOT_REACHED();
+			}
+		}
+
 		pagedir_clear_page(thread_current()->pagedir, curr_base);
 	}
 	list_remove(l);

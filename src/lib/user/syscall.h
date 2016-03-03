@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <stdbool.h>
 #include <debug.h>
+#include "lib/kernel/list.h"
 
 /*! Process identifier. */
 typedef int pid_t;
@@ -48,8 +49,8 @@ int inumber(int fd);
 
 // Custom
 struct file *find_matching_file(int fd);
-struct list_elem *find_matching_mmaped_file(
-		int mid, size_t *size, void **addr);
+struct mmap_element *find_matching_mmapped_file(int mid,
+		struct list_elem **l_out);
 
 #endif /* lib/user/syscall.h */
 

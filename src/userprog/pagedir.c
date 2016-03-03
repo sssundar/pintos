@@ -11,6 +11,9 @@
 #include "threads/init.h"
 #include "threads/pte.h"
 #include "threads/palloc.h"
+#include "threads/malloc.h"
+#include "filesys/file.h"
+#include "vm/page.h"
 
 static uint32_t *active_pd(void);
 static void invalidate_pagedir(uint32_t *);
@@ -120,7 +123,10 @@ bool pagedir_set_page(uint32_t *pd, void *upage, void *kpage, bool writable,
 
 /*! Looks up the physical address that corresponds to user virtual address
     UADDR in PD.  Returns the kernel virtual address corresponding to that
-    physical address, or a null pointer if UADDR is unmapped. */
+    physical address, or a null pointer if UADDR is unmapped.
+
+    If the PTE is not present we assume it's a pointer to a supplemental
+    page table entry, so we just return that. */
 void * pagedir_get_page(uint32_t *pd, const void *uaddr) {
     uint32_t *pte;
 
@@ -156,9 +162,17 @@ void pagedir_clear_page(uint32_t *pd, void *upage) {
     ASSERT(is_user_vaddr(upage));
 
     pte = lookup_page(pd, upage, false);
+
     if (pte != NULL && (*pte & PTE_P) != 0) {
         *pte &= ~PTE_P;
         invalidate_pagedir(pd);
+    }
+    // Otherwise, if it's not present then it's a supplemental page table
+    // entry, so free it then NULL this PTE!
+    else if (pte != NULL && (*pte & PTE_P) == 0) {
+    	struct spgtbl_elem *spg = (struct spgtbl_elem *) *pte;
+    	spg->magic = 0;
+    	free((void *) spg);
     }
 }
 
@@ -182,6 +196,13 @@ void pagedir_set_dirty(uint32_t *pd, const void *vpage, bool dirty) {
             invalidate_pagedir(pd);
         }
     }
+}
+
+/*! Returns true if this entry is present. If not we assume the entire entry
+    is a pointer to a supplemental page table entry. */
+bool pagedir_is_present(uint32_t *pd, const void *vpage) {
+	uint32_t *pte = lookup_page(pd, vpage, false);
+	return pte != NULL && (*pte & PTE_P) != 0;
 }
 
 /*! Returns true if the PTE for virtual page VPAGE in PD has been accessed

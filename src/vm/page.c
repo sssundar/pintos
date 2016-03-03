@@ -6,6 +6,7 @@
  */
 
 #include <stdbool.h>
+#include <stdio.h>
 #include "threads/vaddr.h"
 #include "threads/malloc.h"
 #include "threads/thread.h"
