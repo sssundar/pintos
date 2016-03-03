@@ -317,11 +317,20 @@ void thread_exit(void) {
 		chld_t->parent = NULL;
 	}
 
+    // Unmap the remaining mmapped files so they can be written to disk if
+    // necessary.
+	struct mmap_element *m;
+	for (l = list_begin(&thread_current()->mmapped_files);
+			l != list_end(&thread_current()->mmapped_files);
+			l = list_next(l)) {
+		m = list_entry(l, struct mmap_element, m_elem);
+		munmap(m->mid);
+	}
+
 	if (thread_current()->tfile.filename != NULL)
 	    palloc_free_page((void *) thread_current()->tfile.filename);
 
     process_exit();
-#endif
 
     // We used to close the executable from which this thread was loaded at
     // the end of process.c's load function, but after on-demand paging was
@@ -330,7 +339,7 @@ void thread_exit(void) {
     if (thread_current()->tfile.file != NULL)
     	file_close(thread_current()->tfile.file);
 
-    // TODO close mmapped_element list?
+#endif
 
     intr_disable();
     list_remove(&thread_current()->allelem);
