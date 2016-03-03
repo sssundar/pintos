@@ -20,8 +20,5 @@ test_main (void)
 
   munmap (map);
 
-  //printf("--> munmap succeeded????\n");
-  //printf("trying to access the location: %d\n", *(int *) ACTUAL);
-
   fail ("unmapped memory is readable (%d)", *(int *) ACTUAL);
 }

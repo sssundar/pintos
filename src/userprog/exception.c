@@ -156,8 +156,7 @@ static void page_fault(struct intr_frame *f) {
     //------------------------ Virtual memory code ----------------------------
 
     if (!is_user_vaddr(fault_addr)) {
-    	kill(f);
-    	// PANIC("Faulted on a kernel address.");
+    	exit(-1);
     	NOT_REACHED();
     }
 
