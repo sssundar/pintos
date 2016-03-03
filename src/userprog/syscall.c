@@ -600,6 +600,12 @@ mapid_t mmap(int fd, void *vaddr) {
 	void *addr = vaddr;
 
 	struct file *file = find_matching_file(fd);
+
+	// Disallow memory mappings at 0.
+	if(vaddr == (void *) 0) {
+		return MAP_FAILED;
+	}
+
 	if (file == NULL) {
 		exit(-1);
 	}
