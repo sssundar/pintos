@@ -10,7 +10,7 @@
 
 #include <stdbool.h>
 
-#define SECTORS_PER_PAGE 	PGSIZE / BLOCK_SECTOR_SIZE
+#define SECTORS_PER_PAGE 	(PGSIZE / BLOCK_SECTOR_SIZE)
 
 void sp_init(void);
 bool sp_get(unsigned long long idx, void *buf);

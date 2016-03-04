@@ -10,6 +10,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <hash.h>
+#include <bitmap.h>
+#include "userprog/process.h"
+#include "userprog/pagedir.h"
 #include "lib/user/syscall.h"
 #include "filesys/file.h"
 #include "devices/timer.h"
@@ -21,6 +24,7 @@
 
 #include "vm/page.h"
 #include "vm/frame.h"
+#include "vm/swap.h"
 
 /*! Starting address of the user pages in physical memory. */
 extern void *start_of_user_pages_phys;
@@ -121,7 +125,7 @@ static uint32_t evict_rand(void) { // TODO make sure not pinned
 
 	do {
 		ans = ((uint32_t)timer_ticks() * 37) % num_user_pages;
-	} while(fr_is_pinned(&ftbl[ans]));
+	} while(fr_is_pinned(&ftbl[ans]) || !fr_is_used(&ftbl[ans]));
 
 	return ans;
 }
@@ -135,7 +139,8 @@ static uint32_t evict_rand(void) { // TODO make sure not pinned
     Return kernel virtual address (i.e. physical address) of allocated page.
     This function will never return NULL, since it will evict a page if
     one isn't available. */
-void *fr_alloc_page(void *vaddr, enum pgtype type, bool writable) {
+void *fr_alloc_page(void *vaddr, enum pgtype type, bool writable,
+		int mid, int num_trailing_zeroes) {
 	void *kpage;
 
 	// Get a page from palloc. Use this address to index into the frame table.
@@ -143,68 +148,110 @@ void *fr_alloc_page(void *vaddr, enum pgtype type, bool writable) {
 	kpage = palloc_get_page(
 			PAL_USER | (type != ZERO_PG ? 0x00000000 : PAL_ZERO));
 
-	// If we got a page then just initialize the corresponding frame table
-	// element and return the page. Otherwise evict first.
+	lock_acquire(&ftbl_lock);
+
+	// If we didn't get a page then evict one.
+	uint32_t ev_idx = 0xFFFFFFFF; // Dummy, "sentinel" value.
 	if (kpage == NULL) {
-		PANIC("NO EVICTIONS SUPPORTED YET OMGGGGG");
-		/*
-		pg_lock_pd();
+		//PANIC("NOT IMPLEMENTED YETTTTTTTTTTTTTTTTTT");
 
 		// Get index in frame table to evict then get the frame table element.
-		uint32_t idx = evict_rand();
-		struct ftbl_elem *to_evict = &ftbl[idx];
+		ev_idx = evict_rand();
+		struct ftbl_elem *to_evict = &ftbl[ev_idx];
+		ASSERT(is_user_vaddr(to_evict->corr_vaddr));
+
+		//printf("\n--> Going to evict frame at idx %d with corresponding virtual address %p and computed physical address %p\n",
+		//		ev_idx, to_evict->corr_vaddr, (void *)((uint32_t) start_of_user_pages_phys
+		//				+ PGSIZE * ev_idx));
 
 		// If memory-mapped page then write it to its file, not swap.
+		unsigned long long sidx;
 		if (to_evict->type == MMAPD_FILE_PG) {
-			pg_release_pd();
-			write(to_evict->fd, to_evict->corr_vaddr, PGSIZE);
-			pg_lock_pd();
+
+			//printf("  --> about to write to DISK b/c mmapped. \n");
+
+			if(write(to_evict->fd, to_evict->corr_vaddr, PGSIZE) != PGSIZE) {
+				PANIC("Couldn't page mmapped file to disk.");
+				NOT_REACHED();
+			}
+			sidx = BITMAP_ERROR;
+
+			// TODO probably need to make a supplemental page table entry here
 		}
 		// Write everything else to swap.
 		else {
-			unsigned long long idx = sp_put(to_evict->corr_vaddr);
-			if (idx == BITMAP_ERROR) {
+
+			//printf("--> about to put in swap b/c not mmapped. \n");
+
+			sidx = sp_put(to_evict->corr_vaddr);
+			if (sidx == BITMAP_ERROR) {
 				PANIC("Not enough room in swap.");
 				NOT_REACHED();
 			}
 
-			// After writing need to make a supplemental page entry with the
-			// swap index we just used.
-			pg_release_pd();
-			struct spgtbl_elem *s = (struct spgtbl_elem *) pg_put(
-					-1, to_evict->fd, 0, NULL, to_evict->corr_vaddr,
-					to_evict->src_file, 0, to_evict->writable, to_evict->type,
-					idx);
-			pg_lock_pd();
-			if (!install_page(vaddr, (void *) s, to_evict->writable, true)) {
-				PANIC("Couldn't install suppl page entry during eviction.");
-			}
+			//printf("--> lololol\n");
+
 		}
 
-		// Now that it's saved in swap or a file, clear the page.
+		//printf("--> about to make suppl pg tbl entry. \n");
+
+		// After writing need to make a supplemental page entry with the
+		// swap index we just used. Make the evicted page's PTE pouint
+		// at it.
+		struct spgtbl_elem *s = (struct spgtbl_elem *) pg_put(
+				to_evict->mid,
+				to_evict->fd,
+				to_evict->type == ZERO_PG ? -1 : 0,
+				NULL,
+				to_evict->corr_vaddr,
+				to_evict->src_file,
+				to_evict->trailing_zeroes,
+				to_evict->writable,
+				to_evict->type,
+				sidx);
+
+
+		//printf("--> now installing suppl into PTE\n");
+
 		pagedir_clear_page(to_evict->tinfo->pagedir, to_evict->corr_vaddr);
+		if (!pagedir_set_page(to_evict->tinfo->pagedir,
+				to_evict->corr_vaddr, (void *) s,
+				to_evict->writable, true)) {
+			PANIC("Couldn't install suppl page entry during eviction.");
+		}
+
+		//printf("--> done installing suppl pg tbl etry, setting frame to available\n");
+
+		//printf("--> done setting it to available!  \n");
+
+		//printf("--> about to free the page.\n");
+
+		palloc_free_page((void *)((uint32_t) start_of_user_pages_phys
+						+ PGSIZE * ev_idx));
+
+		// Indicate the frame is now open.
+		fr_set_used(to_evict, false);
 
 		// If we try to get a page now it should work.
 		kpage = palloc_get_page(
 					PAL_USER | (type != ZERO_PG ? 0x00000000 : PAL_ZERO));
+
+		//printf("--> done getting page\n");
 
 		// If not something is seriously wrong.
 		if (kpage == NULL) {
 			PANIC("Couldn't alloc a page even after eviction.");
 			NOT_REACHED();
 		}
-
-		pg_release_pd();
-		*/
 	}
 
-	lock_acquire(&ftbl_lock);
-	// Get the frame table element corresponding to the allocated page.
+	// Get the frame table element corresponding to the allocated page. It
+	// must be the same as the one just evicted.
 	uint32_t idx = fr_get_corr_idx(kpage);
-
-	// printf("  --> index into frame table is: %d\n", idx);
-
+	ASSERT(ev_idx == 0xFFFFFFFF || ev_idx == idx);
 	ASSERT(idx < num_user_pages);
+
+	//printf("--> final index into frame table is: %d\n", idx);
 
 	// Initialize the frame table element.
 	ftbl[idx].type = type;
@@ -216,8 +263,11 @@ void *fr_alloc_page(void *vaddr, enum pgtype type, bool writable) {
 	ftbl[idx].fd = -1;
 	ftbl[idx].offset = -1;
 	ftbl[idx].src_file = NULL;
-	ftbl[idx].trailing_zeroes = 0;
-	lock_release(&ftbl_lock);
+	ftbl[idx].trailing_zeroes = num_trailing_zeroes;
+	ftbl[idx].mid = mid;
 
+	//printf("--> about to return from fr_alloc_page\n\n");
+
+	lock_release(&ftbl_lock);
 	return kpage;
 }

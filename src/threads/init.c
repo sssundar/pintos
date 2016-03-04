@@ -118,7 +118,6 @@ int main(void) {
 
     fr_init_tbl();
     pg_init();
-    sp_init();
 
     /* Segmentation. */
 #ifdef USERPROG
@@ -148,6 +147,7 @@ int main(void) {
     filesys_init(format_filesys);
 #endif
 
+    sp_init();
     printf("Boot complete.\n");
 
     /* Run actions specified on kernel command line. */

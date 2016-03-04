@@ -625,7 +625,7 @@ static bool setup_stack(void **esp, const char *file_name) {
     strlcpy(fncopy, file_name, PGSIZE);
 
     /* Setup the stack. */
-    kpage = fr_alloc_page(PHYS_BASE - PGSIZE, OTHER_PG, true);
+    kpage = fr_alloc_page(PHYS_BASE - PGSIZE, OTHER_PG, true, -1, 0);
     if (kpage != NULL) {
         success = install_page(((uint8_t *) PHYS_BASE) - PGSIZE, kpage,
         		true, false);

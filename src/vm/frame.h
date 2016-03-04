@@ -45,7 +45,7 @@ struct ftbl_elem {
 	 */
 	uint32_t flags;
 
-
+	int mid;				/*! Memory mapped file ID, -1 if not present. */
 	enum pgtype type; 		/*! Type of the page associated with this frame. */
 	bool writable;			/*! Whether this frame is writable. */
 
@@ -69,6 +69,7 @@ void fr_pin(void *paddr);
 void fr_unpin(void *paddr);
 
 void fr_init_tbl(void);
-void *fr_alloc_page(void *vaddr, enum pgtype type, bool writable);
+void *fr_alloc_page(void *vaddr, enum pgtype type, bool writable,
+		int mid, int num_trailing_zeroes);
 
 #endif /* SRC_VM_FRAME_H_ */

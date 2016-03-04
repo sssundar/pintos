@@ -14,6 +14,7 @@
 #include "filesys/file.h"
 #include "vm/page.h"
 #include "vm/frame.h"
+#include "vm/swap.h"
 
 /*! The (file) system lock from syscall.c. */
 extern struct lock sys_lock;
@@ -159,64 +160,124 @@ static void page_fault(struct intr_frame *f) {
     //------------------------ Virtual memory code ----------------------------
 
     if (!is_user_vaddr(fault_addr)) {
+
+    	// printf("==> why am i dying here??? faulting addr is %p\n", fault_addr);
+
+    	//PANIC("Died here lol\n");
     	exit(-1);
     }
 
     pg_lock_pd();
+    struct thread *t = thread_current();
 
     // Get the stack pointer. Apply a heuristic to see if this address faulted
     // because we need to allocate a new stack page. If so then allocate a
     // new page for the stack and install it, then exit the page fault handler.
     if (pg_is_valid_stack_addr(fault_addr, f->esp)) {
-    	void *base_of_page = (void *)((uint32_t)fault_addr & 0xFFFFF000);
-    	void *kpage = fr_alloc_page(base_of_page, OTHER_PG, true);
-    	if (!install_page(base_of_page, kpage, true, false)) {
-    		PANIC("Couldn't install a new stack page.");
-    		NOT_REACHED();
-    	}
-    	else {
-    		fr_unpin(kpage);
-    		pg_release_pd();
-    		return;
-    	}
+
+        // Get the supplemental page corresponding to the faulting address.
+        struct spgtbl_elem *s =
+        		(struct spgtbl_elem *) pagedir_get_page(t->pagedir, fault_addr);
+
+        // If there's a supplemental page table entry already then it was
+        // swapped to disk. Get it.
+        if (s != NULL && s->swap_idx != BITMAP_ERROR) {
+        	pg_release_pd();
+        	void *kpage = fr_alloc_page(
+        			(void *)(((uint32_t) fault_addr) & 0xFFFFF000),
+        			OTHER_PG, s->writable, -1, 0);
+        	pg_lock_pd();
+    		if (kpage == NULL) {
+    			PANIC("Couldn't alloc user page in page fault handler.");
+    			NOT_REACHED();
+    		}
+	    	if (!sp_get(s->swap_idx, kpage)) {
+	    		PANIC("Couldn't get page from swap.");
+	    		NOT_REACHED();
+	    	}
+			fr_unpin(kpage);
+			pg_release_pd();
+	    	return;
+        }
+        else if (s != NULL) {
+        	PANIC("We have a supplemental page table entry but no slot idx.");
+        	NOT_REACHED();
+        }
+        // Otherwise expand the stack.
+        else {
+
+        	// TODO note that Sushant changed code between here...
+
+			void *base_of_page = (void *)((uint32_t)fault_addr & 0xFFFFF000);
+			pg_release_pd();
+			void *kpage = fr_alloc_page(base_of_page, OTHER_PG, true, -1, 0);
+			pg_lock_pd();
+			if (!install_page(base_of_page, kpage, true, false)) {
+				PANIC("Couldn't install a new stack page.");
+				NOT_REACHED();
+			}
+			else {
+				fr_unpin(kpage);
+				pg_release_pd();
+				return;
+			}
+
+			// TODO ... and here.
+        }
     }
 
     // Get the supplemental page corresponding to the faulting address.
-    struct thread *t = thread_current();
     struct spgtbl_elem *s =
     		(struct spgtbl_elem *) pagedir_get_page(t->pagedir, fault_addr);
+
+
+    /*
+	// TODO REMOVE
+    if (s == NULL) {
+    	PANIC("suppl page table entry was null");
+    }
+    */
+
+
 
     // If magic is missing then we couldn't find the supplemental page table
     // entry. Exit, since there's nothing else we can do.
     if (s == NULL || s->magic != PG_MAGIC) {
+
+    	// TODO REMOVE
+    	//PANIC("Died here megalol\n");
+
     	pg_release_pd();
     	exit(-1);
     }
 
-    bool on_swap = false;
-    if (s->swap_idx != BITMAP_ERROR) {
-    	on_swap = true;
-    }
-
     if (not_present) {
+    	pg_release_pd();
     	void *kpage = fr_alloc_page(
     			(void *)(((uint32_t) fault_addr) & 0xFFFFF000),
-    			EXECD_FILE_PG, s->writable);
+    			s->type, s->writable, s->type == MMAPD_FILE_PG ? s->mid : -1,
+    			s->trailing_zeroes);
+    	pg_lock_pd();
 
 		if (kpage == NULL) {
 			PANIC("Couldn't alloc user page in page fault handler.");
 			NOT_REACHED();
 		}
 
-		// Handled swapped pages.
-		/*
-		if (on_swap) { // TODO comment initially...
+
+
+
+		// If this address's page was swapped to disk then read it from there.
+		if (s->swap_idx != BITMAP_ERROR) { // TODO comment initially...
 	    	if (!sp_get(s->swap_idx, kpage)) {
 	    		PANIC("Couldn't get page from swap.");
 	    		NOT_REACHED();
 	    	}
 		}
-		*/
+
+
+
+
 		// Handle the page based on its type.
 		else if (s->type == EXECD_FILE_PG || s->type == MMAPD_FILE_PG) {
 
