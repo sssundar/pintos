@@ -3,6 +3,7 @@
 #include <inttypes.h>
 #include <round.h>
 #include <stdio.h>
+#include <bitmap.h>
 #include <hash.h>
 #include <stdlib.h>
 #include "lib/string.h"
@@ -589,7 +590,8 @@ static bool load_segment(struct file *file, off_t ofs, uint8_t *upage,
 				page_read_bytes == 0 ? NULL : file,
 				page_zero_bytes,
         		writable,
-				page_read_bytes == 0 ? ZERO_PG : EXECD_FILE_PG);
+				page_read_bytes == 0 ? ZERO_PG : EXECD_FILE_PG,
+				BITMAP_ERROR);
 
         /* Now install it into the PTE. This is how we avoid hashing! */
         if (!install_page(upage, (void *) s, writable, true)) {
@@ -623,7 +625,7 @@ static bool setup_stack(void **esp, const char *file_name) {
     strlcpy(fncopy, file_name, PGSIZE);
 
     /* Setup the stack. */
-    kpage = fr_alloc_page(PHYS_BASE - PGSIZE, OTHER_PG);
+    kpage = fr_alloc_page(PHYS_BASE - PGSIZE, OTHER_PG, true);
     if (kpage != NULL) {
         success = install_page(((uint8_t *) PHYS_BASE) - PGSIZE, kpage,
         		true, false);

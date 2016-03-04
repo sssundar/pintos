@@ -17,12 +17,12 @@
 /*! Frame table element. The actual physical address that a frame table
     element corresponds to depends on the index of a frame table element
     in an array. For instance, the ftbl_elem at index 2 should correspond
-    to the physical address 2 * PGSIZE. The largest index will then be
-    64mb / 4096m = 16384 - 1, since Pintos is initialized with 64mb of main
-    memory.
+    to the user address 2 * PGSIZE. The largest index will then be
+    32mb / 4096m = 16384 - 1, since Pintos is initialized with 64mb of user
+    memory (it has 64 mb total).
 
     Note that, by our convention, kernel pages are not page-able (i.e.,
-    evict-able) because they are not present in the frame table. The evicting
+    evict-able) because they are not present in the frame table. The eviction
     code will never see them. */
 struct ftbl_elem {
 	/*! Owned by frame.c. */
@@ -45,6 +45,10 @@ struct ftbl_elem {
 	 */
 	uint32_t flags;
 
+
+	enum pgtype type; 		/*! Type of the page associated with this frame. */
+	bool writable;			/*! Whether this frame is writable. */
+
 	//--------------------- File related data below ---------------------------
 	int fd;					/*!< File descriptor for src file. -1 if none. */
 	struct file *src_file;  /*!< Source file, could be null if none. */
@@ -65,6 +69,6 @@ void fr_pin(void *paddr);
 void fr_unpin(void *paddr);
 
 void fr_init_tbl(void);
-void *fr_alloc_page(void *vaddr, enum pgtype type);
+void *fr_alloc_page(void *vaddr, enum pgtype type, bool writable);
 
 #endif /* SRC_VM_FRAME_H_ */

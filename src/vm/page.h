@@ -42,7 +42,7 @@ enum pgtype { MMAPD_FILE_PG, EXECD_FILE_PG, ZERO_PG, OTHER_PG };
     put them somewhere in kernel space then pack a pointer to each in its
     corresponding page table entry. */
 struct spgtbl_elem {
-	/*! Owned by frame.c. */
+	/*! Owned by page.c. */
 	/**@{*/
 
 	void *paddr;			/*!< Physical address of this page. */
@@ -50,6 +50,9 @@ struct spgtbl_elem {
 	bool writable; 			/*!< If true is read/write, else is read only. */
 
 	enum pgtype type;		/*!< The sort of page this is. */
+
+	/*! Index of page in swap. BITMAP_ERROR if not there. */
+	unsigned long long swap_idx;
 
 	//--------------------- File related data below ---------------------------
 	int mid;				/*!< Mmap'd file id. */
@@ -74,8 +77,7 @@ void pg_lock_pd(void);
 void pg_release_pd(void);
 struct spgtbl_elem *pg_put(int mid, int fd, off_t ofs, void *paddr,
 		void *vaddr, struct file *file, uint32_t num_trailing_zeroes,
-		bool writable,
-		enum pgtype type);
+		bool writable, enum pgtype type, unsigned long long swap_idx);
 bool pg_is_valid_stack_addr(void *addr, void *stack_ptr);
 
 #endif /* SRC_VM_PAGE_H_ */

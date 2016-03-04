@@ -118,9 +118,7 @@ int main(void) {
 
     fr_init_tbl();
     pg_init();
-    // TODO init the bitmap for swap
-    // TODO (not as important) initialize a table of file mappings so that
-    // file reads from multiple processes don't always have to be from disk
+    sp_init();
 
     /* Segmentation. */
 #ifdef USERPROG

@@ -27,7 +27,7 @@ void pg_release_pd(void) { lock_release(&pglock); }
     pointer to this SPGTE. */
 struct spgtbl_elem *pg_put(int mid, int fd, off_t ofs, void *paddr,
 		void *vaddr, struct file *file, uint32_t num_trailing_zeroes,
-		bool writable, enum pgtype type) {
+		bool writable, enum pgtype type, unsigned long long swap_idx) {
 
 	pg_lock_pd();
 	struct spgtbl_elem *s = (struct spgtbl_elem *) malloc(
@@ -71,6 +71,7 @@ struct spgtbl_elem *pg_put(int mid, int fd, off_t ofs, void *paddr,
 	s->trailing_zeroes = num_trailing_zeroes;
 	s->type = type;
 	s->writable = writable;
+	s->swap_idx = swap_idx;
 	pg_release_pd();
 
 	return s;

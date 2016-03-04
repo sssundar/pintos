@@ -1,3 +1,4 @@
+#include <bitmap.h>
 #include "userprog/syscall.h"
 #include "userprog/process.h"
 #include "userprog/pagedir.h"
@@ -92,7 +93,7 @@ bool get_user_quadbyte (const uint8_t *uaddr, int *arg) {
     return false;
 }
 
-
+// TODO comment
 void sc_init(void) {
     intr_register_int(0x30, 3, INTR_ON, sc_handler, "syscall");
     lock_init(&sys_lock);
@@ -654,7 +655,8 @@ mapid_t mmap(int fd, void *vaddr) {
 				page_read_bytes == 0 ? NULL : file,
 				page_zero_bytes,
 				true,
-				page_read_bytes == 0 ? ZERO_PG : EXECD_FILE_PG);
+				page_read_bytes == 0 ? ZERO_PG : EXECD_FILE_PG,
+				BITMAP_ERROR);
 		pg_lock_pd();
 
 		/* Now install it into the PTE. This is how we avoid hashing!

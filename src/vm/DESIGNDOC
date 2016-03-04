@@ -13,7 +13,7 @@ Sushant Sundaresh <sushant.sundaresh@gmail.com>
 Dave Luo <dluo@caltech.edu>
 
 >> Specify how many late tokens you are using on this assignment:  
-TODO
+1
 
 >> What is the Git repository and commit hash for your submission?
    (You only need to include the commit-hash in the file you submit
@@ -26,12 +26,13 @@ TODO
 
 >> If you have any preliminary comments on your submission, notes for the
 >> TAs, or extra credit, please give them here.
-TODO
+None.
 
 >> Please cite any offline or online sources you consulted while
 >> preparing your submission, other than the Pintos documentation, course
 >> text, lecture notes, and course instructors.
-TODO
+Wikipedia for various things. Google image search for pictures of page table
+entries. Stuff like that.
 
 ---- LOGISTICS ----
 
@@ -42,20 +43,29 @@ which parts.
 >> L1: How many hours did each team member spend on this assignment?
    Make sure that each member's total time is listed.
    
-Hamik: TODO
+Hamik: 45
 
-Sushant: TODO
+Sushant: 15
 
-Dave: TODO
+Dave: 15
 
 >> L2: What did each team member focus on for this assignment?  Keep
    descriptions to 25-30 words or less.
    
-Hamik: TODO
+Hamik: I ended up doing most of the work this time because Sushant and Dave had
+a tough couple of weeks in other classes. I implemented the frame table with
+Sushant in a pair-coding exercise, and I implemented the supplemental
+page "table"---see below for the reason I use quotation marks---along with
+stack growth, memory mapped files, and page reclamation. Dave and I designed
+swap.h and swap.c but he wrote most of them. I wrote this design doc.
 
-Sushant: TODO
+Sushant: Spent considerable time understanding virtual memory well enough to
+collaborate with Hamik on the design. We spent many hours just trying to
+wrap our heads around the topic. After that I helped Hamik implement the
+frame table.
 
-Dave: TODO
+Dave: Helped Hamik with debugging and wrote most of the swap code. I studied
+up on eviction strategies enough to design and implement one.
 
 Note that this design document is a bit long.  Most of the questions can be
 answered pretty briefly.  Don't feel a need to write a long answer if it is
@@ -70,34 +80,148 @@ not required by the question.
 >> `struct' member, global or static variable, `typedef', or
 >> enumeration.  Identify the purpose of each in 25 words or less.
 
-TODO
+//------------------------------- Frame table ---------------------------------
+
+/*! Starting address of the user pages in physical memory. Initialized in
+    palloc.c. Used to translate from a frame table index to a kernel address
+    and vice versa.*/
+extern void *start_of_user_pages_phys;
+
+/*! Number of user pages in physical memory. Starting address of the user 
+    pages in physical memory. Initialized in palloc.c. Used to allocate the
+    correct number of frame table elements. */
+extern size_t num_user_pages;
+
+/*! The frame table array. Each page frame has one entry in this array. */
+struct ftbl_elem *ftbl;
+
+/*! This lock should be used whenever the frame table is used. */
+struct lock ftbl_lock;
+
+/*! The contents of a single frame table entry. */
+struct ftbl_elem {
+    /*!< Corresponding virtual address. */
+    void *corr_vaddr;           
+
+    /*! Info about the owning thread including its page directory pointer,
+        which is needed to access the dirty and accessed bits in the
+        corresponding page table entry. */
+    struct thread *tinfo;
+
+    /*! Contains flags for this frame table element:
+        - Bit 0: "In use" bit is set when this frame is in use. This is the
+          least significant bit.
+        - Bit 1: "Pinned" bit is set when this frame should not be evicted. */
+    uint32_t flags;
+    
+    /*! Type of the page associated with this frame. */
+    struct pgtype type;
+    
+    bool writable;
+    
+    /*!< File descriptor for src file. -1 if none. */
+    int fd;                 
+    
+    /*!< Source file, could be null if none. */
+    struct file *src_file;  
+    
+    /*! The number of zeroes that follow the last bit of this page. Will be set
+        to 0 for (most) pages because they're fully used, but the last page
+        for a given file will have a trailing zeroes count between 0 and
+        PGSIZE, inclusive. */
+    uint32_t trailing_zeroes;
+    
+    /*!< Offset in the corresponding src file. */
+    off_t offset;           
+};
+
+//------------------------- Supplemental page table ---------------------------
+
+/*! All the possible page sources including files that are memory-mapped,
+    files that are loaded as executables, anonymous files (for pages that will
+    be zeroed), and "other" sources for pages that are used to e.g. extend
+    the stack. */
+enum pgtype { MMAPD_FILE_PG, EXECD_FILE_PG, ZERO_PG, OTHER_PG };
+
+/*! Supplemental page table element. There is one of these per allocated page
+    for each user process. Instead of putting these in a hash table we
+    put them somewhere in kernel space then pack a pointer to each in its
+    corresponding page table entry. */
+struct spgtbl_elem {
+    void *paddr;            /*!< Physical address of this page. */
+    void *vaddr;            /*!< Virtual address of this page. "Key". */
+    bool writable;          /*!< If true is read/write, else is read only. */
+    enum pgtype type;       /*!< The sort of page this is. */
+    int mid;                /*!< Mmap'd file id. */
+    int fd;                 /*!< File descriptor for src file. -1 if none. */
+    struct file *src_file;  /*!< Source file, could be null if none. */
+    off_t offset;           /*!< Offset in the corresponding src file. */
+
+    /*! Sanity check in case supplemental page table isn't loaded correctly. */
+    uint32_t magic;
+    
+    /*! The number of zeroes that follow the last bit. Will be set to 0 for
+        most pages of a file because they're fully used, but the last page
+        for a given file will have a trailing zeroes count between 0 and
+        PGSIZE, inclusive. To get the number of bytes that were read for this
+        supplemental page table entry just do PGSIZE - trailing_zeroes.
+     */
+    uint32_t trailing_zeroes;
+};
 
 ---- ALGORITHMS ----
 
 >> A2: In a few paragraphs, describe your code for locating the frame,
 >> if any, that contains the data of a given page.
 
-TODO (few paragraphs?!)
+When a user process dereferences a pointer to memory the pointer is decomposed
+into its top ten bits, which are used to index into its page directory, and 
+into its next ten bits, which are used to index into one of its 2^10 page
+tables. The page table entry is examined to see if its corresponding page
+is present in memory; if the least significant bit in the PTE is 1 then it's
+present and we can combine the frame number in the PTE with the lowest 12 bits
+in the original pointer to get the physical address we want. 
+
+If the present bit is 0 then we need to look elsewhere for the missing page.
+In our implementation the supplementary information is in a supplementary page
+table entry which lives in kernel space and whose address was packed into the
+corresponding PTE. That is, when a page is lazily loaded due to program 
+loading, memory-mapping, or eviction, but before it's paged in, we allocate a
+supplementary page table entry and overwrite the PTE with its address. We
+depend on these addresses always being even to differentiate pointers in PTEs
+from normal PTEs. That is, we depend on the pointers having a least significant
+bit of 1. This is guaranteed by the malloc implementation because requested 
+sizes are rounded up to nonzero powers of two and because its pool's starting 
+address is page-aligned (and therefore even). Supplementary page table entries
+contain file information in case corresponding pages are from memory-mapped
+files, and they contain indices into the swap table in case corresponding pages
+were evicted.
 
 >> A3: How does your code coordinate accessed and dirty bits between
 >> kernel and user virtual addresses that alias a single frame, or
 >> alternatively how do you avoid the issue?
 
-TODO
+We don't have to worry about it. In our implementation there are no frame
+table entries for kernel pages since they can't get paged out anyway.
 
 ---- SYNCHRONIZATION ----
 
 >> A4: When two user processes both need a new frame at the same time,
 >> how are races avoided?
 
-TODO
+They get a lock on the frame table. If they page in data from disk they also
+get a lock on the file system.
 
 ---- RATIONALE ----
 
 >> A5: Why did you choose the data structure(s) that you did for
 >> representing virtual-to-physical mappings?
 
-TODO
+The frame table is a normal array because we assumed it would be densely 
+populated. Slot availability is tracked with a bitmap. The supplementary page
+"table" isn't much of a data structure at all; each entry just lives somewhere
+in kernel space as determined by malloc. We just pack pointers to them into 
+the corresponding PTE.
 
                PAGING TO AND FROM DISK
                =======================
@@ -121,13 +245,20 @@ TODO (NRU?)
 >> process Q, how do you adjust the page table (and any other data
 >> structures) to reflect the frame Q no longer has?
 
-TODO
+Q's PTE is packed with a pointer to a new supplementary page table entry
+containing an index into the slot table. Q's PTE's address was stored in
+its frame table entry, which is how we can change it from P. The frame table
+entry is updated to point to P and to contain other information related to P.
 
 >> B4: Explain your heuristic for deciding whether a page fault for an
 >> invalid virtual address should cause the stack to be extended into
 >> the page that faulted.
 
-TODO
+We defined a stack size of 8mb. All accesses that are between PHYS_BASE and
+8mb below that and which are within 32 bytes of the stack pointer are
+considered good "stack growth" candidates. Obviously accesses much above esp
+are valid, but they would either result in normal accesses or would force an
+evicted page back into memory from swap. They shouldn't expand the stack down.
 
 ---- SYNCHRONIZATION ----
 
@@ -136,21 +267,32 @@ TODO
 >> textbook for an explanation of the necessary conditions for
 >> deadlock.)
 
-TODO
+We were just extremely conservative and had global page directory and 
+filesystem locks. Whenever PTEs are inspected or changed we use a lock, and
+whenever we write or read from disk we get a lock on the filesystem. There is
+probably room for more parallelism but our implementation seems fast and
+doesn't deadlock. The 'necessary and sufficient conditions' for deadlock are 
+avoided because of the sequential and careful use of waiting locks. Much of
+that code was written for the previous project.
 
 >> B6: A page fault in process P can cause another process Q's frame
 >> to be evicted.  How do you ensure that Q cannot access or modify
 >> the page during the eviction process?  How do you avoid a race
 >> between P evicting Q's frame and Q faulting the page back in?
 
-TODO
+Q has a lock on page directories when it's messing with its PTE or a lock on
+the filesystem if it's reading into its frame. P would try to acquire the same
+lock and would have to wait. Same goes if P is messing with Q's page: it has a
+lock, so Q won't be able to access or modify the page until P evicts. Then if
+it does the page will simply be paged back in because the access will fault.
 
 >> B7: Suppose a page fault in process P causes a page to be read from
 >> the file system or swap.  How do you ensure that a second process Q
 >> cannot interfere by e.g. attempting to evict the frame while it is
 >> still being read in?
 
-TODO
+It's pinned until it's completely read in. No one can evict it while it's
+pinned.
 
 >> B8: Explain how you handle access to paged-out pages that occur
 >> during system calls.  Do you use page faults to bring in pages (as
@@ -158,7 +300,21 @@ TODO
 >> into physical memory, or do you use some other design?  How do you
 >> gracefully handle attempted accesses to invalid virtual addresses?
 
-TODO
+In close, for instance, if a file is being closed while it's still memory-
+mapped we just "touch" each page in the memory mapped region so any changes
+are written back to the file through page faults before it's closed. This is
+done with a volatile dummy variable: 
+
+  volatile uint32_t dummy UNUSED; 
+  // ... 
+  dummy = *((uint32_t *)addr);
+  
+In mmap we don't actually load anything either; when the user accesse memory
+in an mmapped region we just wait for page faults to lazily load data.
+Accesses to invalid addresses are dealt with in the page fault handler.
+Since an invalid access or write in a real program generates a segfault 
+we just exit the program with the code -1, since that's what the tests
+expect.
 
 ---- RATIONALE ----
 
@@ -168,7 +324,10 @@ TODO
 >> but allows for high parallelism.  Explain where your design falls
 >> along this continuum and why you chose to design it this way.
 
-TODO
+We have a single lock for critical code related to page directories. The
+lock is invoked in only small sections of code, so I'm pretty sure that 
+enables quite a bit of parallelism. There is probably a lot of room for
+improvement.
 
              MEMORY MAPPED FILES
              ===================
@@ -179,7 +338,26 @@ TODO
 >> `struct' member, global or static variable, `typedef', or
 >> enumeration.  Identify the purpose of each in 25 words or less.
 
-TODO
+/*! Element in per-thread list of memory-mapped files. */
+struct mmap_element {
+    int mid;
+    int fd;
+    void *addr;
+    struct file *file;
+    size_t size;
+    struct list_elem m_elem;
+};
+
+/*! This is the kernel thread/user process struct that come with Pintos.
+    It's been modified to contain a list of memory mapped files. */
+struct thread {
+    // ...
+
+    /*! List of all memory-mapped files. */
+    struct list mmapped_files;
+    
+    // ...
+};
 
 ---- ALGORITHMS ----
 
@@ -187,12 +365,17 @@ TODO
 >> memory subsystem.  Explain how the page fault and eviction
 >> processes differ between swap pages and other pages.
 
-TODO
+The only differences between memory-mapped and other pages are (1) memory-
+mapped pages have additional data stored in their threads' structs, and (2)
+memory-mapped pages don't get paged to swap. If they are evicted they are
+written right back to their files.
 
 >> C3: Explain how you determine whether a new file mapping overlaps
 >> any existing segment.
 
-TODO
+We don't do it directly. When we try to install the page in memory the
+installation fails if the page isn't free (i.e., if it's present). In that
+case we make the mapping fail.
 
 ---- RATIONALE ----
 
@@ -203,7 +386,9 @@ TODO
 >> implementation either does or does not share much of the code for
 >> the two situations.
 
-TODO
+The code could probably be coalesced a bit: a lot is duplicated. The mmap 
+code has more edge and corner cases checked than load_segment, so we didn't 
+try very hard to consolidate because we were sort on time :-).
 
                SURVEY QUESTIONS
                ================
@@ -217,30 +402,43 @@ penalized.  We can't fix things until we know about them.  :-)
 >> In your opinion, was this assignment, or any of the parts of it, too
 >> easy or too hard?  Did it take too long or too little time?
 
-TODO
+Your lecture slides are usually excellent and extremely clear. The VM lectures
+weren't too different, but I *strongly* recommend either (1) encouraging 
+students to do a "lifecycle of a virtual address" exercise on their own
+or (2) do it for them in lecture and encourage everyone to attend. 
 
 >> Did you find that working on a particular part of the assignment gave
 >> you greater insight into some aspect of OS design?
 
-TODO
+All of it :-). In hindsight I appreciated how open-ended the assignment was,
+but I felt like there were one too many layers of open-endedness. (1) Virtual
+memory was a new, confusing entity and there wasn't a good, thorough example
+or resource about the lifecycle/use cases of a virtual address to begin with.
+(2) The design part was fun, but combined with the confusion about a new 
+subject (virtual memory) the additional confusion that comes with designing 
+and choosing data structures and approaches alone was... intense.
 
 >> Were there any parts of the assignment that you felt were unnecessarily
 >> tedious or pointless?
 
-TODO
+No.
 
 >> Is there some particular fact or hint we should give students in
 >> future quarters to help them solve the problems?  Conversely, did you
 >> find any of our guidance to be misleading?
 
-TODO
+YES. Something like the Piazza "lifecycle of a virtual address" thread but with
+more detail and hand-holding. Please. Just hold my hand.
 
 >> Do you have any suggestions for the instructor and/or TAs to more
 >> effectively assist students, either for future quarters or the remaining
 >> projects?
 
-TODO
+See "lifecycle of a virtual address."
 
 >> Any other comments?
 
-TODO
+I wonder how much I'd have made at minimum wage with the time I spent on this
+thing. I was going to joke "at least enough for a month's rent in San
+Francisco" then I realized that the number was waaaay off. Thus VM made me cry
+in two different ways.

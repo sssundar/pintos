@@ -1,10 +1,11 @@
-#include "userprog/exception.h"
 #include <inttypes.h>
 #include <stdio.h>
+#include <bitmap.h>
 #include <hash.h>
 #include "userprog/gdt.h"
 #include "userprog/pagedir.h"
 #include "userprog/process.h"
+#include "userprog/exception.h"
 #include "threads/interrupt.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
@@ -22,6 +23,8 @@ static long long page_fault_cnt;
 
 static void kill(struct intr_frame *);
 static void page_fault(struct intr_frame *);
+static void debug_helper(void *fault_addr, bool not_present,
+		bool write, bool user) UNUSED;
 
 /*! Registers handlers for interrupts that can be caused by user programs.
 
@@ -130,8 +133,8 @@ static void debug_helper(void *fault_addr, bool not_present,
     [IA32-v3a] section 5.15 "Exception and Interrupt Reference". */
 static void page_fault(struct intr_frame *f) {
     bool not_present;  /* True: not-present page, false: writing r/o page. */
-    bool write;        /* True: access was write, false: access was read. */
-    bool user;         /* True: access by user, false: access by kernel. */
+    bool write UNUSED; /* True: access was write, false: access was read. */
+    bool user UNUSED;  /* True: access by user, false: access by kernel. */
     void *fault_addr;  /* Fault address. */    
 
     /* Obtain faulting address, the virtual address that was accessed to cause
@@ -166,7 +169,7 @@ static void page_fault(struct intr_frame *f) {
     // new page for the stack and install it, then exit the page fault handler.
     if (pg_is_valid_stack_addr(fault_addr, f->esp)) {
     	void *base_of_page = (void *)((uint32_t)fault_addr & 0xFFFFF000);
-    	void *kpage = fr_alloc_page(base_of_page, OTHER_PG);
+    	void *kpage = fr_alloc_page(base_of_page, OTHER_PG, true);
     	if (!install_page(base_of_page, kpage, true, false)) {
     		PANIC("Couldn't install a new stack page.");
     		NOT_REACHED();
@@ -190,18 +193,32 @@ static void page_fault(struct intr_frame *f) {
     	exit(-1);
     }
 
+    bool on_swap = false;
+    if (s->swap_idx != BITMAP_ERROR) {
+    	on_swap = true;
+    }
+
     if (not_present) {
     	void *kpage = fr_alloc_page(
     			(void *)(((uint32_t) fault_addr) & 0xFFFFF000),
-    			EXECD_FILE_PG);
+    			EXECD_FILE_PG, s->writable);
 
 		if (kpage == NULL) {
 			PANIC("Couldn't alloc user page in page fault handler.");
 			NOT_REACHED();
 		}
 
+		// Handled swapped pages.
+		/*
+		if (on_swap) { // TODO comment initially...
+	    	if (!sp_get(s->swap_idx, kpage)) {
+	    		PANIC("Couldn't get page from swap.");
+	    		NOT_REACHED();
+	    	}
+		}
+		*/
 		// Handle the page based on its type.
-		if (s->type == EXECD_FILE_PG || s->type == MMAPD_FILE_PG) {
+		else if (s->type == EXECD_FILE_PG || s->type == MMAPD_FILE_PG) {
 
 			struct file *src = s->src_file;
 
@@ -223,7 +240,6 @@ static void page_fault(struct intr_frame *f) {
 			// Seek to correct offset in file and read.
 			lock_acquire(&sys_lock);
 			file_seek(src, s->offset);
-
 			if (file_read(src, kpage, PGSIZE - s->trailing_zeroes)
 					!= (int) (PGSIZE - s->trailing_zeroes)) {
 				PANIC("Couldn't read page from file.");
@@ -233,26 +249,9 @@ static void page_fault(struct intr_frame *f) {
 
 			memset(kpage + (PGSIZE - s->trailing_zeroes),
 					0, s->trailing_zeroes);
-
-			// Overwrite the old page table entry.
-			if (!pagedir_set_page(
-					t->pagedir, s->vaddr, kpage, s->writable, false)) {
-				PANIC("Couldn't install page in page fault handler.");
-				NOT_REACHED();
-			}
-
-			fr_unpin(kpage);
 		}
 		else if (s->type == ZERO_PG) {
 			memset(kpage, 0, PGSIZE);
-
-			// Overwrite the old page table entry.
-			if (!pagedir_set_page(
-					t->pagedir, s->vaddr, kpage, s->writable, false)) {
-				debug_helper(fault_addr, not_present, write, user);
-				PANIC("Couldn't install page in page fault handler.");
-				NOT_REACHED();
-			}
 		}
 		else if (s->type == OTHER_PG) {
 			// TODO
@@ -261,6 +260,15 @@ static void page_fault(struct intr_frame *f) {
 			PANIC("Impossible page type.");
 			NOT_REACHED();
 		}
+
+		// Overwrite the old page table entry.
+		if (!pagedir_set_page(
+				t->pagedir, s->vaddr, kpage, s->writable, false)) {
+			PANIC("Couldn't install page in page fault handler.");
+			NOT_REACHED();
+		}
+
+		fr_unpin(kpage);
     }
 
     pg_release_pd();
