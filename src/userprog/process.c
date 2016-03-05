@@ -243,9 +243,6 @@ int process_wait(tid_t child_tid) {
     // Disable interrupts so this process can't be terminated if we return.
     old_level = intr_disable();
 
-    // TODO remove
-    // printf("Child Done: %u\n", mychild->i_am_done.value);
-
     sema_down(&mychild->i_am_done);
 
     // Check the status of the child

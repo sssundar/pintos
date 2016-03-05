@@ -157,15 +157,9 @@ static void page_fault(struct intr_frame *f) {
     write = (f->error_code & PF_W) != 0;
     user = (f->error_code & PF_U) != 0;
 
-    //------------------------ Virtual memory code ----------------------------
-    
-    // debug_helper(fault_addr, not_present, write, user); 
+    //------------------------ Virtual memory code ----------------------------      
 
-    if (!is_user_vaddr(fault_addr)) {
-
-    	// printf("==> why am i dying here??? faulting addr is %p\n", fault_addr);
-
-    	//PANIC("Died here lol\n");
+    if (!is_user_vaddr(fault_addr)) {    	
     	exit(-1);
     }
 
@@ -222,8 +216,6 @@ static void page_fault(struct intr_frame *f) {
       // swapped to disk. Get it.
       if (s != NULL && s->swap_idx != BITMAP_ERROR) {
 
-        //printf("  --> i am a stack addr and i was swapped to disk\n");
-
         pg_release_pd();
         void *kpage = fr_alloc_page(
           (void *)(((uint32_t) fault_addr) & 0xFFFFF000),
@@ -234,22 +226,19 @@ static void page_fault(struct intr_frame *f) {
     			PANIC("Couldn't alloc user page in page fault handler.");
     			NOT_REACHED();
     		}
-
-    		//printf("--> right before spget\n");
+    		
       	if (!sp_get(s->swap_idx, kpage)) {
       		PANIC("Couldn't get page from swap.");
       		NOT_REACHED();
       	}
-      	//printf("--> right after spget\n");
+      	
         if (!pagedir_set_page(thread_current()->pagedir, base_of_page,
             kpage, true, false)) {
           PANIC("Couldn't associate a swapped in stack page.");
           NOT_REACHED();
         }
   			fr_unpin(kpage);
-  			pg_release_pd();
-
-  			//printf("--> done with page fault handler too!\n\n");
+  			pg_release_pd();  		
 
 	    	return;
       } 
@@ -278,10 +267,7 @@ static void page_fault(struct intr_frame *f) {
     /* Not Stack Address */
     // If magic is missing then we couldn't find the supplemental page table
     // entry. Exit, since there's nothing else we can do.
-    if (s == NULL || s->magic != PG_MAGIC) {
-
-    	// TODO REMOVE
-    	//PANIC("Died here megalol\n");
+    if (s == NULL || s->magic != PG_MAGIC) {    	   
 
     	pg_release_pd();
     	exit(-1);
@@ -305,24 +291,6 @@ static void page_fault(struct intr_frame *f) {
   			PANIC("Couldn't alloc user page in page fault handler.");
   			NOT_REACHED();
   		}
-
-  		/*
-  		switch(s->type) {
-  		case EXECD_FILE_PG:
-  		case MMAPD_FILE_PG:
-  			printf("I'm exec'd or mmapped\n");
-  			break;
-  		case OTHER_PG:
-  			printf("I'm other page\n");
-  			break;
-  		case ZERO_PG:
-  			printf("I'm zero page\n");
-  			break;
-  		default:
-  			printf("i'm ugly");
-  			break;
-  		}
-  		*/
 
   		// If this address's page was swapped to disk then read it from there.
   		if (s->swap_idx != BITMAP_ERROR) { // TODO comment initially...
@@ -370,7 +338,7 @@ static void page_fault(struct intr_frame *f) {
   			memset(kpage, 0, PGSIZE);
   		}
   		else if (s->type == OTHER_PG) {
-  			// TODO
+        // Ignore 			
   		}
   		else {
   			PANIC("Impossible page type.");
@@ -385,11 +353,8 @@ static void page_fault(struct intr_frame *f) {
   		}
 
   		fr_unpin(kpage);
-    }
+    }    
 
-    //printf("--> we're done with page fault handler\n\n");
-
-    pg_release_pd();
-    // debug_helper(fault_addr, not_present, write, user);
+    pg_release_pd();    
 }
 

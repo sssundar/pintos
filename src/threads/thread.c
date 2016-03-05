@@ -403,9 +403,7 @@ static void idle(void *idle_started_ UNUSED) {
     for (;;) {
         /* Let someone else run. */        
         intr_disable();
-        thread_block();
-        printf("idling\n");
-        PANIC("WHYYYYYY");
+        thread_block();        
         /* Re-enable interrupts and wait for the next one.
 
            The `sti' instruction disables interrupts until the completion of

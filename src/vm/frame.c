@@ -45,7 +45,7 @@ static void fr_set_used(struct ftbl_elem *ftbl, bool used);
 static uint32_t fr_get_corr_idx(void *paddr);
 static void fr_use_helper(void *paddr, bool use);
 static void fr_pin_helper(void *paddr, bool pin);
-static uint32_t evict_rand(void); // TODO remove eventually
+static uint32_t evict_rand(void); 
 
 static bool fr_is_used(struct ftbl_elem *felem) {
 	return felem->flags & IN_USE_MASK;
@@ -57,15 +57,11 @@ static bool fr_is_pinned(struct ftbl_elem *felem) {
 
 
 void ftbl_get_lock (void) {
-	// printf("Thread %d trying to get ftbl lock.\n", thread_current()->tid);		
-	lock_acquire(&ftbl_lock);		
-	// printf("Thread %d got ftbl lock.\n", thread_current()->tid);
+	lock_acquire(&ftbl_lock);			
 }
 
-void ftbl_release_lock (void) {
-	// printf("Thread %d releasing ftbl lock.\n", thread_current()->tid);
-	lock_release(&ftbl_lock);
-	// printf("Thread %d released ftbl lock.\n", thread_current()->tid);
+void ftbl_release_lock (void) {	
+	lock_release(&ftbl_lock);	
 }
 
 /*! Sets the pinned flag for the given frame. If it's set that means this frame
@@ -108,12 +104,7 @@ static void fr_pin_helper(void *paddr, bool pin) {
 	uint32_t idx = fr_get_corr_idx(paddr);
 	ASSERT(idx < num_user_pages);
 
-	//printf("  --> before fr_set_pin. %p\n", &ftbl[idx]);
-
-
 	fr_set_pin(&ftbl[idx], pin);
-
-	//printf("  --> after fr_set_pin.\n");
 
 	ftbl_release_lock();
 }
@@ -129,11 +120,12 @@ static uint32_t fr_get_corr_idx(void *paddr) {
 	return (uint32_t)(paddr - start_of_user_pages_phys) / PGSIZE;
 }
 
-// TODO DODODOD
+// The inverse of the fr_get_corr_idx function
 static void *fr_get_corr_paddr(uint32_t idx) {
 	return (void *) ((uint32_t) start_of_user_pages_phys + idx * PGSIZE);
 }
 
+/* Initialize the frame table */
 void fr_init_tbl(void) {
 	lock_init(&ftbl_lock);
 	// Allocate space for the frame table array.
@@ -141,11 +133,8 @@ void fr_init_tbl(void) {
 			sizeof (struct ftbl_elem));
 }
 
-// TODO make a version of fr_alloc_page which also takes params related to
-// the file from which the page comes. Use them to init fields like fd,
-// src_file, etc.
-
-static uint32_t evict_rand(void) { // TODO make sure not pinned
+/* Random Frame Eviction */
+static uint32_t evict_rand(void) { 
 	uint32_t ans;
 
 	do {
@@ -157,7 +146,7 @@ static uint32_t evict_rand(void) { // TODO make sure not pinned
 
 /*! Replaces calls to palloc_get_page by allocating a user pool page AND
     making/initializing a frame table entry. Evicts a page if there isn't
-    enough room in physical memory for this allocation request. TODO eviction
+    enough room in physical memory for this allocation request. 
 
     Frame IS PINNED. User MUST UNPIN it after setting it up.
 
@@ -184,10 +173,6 @@ void *fr_alloc_page(void *vaddr, enum pgtype type, bool writable,
 		struct ftbl_elem *to_evict = &ftbl[ev_idx];
 		ASSERT(is_user_vaddr(to_evict->corr_vaddr));
 
-		// printf("--> Going to evict frame at idx %d with corresponding virtual address %p and computed physical address %p\n",
-		// 		ev_idx, to_evict->corr_vaddr, (void *)((uint32_t) start_of_user_pages_phys
-		// 				+ PGSIZE * ev_idx));
-
 		// If memory-mapped page then write it to its file, not swap.
 		unsigned long long sidx;
 		if (to_evict->type == MMAPD_FILE_PG) {
@@ -204,19 +189,13 @@ void *fr_alloc_page(void *vaddr, enum pgtype type, bool writable,
 		// Write everything else to swap.
 		else {
 
-			// printf("--> about to put in swap b/c not mmapped. \n");
-
 			sidx = sp_put(fr_get_corr_paddr(ev_idx));
 			if (sidx == BITMAP_ERROR) {
 				PANIC("Not enough room in swap.");
 				NOT_REACHED();
 			}
 
-			// printf("--> lololol\n");
-
 		}
-
-		//printf("--> about to make suppl pg tbl entry. \n");
 
 		// After writing need to make a supplemental page entry with the
 		// swap index we just used. Make the evicted page's PTE pouint
@@ -233,9 +212,6 @@ void *fr_alloc_page(void *vaddr, enum pgtype type, bool writable,
 				to_evict->type,
 				sidx);
 
-
-		//printf("--> now installing suppl into PTE\n");
-
 		pagedir_clear_page(to_evict->tinfo->pagedir, to_evict->corr_vaddr);
 		if (!pagedir_set_page(to_evict->tinfo->pagedir,
 				to_evict->corr_vaddr, (void *) s,
@@ -243,31 +219,9 @@ void *fr_alloc_page(void *vaddr, enum pgtype type, bool writable,
 			PANIC("Couldn't install suppl page entry during eviction.");
 		}
 
-		//printf("--> done installing suppl pg tbl etry, setting frame to available\n");
-
-		//printf("--> done setting it to available!  \n");
-
-		//printf("--> about to free the page.\n");
-
-		/*
-		palloc_free_page((void *)((uint32_t) start_of_user_pages_phys
-						+ PGSIZE * ev_idx));
-		*/
 		kpage = (void *)((uint32_t) start_of_user_pages_phys
 				+ PGSIZE * ev_idx);
-
-		// Indicate the frame is now open.
-		//fr_set_used(to_evict, false);
-
-		// If we try to get a page now it should work.
-		/*
-		kpage = palloc_get_page(
-					PAL_USER | (type != ZERO_PG ? 0x00000000 : PAL_ZERO));
-					*/
-
-		//printf("--> done getting page\n");
-
-		// If not something is seriously wrong.
+		
 		if (kpage == NULL) {
 			PANIC("Couldn't alloc a page even after eviction.");
 			NOT_REACHED();
@@ -279,8 +233,6 @@ void *fr_alloc_page(void *vaddr, enum pgtype type, bool writable,
 	uint32_t idx = fr_get_corr_idx(kpage);
 	ASSERT(ev_idx == 0xFFFFFFFF || ev_idx == idx);
 	ASSERT(idx < num_user_pages);
-
-	//printf("--> final index into frame table is: %d\n", idx);
 
 	// Initialize the frame table element.
 	ftbl[idx].type = type;
@@ -295,7 +247,6 @@ void *fr_alloc_page(void *vaddr, enum pgtype type, bool writable,
 	ftbl[idx].trailing_zeroes = num_trailing_zeroes;
 	ftbl[idx].mid = mid;
 
-	//printf("--> about to return from fr_alloc_page\n");		
 	ftbl_release_lock();	
 	return kpage;
 }

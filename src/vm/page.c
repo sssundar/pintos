@@ -18,16 +18,14 @@
 struct lock pglock;
 
 void pg_init(void) { lock_init(&pglock); }
+
+/* Disabled as a temporary measure to avoid deadlock with ftbl_lock */
 void pg_lock_pd(void) { 
-	// printf("Thread %d trying to get pd lock.\n", thread_current()->tid);
-	// lock_acquire(&pglock); 	
-	// printf("Thread %d got pd lock.\n", thread_current()->tid);
+	// lock_acquire(&pglock); 		
 }
 
 void pg_release_pd(void) { 
-	// printf("Thread %d releasing pd lock.\n", thread_current()->tid);
-	// lock_release(&pglock);
-	// printf("Thread %d released pd lock.\n", thread_current()->tid);
+	// lock_release(&pglock);	
 }
 
 /*! Allocate and populate a new supplemental page table element (SPGTE). Put
@@ -51,8 +49,7 @@ struct spgtbl_elem *pg_put(int mid, int fd, off_t ofs, void *paddr,
 	}
 
 	switch (type) {
-	case MMAPD_FILE_PG:
-		// TODO nothing for now?
+	case MMAPD_FILE_PG:		
 		break;
 	case EXECD_FILE_PG:
 		ASSERT(num_trailing_zeroes != PGSIZE);
@@ -64,8 +61,7 @@ struct spgtbl_elem *pg_put(int mid, int fd, off_t ofs, void *paddr,
 		ASSERT(paddr == NULL);
 		ASSERT(file == NULL);
 		break;
-	case OTHER_PG:
-		// TODO nothing for now?
+	case OTHER_PG:		
 		break;
 	default:
 		PANIC("Impossible page type in pg_put.");

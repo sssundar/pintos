@@ -97,7 +97,6 @@ bool get_user_quadbyte (const uint8_t *uaddr, int *arg) {
     return false;
 }
 
-// TODO comment
 void sc_init(void) {
     intr_register_int(0x30, 3, INTR_ON, sc_handler, "syscall");
     lock_init(&sys_lock);
@@ -778,7 +777,7 @@ void munmap(mapid_t mid) {
 					(uint32_t) (num_pages * PGSIZE));
 			curr_base = (void *)((uint32_t) curr_base + PGSIZE)) {
 
-		// TODO the following assumes that the page was never evicted to swap...
+		// the following assumes that the page was never evicted to swap...
 
 		// Write the page to disk if it's dirty. If it's not present
 		// then is was never paged in, so ignore it.
