@@ -171,93 +171,113 @@ static void page_fault(struct intr_frame *f) {
 
     pg_lock_pd();
     struct thread *t = thread_current();
+    // Get the supplemental page corresponding to the faulting address.
+    struct spgtbl_elem *s =
+        (struct spgtbl_elem *) pagedir_get_page(t->pagedir, fault_addr);
 
-    // Get the stack pointer. Apply a heuristic to see if this address faulted
-    // because we need to allocate a new stack page. If so then allocate a
-    // new page for the stack and install it, then exit the page fault handler.
+    /* Get the stack pointer. Apply a heuristic to see if this address faulted
+      because we need to allocate a new stack page. If so then allocate a
+      new page for the stack and install it.
+      
+      Check whether the page above me (up till PHYS_BASE) is also a stack 
+      page. If it isn't, allocate it as such. E.g. we might have a program
+      allocate a giant buffer on the stack and skip a few pages in its
+      virtual demand-paged pointer, and we need to makes sure, if syscalls
+      fault on them, they show up in the page directory.
+
+      Then exit the page fault handler.
+    */
     if (pg_is_valid_stack_addr(fault_addr, f->esp)) {
 
     	void *base_of_page = (void *)((uint32_t)fault_addr & 0xFFFFF000);
 
-        // Get the supplemental page corresponding to the faulting address.
-        struct spgtbl_elem *s =
-        		(struct spgtbl_elem *) pagedir_get_page(t->pagedir, fault_addr);
+      /* Loop over the pages above us till we reach phys-base or an 
+        allocated page (stack is contiguous from there) */
+      void *base_of_next_page;
+      struct spgtbl_elem* growing_stack;
+      base_of_next_page = (void *)( ((uint32_t) base_of_page) + PGSIZE);
+      while (base_of_next_page < PHYS_BASE) {
+        /* Is it in the page table in some form? */              
+        if (pagedir_get_page(t->pagedir, 
+          (const void *) base_of_next_page) == NULL) {
+          /* If not, set up supplemental page table entry */
+          pg_release_pd();
+          growing_stack = pg_put(-1, -1, 0, NULL, base_of_next_page, NULL, 
+            PGSIZE, true, OTHER_PG, BITMAP_ERROR);                    
+          pg_lock_pd();
 
-        // If there's a supplemental page table entry already then it was
-        // swapped to disk. Get it.
-        if (s != NULL && s->swap_idx != BITMAP_ERROR) {
+          if (!pagedir_set_page(t->pagedir, base_of_next_page,
+              growing_stack, true, true)) {
+            PANIC("Tried to fill in holes in stack, but couldn't.");
+            NOT_REACHED();
+          }
 
-        	//printf("  --> i am a stack addr and i was swapped to disk\n");
+        } else {
+          break;
+        }
 
-        	pg_release_pd();
-        	void *kpage = fr_alloc_page(
-        			(void *)(((uint32_t) fault_addr) & 0xFFFFF000),
-        			OTHER_PG, s->writable, -1, 0);
-        	pg_lock_pd();
-    		if (kpage == NULL) {
+        base_of_next_page = (void *)( ((uint32_t) base_of_next_page) + PGSIZE);
+      } 
+
+      // If there's a supplemental page table entry already then it was
+      // swapped to disk. Get it.
+      if (s != NULL && s->swap_idx != BITMAP_ERROR) {
+
+        //printf("  --> i am a stack addr and i was swapped to disk\n");
+
+        pg_release_pd();
+        void *kpage = fr_alloc_page(
+          (void *)(((uint32_t) fault_addr) & 0xFFFFF000),
+          OTHER_PG, s->writable, -1, 0);
+        pg_lock_pd();
+    		
+        if (kpage == NULL) {
     			PANIC("Couldn't alloc user page in page fault handler.");
     			NOT_REACHED();
     		}
 
     		//printf("--> right before spget\n");
-	    	if (!sp_get(s->swap_idx, kpage)) {
-	    		PANIC("Couldn't get page from swap.");
-	    		NOT_REACHED();
-	    	}
-	    	//printf("--> right after spget\n");
-			fr_unpin(kpage);
-			pg_release_pd();
+      	if (!sp_get(s->swap_idx, kpage)) {
+      		PANIC("Couldn't get page from swap.");
+      		NOT_REACHED();
+      	}
+      	//printf("--> right after spget\n");
+        if (!pagedir_set_page(thread_current()->pagedir, base_of_page,
+            kpage, true, false)) {
+          PANIC("Couldn't associate a swapped in stack page.");
+          NOT_REACHED();
+        }
+  			fr_unpin(kpage);
+  			pg_release_pd();
 
-			//printf("--> done with page fault handler too!\n\n");
+  			//printf("--> done with page fault handler too!\n\n");
 
-			if (!pagedir_set_page(thread_current()->pagedir, base_of_page,
-					kpage, true, false)) {
-				PANIC("Couldn't install a new stack page.");
-				NOT_REACHED();
-			}
 	    	return;
-        }
-        else if (s != NULL) {
-        	PANIC("We have a supplemental page table entry but no slot idx.");
-        	NOT_REACHED();
-        }
-        // Otherwise expand the stack.
-        else {
-
-        	// TODO note that Sushant changed code between here...
-
-			pg_release_pd();
-			void *kpage = fr_alloc_page(base_of_page, OTHER_PG, true, -1, 0);
-			pg_lock_pd();
-			if (!pagedir_set_page(thread_current()->pagedir, base_of_page,
-					kpage, true, false)) {
-				PANIC("Couldn't install a new stack page.");
-				NOT_REACHED();
-			}
-			else {
-				fr_unpin(kpage);
-				pg_release_pd();
-				return;
-			}
-
-			// TODO ... and here.
-        }
+      } 
+      else {
+      	/* if s!=NULL We have a supplemental page table entry but no swap slot 
+          for a stack page, therefore it was an inferred extension.
+          Alternatively, if s==NULL we're just extending the stack normally.
+          */      	      
+        	
+  			pg_release_pd();
+  			void *kpage = fr_alloc_page(base_of_page, OTHER_PG, true, -1, 0);
+  			pg_lock_pd();
+  			if (!pagedir_set_page(thread_current()->pagedir, base_of_page,
+  					kpage, true, false)) {
+  				PANIC("Couldn't install a new stack page.");
+  				NOT_REACHED();
+  			}
+  			else {
+  				fr_unpin(kpage);
+  				pg_release_pd();
+  				return;
+  			}  			        
+      }
     }
 
-    // Get the supplemental page corresponding to the faulting address.
-    struct spgtbl_elem *s =
-    		(struct spgtbl_elem *) pagedir_get_page(t->pagedir, fault_addr);
 
-
-    /*
-	// TODO REMOVE
-    if (s == NULL) {
-    	PANIC("suppl page table entry was null");
-    }
-    */
-
-
-
+    /* Not Stack Address */
     // If magic is missing then we couldn't find the supplemental page table
     // entry. Exit, since there's nothing else we can do.
     if (s == NULL || s->magic != PG_MAGIC) {
@@ -299,7 +319,6 @@ static void page_fault(struct intr_frame *f) {
 			break;
 		}
 		*/
-
 
 		// If this address's page was swapped to disk then read it from there.
 		if (s->swap_idx != BITMAP_ERROR) { // TODO comment initially...
