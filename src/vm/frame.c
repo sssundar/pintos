@@ -188,8 +188,6 @@ void *fr_alloc_page(void *vaddr, enum pgtype type, bool writable,
 				NOT_REACHED();
 			}
 			sidx = BITMAP_ERROR;
-
-			// TODO probably need to make a supplemental page table entry here
 		}
 		// Write everything else to swap.
 		else {
@@ -239,15 +237,21 @@ void *fr_alloc_page(void *vaddr, enum pgtype type, bool writable,
 
 		//printf("--> about to free the page.\n");
 
+		/*
 		palloc_free_page((void *)((uint32_t) start_of_user_pages_phys
 						+ PGSIZE * ev_idx));
+		*/
+		kpage = (void *)((uint32_t) start_of_user_pages_phys
+				+ PGSIZE * ev_idx);
 
 		// Indicate the frame is now open.
-		fr_set_used(to_evict, false);
+		//fr_set_used(to_evict, false);
 
 		// If we try to get a page now it should work.
+		/*
 		kpage = palloc_get_page(
 					PAL_USER | (type != ZERO_PG ? 0x00000000 : PAL_ZERO));
+					*/
 
 		//printf("--> done getting page\n");
 
