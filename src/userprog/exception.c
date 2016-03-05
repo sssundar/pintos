@@ -147,7 +147,7 @@ static void page_fault(struct intr_frame *f) {
 
     /* Turn interrupts back on (they were only off so that we could
        be assured of reading CR2 before it changed). */
-    intr_enable();
+    intr_enable();    
 
     /* Count page faults. */
     page_fault_cnt++;
@@ -159,8 +159,8 @@ static void page_fault(struct intr_frame *f) {
 
     //------------------------ Virtual memory code ----------------------------
 
-    //printf("==> faulting address=%p\n", fault_addr);
-
+    // printf("==> faulting address=%p\n", fault_addr);
+    
     if (!is_user_vaddr(fault_addr)) {
 
     	// printf("==> why am i dying here??? faulting addr is %p\n", fault_addr);

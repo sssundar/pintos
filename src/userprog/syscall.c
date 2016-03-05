@@ -51,7 +51,9 @@ int get_user (const uint8_t *uaddr) {
     if (is_user_vaddr(uaddr)) {
 	    void *kaddr = pagedir_get_page(thread_current()->pagedir, uaddr);
 	    if (kaddr != NULL) {
-	        result = (int) ( *((uint8_t *) kaddr) & ((unsigned int) 0xFF));        
+	    	/* A valid page mapping exists, so dereference the user address
+	    		so we can handle page faults if they occur */
+	        result = (int) ( *((uint8_t *) uaddr) & ((unsigned int) 0xFF));        
 	    } 	
     }   
     return result;   
@@ -66,6 +68,8 @@ bool put_user (uint8_t *udst, uint8_t byte) {
     if (is_user_vaddr(udst)) {
 	    void *kdst = pagedir_get_page(thread_current()->pagedir, udst);
 	    if (kdst != NULL) {
+	    	/* A valid page mapping exists, so dereference the user address
+    		so we can handle page faults if they occur */
 	        *((uint8_t *) udst) = byte;
 	        result = true;
 	    } 	
@@ -130,7 +134,7 @@ static void sc_handler(struct intr_frame *f) {
 	else if (sc_n == SYS_SEEK) {
 		seek(sc_n1, sc_n2);
 	}
-	else if (sc_n == SYS_EXIT) {
+	else if (sc_n == SYS_EXIT) {		
 		exit(sc_n1);
 	}
 	else if (sc_n == SYS_HALT) {
