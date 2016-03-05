@@ -45,7 +45,7 @@ which parts.
    
 Hamik: 45
 
-Sushant: 15
+Sushant: 35
 
 Dave: 15
 
@@ -60,12 +60,11 @@ stack growth, memory mapped files, and page reclamation. Dave and I designed
 swap.h and swap.c but he wrote most of them. I wrote this design doc.
 
 Sushant: Spent considerable time understanding virtual memory well enough to
-collaborate with Hamik on the design. We spent many hours just trying to
-wrap our heads around the topic. After that I helped Hamik implement the
-frame table.
+collaborate with Hamik on the design. For the first few days was an extra
+pair of eyes as Hamik coded. Helped considerably more with the last 
+10 or so test cases. 
 
-Dave: Helped Hamik with debugging and wrote most of the swap code. I studied
-up on eviction strategies enough to design and implement one.
+Dave: Helped Hamik with debugging and wrote the first rev of the swap code. 
 
 Note that this design document is a bit long.  Most of the questions can be
 answered pretty briefly.  Don't feel a need to write a long answer if it is
@@ -232,14 +231,69 @@ the corresponding PTE.
 >> `struct' member, global or static variable, `typedef', or
 >> enumeration.  Identify the purpose of each in 25 words or less.
 
-TODO
+/* A lock to make sure swap was free for 8 consecutive sector writes */
+struct lock swap_lock;
+/* A lock to make sure only one eviction was ongoing at a time */
+struct lock ftbl_lock;
+/* A lock that was not used in the final submission but that seems necessary
+    It was in deadlock with ftbl_lock in our current implementation. */
+struct lock pglock;
+
+/*! The bitmap used to find free swap slots. Bits are false if available, true
+    if not. */
+struct bitmap *bmap;
+
+/*! Represents the swap file as a block device. */
+struct block *swap_file;
+
+struct ftbl_elem {
+    /*! Owned by frame.c. */
+    /**@{*/
+
+    void *corr_vaddr;           /*!< Corresponding virtual address. */
+
+    /*! Info about the owning thread including its page directory pointer,
+        which is needed to access the dirty and accessed bits in the
+        corresponding page table entry. */
+    struct thread *tinfo;
+
+    /*! Contains flags for this frame table element:
+
+     \verbatim
+        - Bit 0: "In use" bit is set when this frame is in use. This is the
+          least significant bit.
+        - Bit 1: "Pinned" bit is set when this frame should not be evicted.
+     \endverbatim
+     */
+    uint32_t flags;
+
+    int mid;                /*! Memory mapped file ID, -1 if not present. */
+    enum pgtype type;       /*! Type of the page associated with this frame. */
+    bool writable;          /*! Whether this frame is writable. */
+
+    //--------------------- File related data below ---------------------------
+    int fd;                 /*!< File descriptor for src file. -1 if none. */
+    struct file *src_file;  /*!< Source file, could be null if none. */
+    /*! The number of zeroes that follow the last bit of this page. Will be set
+        to 0 for (most) pages because they're fully used, but the last page
+        for a given file will have a trailing zeroes count between 0 and
+        PGSIZE, inclusive. */
+    uint32_t trailing_zeroes;
+    off_t offset;           /*!< Offset in the corresponding src file. */
+    //--------------------- File related data above ---------------------------
+
+    /**@}*/
+};
+
 
 ---- ALGORITHMS ----
 
 >> B2: When a frame is required but none is free, some frame must be
 >> evicted.  Describe your code for choosing a frame to evict.
 
-TODO (NRU?)
+We currently use a pseudo-random eviction process. Getting concurrency
+to work well was more important than efficient eviction (since one is
+considerably harder than the other). We prioritized accordingly.
 
 >> B3: When a process P obtains a frame that was previously used by a
 >> process Q, how do you adjust the page table (and any other data
