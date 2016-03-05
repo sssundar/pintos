@@ -626,6 +626,7 @@ static bool setup_stack(void **esp, const char *file_name) {
 
     /* Setup the stack. */
     kpage = fr_alloc_page(PHYS_BASE - PGSIZE, OTHER_PG, true, -1, 0);
+    fr_pin(kpage);
     if (kpage != NULL) {
         success = install_page(((uint8_t *) PHYS_BASE) - PGSIZE, kpage,
         		true, false);

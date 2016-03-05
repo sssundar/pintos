@@ -94,7 +94,14 @@ static void fr_pin_helper(void *paddr, bool pin) {
 	ASSERT(paddr != NULL);
 	uint32_t idx = fr_get_corr_idx(paddr);
 	ASSERT(idx < num_user_pages);
+
+	//printf("  --> before fr_set_pin. %p\n", &ftbl[idx]);
+
+
 	fr_set_pin(&ftbl[idx], pin);
+
+	//printf("  --> after fr_set_pin.\n");
+
 	lock_release(&ftbl_lock);
 }
 
@@ -107,6 +114,11 @@ void fr_unpin(void *paddr) { return fr_pin_helper(paddr, false); }
     address. */
 static uint32_t fr_get_corr_idx(void *paddr) {
 	return (uint32_t)(paddr - start_of_user_pages_phys) / PGSIZE;
+}
+
+// TODO DODODOD
+static void *fr_get_corr_paddr(uint32_t idx) {
+	return (void *) ((uint32_t) start_of_user_pages_phys + idx * PGSIZE);
 }
 
 void fr_init_tbl(void) {
@@ -124,8 +136,8 @@ static uint32_t evict_rand(void) { // TODO make sure not pinned
 	uint32_t ans;
 
 	do {
-		ans = ((uint32_t)timer_ticks() * 37) % num_user_pages;
-	} while(fr_is_pinned(&ftbl[ans]) || !fr_is_used(&ftbl[ans]));
+		ans = 1 + ((uint32_t)timer_ticks() * 37) % (num_user_pages - 1);
+	} while(fr_is_pinned(&ftbl[ans]));
 
 	return ans;
 }
@@ -160,7 +172,7 @@ void *fr_alloc_page(void *vaddr, enum pgtype type, bool writable,
 		struct ftbl_elem *to_evict = &ftbl[ev_idx];
 		ASSERT(is_user_vaddr(to_evict->corr_vaddr));
 
-		//printf("\n--> Going to evict frame at idx %d with corresponding virtual address %p and computed physical address %p\n",
+		//printf("--> Going to evict frame at idx %d with corresponding virtual address %p and computed physical address %p\n",
 		//		ev_idx, to_evict->corr_vaddr, (void *)((uint32_t) start_of_user_pages_phys
 		//				+ PGSIZE * ev_idx));
 
@@ -170,7 +182,8 @@ void *fr_alloc_page(void *vaddr, enum pgtype type, bool writable,
 
 			//printf("  --> about to write to DISK b/c mmapped. \n");
 
-			if(write(to_evict->fd, to_evict->corr_vaddr, PGSIZE) != PGSIZE) {
+			if(write(to_evict->fd, fr_get_corr_paddr(ev_idx), PGSIZE)
+					!= PGSIZE) {
 				PANIC("Couldn't page mmapped file to disk.");
 				NOT_REACHED();
 			}
@@ -183,7 +196,7 @@ void *fr_alloc_page(void *vaddr, enum pgtype type, bool writable,
 
 			//printf("--> about to put in swap b/c not mmapped. \n");
 
-			sidx = sp_put(to_evict->corr_vaddr);
+			sidx = sp_put(fr_get_corr_paddr(ev_idx));
 			if (sidx == BITMAP_ERROR) {
 				PANIC("Not enough room in swap.");
 				NOT_REACHED();
@@ -266,7 +279,7 @@ void *fr_alloc_page(void *vaddr, enum pgtype type, bool writable,
 	ftbl[idx].trailing_zeroes = num_trailing_zeroes;
 	ftbl[idx].mid = mid;
 
-	//printf("--> about to return from fr_alloc_page\n\n");
+	//printf("--> about to return from fr_alloc_page\n");
 
 	lock_release(&ftbl_lock);
 	return kpage;

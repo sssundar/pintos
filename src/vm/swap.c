@@ -42,6 +42,9 @@ void sp_init(void) {
    Returns true on success, false otherwise. */
 bool sp_get(unsigned long long idx, void *buf) {
 	lock_acquire(&swap_lock);
+
+	//printf("  --> in sp_get\n");
+
 	if (!bitmap_test(bmap, idx)) {
 		lock_release(&swap_lock);
 		return false;
@@ -57,7 +60,10 @@ bool sp_get(unsigned long long idx, void *buf) {
 }
 
 /* Store in the swap partition, returning the index of the slot. */
-unsigned long long sp_put(void *vaddr) {
+unsigned long long sp_put(void *paddr) {
+
+	//printf("  --> in sp_put\n");
+
 	unsigned long long idx = get_slot_index();
 	if (idx == BITMAP_ERROR) {
 		return idx;
@@ -73,7 +79,7 @@ unsigned long long sp_put(void *vaddr) {
     	block_write(
     			swap_file,
     			(block_sector_t) (SECTORS_PER_PAGE * idx + i),
-    			(void *) ((uint32_t) vaddr + i * BLOCK_SECTOR_SIZE));
+    			(void *) ((uint32_t) paddr + i * BLOCK_SECTOR_SIZE));
     }
 
     lock_release(&swap_lock);

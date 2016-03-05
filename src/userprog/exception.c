@@ -159,6 +159,8 @@ static void page_fault(struct intr_frame *f) {
 
     //------------------------ Virtual memory code ----------------------------
 
+    //printf("==> faulting address=%p\n", fault_addr);
+
     if (!is_user_vaddr(fault_addr)) {
 
     	// printf("==> why am i dying here??? faulting addr is %p\n", fault_addr);
@@ -175,6 +177,8 @@ static void page_fault(struct intr_frame *f) {
     // new page for the stack and install it, then exit the page fault handler.
     if (pg_is_valid_stack_addr(fault_addr, f->esp)) {
 
+    	void *base_of_page = (void *)((uint32_t)fault_addr & 0xFFFFF000);
+
         // Get the supplemental page corresponding to the faulting address.
         struct spgtbl_elem *s =
         		(struct spgtbl_elem *) pagedir_get_page(t->pagedir, fault_addr);
@@ -182,6 +186,9 @@ static void page_fault(struct intr_frame *f) {
         // If there's a supplemental page table entry already then it was
         // swapped to disk. Get it.
         if (s != NULL && s->swap_idx != BITMAP_ERROR) {
+
+        	//printf("  --> i am a stack addr and i was swapped to disk\n");
+
         	pg_release_pd();
         	void *kpage = fr_alloc_page(
         			(void *)(((uint32_t) fault_addr) & 0xFFFFF000),
@@ -191,12 +198,23 @@ static void page_fault(struct intr_frame *f) {
     			PANIC("Couldn't alloc user page in page fault handler.");
     			NOT_REACHED();
     		}
+
+    		//printf("--> right before spget\n");
 	    	if (!sp_get(s->swap_idx, kpage)) {
 	    		PANIC("Couldn't get page from swap.");
 	    		NOT_REACHED();
 	    	}
+	    	//printf("--> right after spget\n");
 			fr_unpin(kpage);
 			pg_release_pd();
+
+			//printf("--> done with page fault handler too!\n\n");
+
+			if (!pagedir_set_page(thread_current()->pagedir, base_of_page,
+					kpage, true, false)) {
+				PANIC("Couldn't install a new stack page.");
+				NOT_REACHED();
+			}
 	    	return;
         }
         else if (s != NULL) {
@@ -208,11 +226,11 @@ static void page_fault(struct intr_frame *f) {
 
         	// TODO note that Sushant changed code between here...
 
-			void *base_of_page = (void *)((uint32_t)fault_addr & 0xFFFFF000);
 			pg_release_pd();
 			void *kpage = fr_alloc_page(base_of_page, OTHER_PG, true, -1, 0);
 			pg_lock_pd();
-			if (!install_page(base_of_page, kpage, true, false)) {
+			if (!pagedir_set_page(thread_current()->pagedir, base_of_page,
+					kpage, true, false)) {
 				PANIC("Couldn't install a new stack page.");
 				NOT_REACHED();
 			}
@@ -264,7 +282,23 @@ static void page_fault(struct intr_frame *f) {
 			NOT_REACHED();
 		}
 
-
+		/*
+		switch(s->type) {
+		case EXECD_FILE_PG:
+		case MMAPD_FILE_PG:
+			printf("I'm exec'd or mmapped\n");
+			break;
+		case OTHER_PG:
+			printf("I'm other page\n");
+			break;
+		case ZERO_PG:
+			printf("I'm zero page\n");
+			break;
+		default:
+			printf("i'm ugly");
+			break;
+		}
+		*/
 
 
 		// If this address's page was swapped to disk then read it from there.
@@ -276,12 +310,11 @@ static void page_fault(struct intr_frame *f) {
 		}
 
 
-
-
 		// Handle the page based on its type.
 		else if (s->type == EXECD_FILE_PG || s->type == MMAPD_FILE_PG) {
 
 			struct file *src = s->src_file;
+
 
 			// If the file-descriptor isn't -1 we assume it was
 			// memory-mapped. Then we must look up info about the file using
@@ -331,6 +364,8 @@ static void page_fault(struct intr_frame *f) {
 
 		fr_unpin(kpage);
     }
+
+    //printf("--> we're done with page fault handler\n\n");
 
     pg_release_pd();
     // debug_helper(fault_addr, not_present, write, user);

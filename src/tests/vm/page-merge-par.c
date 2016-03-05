@@ -4,6 +4,5 @@
 void
 test_main (void) 
 {
-  // TODO UNCOMMENT THIS OR DIE.
-  // parallel_merge ("child-sort", 123);
+  //parallel_merge ("child-sort", 123);
 }

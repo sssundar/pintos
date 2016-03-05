@@ -21,15 +21,9 @@ test_main (void)
   msg ("initialize");
   memset (buf, 0x5a, sizeof buf);
 
-  printf("~~> After the memset.\n");
-
   /* Check that it's all 0x5a. */
   msg ("read pass");
   for (i = 0; i < SIZE; i++) {
-
-	  if (i % 4096 == 0)
-		  printf("~~> page %d in buf. accessing buf[%d], which is %p\n", i / 4096, i, (void *)(buf + i));
-
     if (buf[i] != 0x5a)
       fail ("byte %zu != 0x5a", i);
   }
