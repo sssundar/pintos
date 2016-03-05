@@ -10,6 +10,7 @@
 #include "vm/swap.h"
 #include "lib/kernel/bitmap.h"
 #include "threads/vaddr.h"
+#include "threads/thread.h"
 #include "threads/synch.h"
 #include "devices/block.h"
 
@@ -40,10 +41,8 @@ void sp_init(void) {
 
 /* If the given spot isn't empty, copies the page there to the given buffer.
    Returns true on success, false otherwise. */
-bool sp_get(unsigned long long idx, void *buf) {
-	lock_acquire(&swap_lock);
-
-	//printf("  --> in sp_get\n");
+bool sp_get(unsigned long long idx, void *buf) {	
+    lock_acquire(&swap_lock);
 
 	if (!bitmap_test(bmap, idx)) {
 		lock_release(&swap_lock);
@@ -60,21 +59,17 @@ bool sp_get(unsigned long long idx, void *buf) {
 }
 
 /* Store in the swap partition, returning the index of the slot. */
-unsigned long long sp_put(void *paddr) {
-
-	//printf("  --> in sp_put\n");
+unsigned long long sp_put(void *paddr) {	
 
 	unsigned long long idx = get_slot_index();
 	if (idx == BITMAP_ERROR) {
 		return idx;
-	}
+	}    
     lock_acquire(&swap_lock);
-
+    
     // We have found the index, now store it there.
     int i;
     for(i = 0; i < SECTORS_PER_PAGE; i++) {
-
-    	//printf("  --> writing block %d\n ", i);
 
     	block_write(
     			swap_file,
@@ -84,15 +79,13 @@ unsigned long long sp_put(void *paddr) {
 
     lock_release(&swap_lock);
 
-    //printf("  --> sp returning: %llu\n", idx);
-
     return idx;
 }
 
 /* Gets the next free swap index. */
-static unsigned long long get_slot_index(void) {
-    lock_acquire(&swap_lock);
-    size_t r = bitmap_scan_and_flip(bmap, 0, 1, false);
-    lock_release(&swap_lock);
+static unsigned long long get_slot_index(void) {    
+    lock_acquire(&swap_lock);    
+    size_t r = bitmap_scan_and_flip(bmap, 0, 1, false);    
+    lock_release(&swap_lock);    
     return (unsigned long long) r;
 }

@@ -18,8 +18,17 @@
 struct lock pglock;
 
 void pg_init(void) { lock_init(&pglock); }
-void pg_lock_pd(void) { lock_acquire(&pglock); }
-void pg_release_pd(void) { lock_release(&pglock); }
+void pg_lock_pd(void) { 
+	// printf("Thread %d trying to get pd lock.\n", thread_current()->tid);
+	// lock_acquire(&pglock); 	
+	// printf("Thread %d got pd lock.\n", thread_current()->tid);
+}
+
+void pg_release_pd(void) { 
+	// printf("Thread %d releasing pd lock.\n", thread_current()->tid);
+	// lock_release(&pglock);
+	// printf("Thread %d released pd lock.\n", thread_current()->tid);
+}
 
 /*! Allocate and populate a new supplemental page table element (SPGTE). Put
     it in kernel space instead of into a hash table. The caller should pack
@@ -28,8 +37,9 @@ void pg_release_pd(void) { lock_release(&pglock); }
 struct spgtbl_elem *pg_put(int mid, int fd, off_t ofs, void *paddr,
 		void *vaddr, struct file *file, uint32_t num_trailing_zeroes,
 		bool writable, enum pgtype type, unsigned long long swap_idx) {
+	
+	pg_lock_pd();	
 
-	pg_lock_pd();
 	struct spgtbl_elem *s = (struct spgtbl_elem *) malloc(
 	        		sizeof(struct spgtbl_elem));
 
@@ -72,7 +82,8 @@ struct spgtbl_elem *pg_put(int mid, int fd, off_t ofs, void *paddr,
 	s->type = type;
 	s->writable = writable;
 	s->swap_idx = swap_idx;
-	pg_release_pd();
+		
+	pg_release_pd();	
 
 	return s;
 }

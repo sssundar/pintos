@@ -67,9 +67,12 @@ void fr_use(void *paddr);
 void fr_unuse(void *paddr);
 void fr_pin(void *paddr);
 void fr_unpin(void *paddr);
-
+void ftbl_get_lock(void);
+void ftbl_release_lock(void);
 void fr_init_tbl(void);
 void *fr_alloc_page(void *vaddr, enum pgtype type, bool writable,
 		int mid, int num_trailing_zeroes);
+
+extern struct lock pglock;
 
 #endif /* SRC_VM_FRAME_H_ */

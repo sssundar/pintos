@@ -55,6 +55,19 @@ static bool fr_is_pinned(struct ftbl_elem *felem) {
 	return felem->flags & PIN_MASK;
 }
 
+
+void ftbl_get_lock (void) {
+	// printf("Thread %d trying to get ftbl lock.\n", thread_current()->tid);		
+	lock_acquire(&ftbl_lock);		
+	// printf("Thread %d got ftbl lock.\n", thread_current()->tid);
+}
+
+void ftbl_release_lock (void) {
+	// printf("Thread %d releasing ftbl lock.\n", thread_current()->tid);
+	lock_release(&ftbl_lock);
+	// printf("Thread %d released ftbl lock.\n", thread_current()->tid);
+}
+
 /*! Sets the pinned flag for the given frame. If it's set that means this frame
     can't be evicted. If it's not set then it can be evicted. The pinned flag
     can be set even if the page is empty; if it's empty and pinned then the
@@ -81,16 +94,16 @@ static void fr_set_used(struct ftbl_elem *felem, bool used) {
 }
 
 static void fr_use_helper(void *paddr, bool use) {
-	lock_acquire(&ftbl_lock);
+	ftbl_get_lock();
 	ASSERT(paddr != NULL);
 	uint32_t idx = fr_get_corr_idx(paddr);
 	ASSERT(idx < num_user_pages);
 	fr_set_used(&ftbl[idx], use);
-	lock_release(&ftbl_lock);
+	ftbl_release_lock();
 }
 
 static void fr_pin_helper(void *paddr, bool pin) {
-	lock_acquire(&ftbl_lock);
+	ftbl_get_lock();
 	ASSERT(paddr != NULL);
 	uint32_t idx = fr_get_corr_idx(paddr);
 	ASSERT(idx < num_user_pages);
@@ -102,7 +115,7 @@ static void fr_pin_helper(void *paddr, bool pin) {
 
 	//printf("  --> after fr_set_pin.\n");
 
-	lock_release(&ftbl_lock);
+	ftbl_release_lock();
 }
 
 void fr_use(void *paddr) { return fr_use_helper(paddr, true); }
@@ -159,28 +172,27 @@ void *fr_alloc_page(void *vaddr, enum pgtype type, bool writable,
 	// Note that if palloc returns a page then it's DEFINITELY free.
 	kpage = palloc_get_page(
 			PAL_USER | (type != ZERO_PG ? 0x00000000 : PAL_ZERO));
-
-	lock_acquire(&ftbl_lock);
+	
+	ftbl_get_lock();	
 
 	// If we didn't get a page then evict one.
 	uint32_t ev_idx = 0xFFFFFFFF; // Dummy, "sentinel" value.
-	if (kpage == NULL) {
-		//PANIC("NOT IMPLEMENTED YETTTTTTTTTTTTTTTTTT");
+	if (kpage == NULL) {		
 
 		// Get index in frame table to evict then get the frame table element.
 		ev_idx = evict_rand();
 		struct ftbl_elem *to_evict = &ftbl[ev_idx];
 		ASSERT(is_user_vaddr(to_evict->corr_vaddr));
 
-		//printf("--> Going to evict frame at idx %d with corresponding virtual address %p and computed physical address %p\n",
-		//		ev_idx, to_evict->corr_vaddr, (void *)((uint32_t) start_of_user_pages_phys
-		//				+ PGSIZE * ev_idx));
+		// printf("--> Going to evict frame at idx %d with corresponding virtual address %p and computed physical address %p\n",
+		// 		ev_idx, to_evict->corr_vaddr, (void *)((uint32_t) start_of_user_pages_phys
+		// 				+ PGSIZE * ev_idx));
 
 		// If memory-mapped page then write it to its file, not swap.
 		unsigned long long sidx;
 		if (to_evict->type == MMAPD_FILE_PG) {
 
-			//printf("  --> about to write to DISK b/c mmapped. \n");
+			printf("  --> about to write to DISK b/c mmapped. \n");
 
 			if(write(to_evict->fd, fr_get_corr_paddr(ev_idx), PGSIZE)
 					!= PGSIZE) {
@@ -192,7 +204,7 @@ void *fr_alloc_page(void *vaddr, enum pgtype type, bool writable,
 		// Write everything else to swap.
 		else {
 
-			//printf("--> about to put in swap b/c not mmapped. \n");
+			// printf("--> about to put in swap b/c not mmapped. \n");
 
 			sidx = sp_put(fr_get_corr_paddr(ev_idx));
 			if (sidx == BITMAP_ERROR) {
@@ -200,7 +212,7 @@ void *fr_alloc_page(void *vaddr, enum pgtype type, bool writable,
 				NOT_REACHED();
 			}
 
-			//printf("--> lololol\n");
+			// printf("--> lololol\n");
 
 		}
 
@@ -283,8 +295,7 @@ void *fr_alloc_page(void *vaddr, enum pgtype type, bool writable,
 	ftbl[idx].trailing_zeroes = num_trailing_zeroes;
 	ftbl[idx].mid = mid;
 
-	//printf("--> about to return from fr_alloc_page\n");
-
-	lock_release(&ftbl_lock);
+	//printf("--> about to return from fr_alloc_page\n");		
+	ftbl_release_lock();	
 	return kpage;
 }

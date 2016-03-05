@@ -401,10 +401,11 @@ static void idle(void *idle_started_ UNUSED) {
     sema_up(idle_started);
 
     for (;;) {
-        /* Let someone else run. */
+        /* Let someone else run. */        
         intr_disable();
         thread_block();
-
+        printf("idling\n");
+        PANIC("WHYYYYYY");
         /* Re-enable interrupts and wait for the next one.
 
            The `sti' instruction disables interrupts until the completion of

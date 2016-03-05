@@ -158,9 +158,9 @@ static void page_fault(struct intr_frame *f) {
     user = (f->error_code & PF_U) != 0;
 
     //------------------------ Virtual memory code ----------------------------
-
-    // printf("==> faulting address=%p\n", fault_addr);
     
+    // debug_helper(fault_addr, not_present, write, user); 
+
     if (!is_user_vaddr(fault_addr)) {
 
     	// printf("==> why am i dying here??? faulting addr is %p\n", fault_addr);
@@ -187,8 +187,7 @@ static void page_fault(struct intr_frame *f) {
 
       Then exit the page fault handler.
     */
-    if (pg_is_valid_stack_addr(fault_addr, f->esp)) {
-
+    if (pg_is_valid_stack_addr(fault_addr, f->esp)) {  
     	void *base_of_page = (void *)((uint32_t)fault_addr & 0xFFFFF000);
 
       /* Loop over the pages above us till we reach phys-base or an 
@@ -274,8 +273,7 @@ static void page_fault(struct intr_frame *f) {
   				return;
   			}  			        
       }
-    }
-
+    }    
 
     /* Not Stack Address */
     // If magic is missing then we couldn't find the supplemental page table
@@ -289,6 +287,12 @@ static void page_fault(struct intr_frame *f) {
     	exit(-1);
     }
 
+    if (write && !s->writable) {
+      /* Access Violation */
+      pg_release_pd();
+      exit(-1);
+    }
+
     if (not_present) {
     	pg_release_pd();
     	void *kpage = fr_alloc_page(
@@ -297,91 +301,90 @@ static void page_fault(struct intr_frame *f) {
     			s->trailing_zeroes);
     	pg_lock_pd();
 
-		if (kpage == NULL) {
-			PANIC("Couldn't alloc user page in page fault handler.");
-			NOT_REACHED();
-		}
+  		if (kpage == NULL) {
+  			PANIC("Couldn't alloc user page in page fault handler.");
+  			NOT_REACHED();
+  		}
 
-		/*
-		switch(s->type) {
-		case EXECD_FILE_PG:
-		case MMAPD_FILE_PG:
-			printf("I'm exec'd or mmapped\n");
-			break;
-		case OTHER_PG:
-			printf("I'm other page\n");
-			break;
-		case ZERO_PG:
-			printf("I'm zero page\n");
-			break;
-		default:
-			printf("i'm ugly");
-			break;
-		}
-		*/
+  		/*
+  		switch(s->type) {
+  		case EXECD_FILE_PG:
+  		case MMAPD_FILE_PG:
+  			printf("I'm exec'd or mmapped\n");
+  			break;
+  		case OTHER_PG:
+  			printf("I'm other page\n");
+  			break;
+  		case ZERO_PG:
+  			printf("I'm zero page\n");
+  			break;
+  		default:
+  			printf("i'm ugly");
+  			break;
+  		}
+  		*/
 
-		// If this address's page was swapped to disk then read it from there.
-		if (s->swap_idx != BITMAP_ERROR) { // TODO comment initially...
-	    	if (!sp_get(s->swap_idx, kpage)) {
-	    		PANIC("Couldn't get page from swap.");
-	    		NOT_REACHED();
-	    	}
-		}
+  		// If this address's page was swapped to disk then read it from there.
+  		if (s->swap_idx != BITMAP_ERROR) { // TODO comment initially...
+  	    	if (!sp_get(s->swap_idx, kpage)) {
+  	    		PANIC("Couldn't get page from swap.");
+  	    		NOT_REACHED();
+  	    	}
+  		}
+
+  		// Handle the page based on its type.
+  		else if (s->type == EXECD_FILE_PG || s->type == MMAPD_FILE_PG) {
+
+  			struct file *src = s->src_file;
 
 
-		// Handle the page based on its type.
-		else if (s->type == EXECD_FILE_PG || s->type == MMAPD_FILE_PG) {
+  			// If the file-descriptor isn't -1 we assume it was
+  			// memory-mapped. Then we must look up info about the file using
+  			// a syscall.
+  			if(s->fd != -1) {
+  				struct list_elem *l_dummy;
+  				struct mmap_element *m;
+  				pg_release_pd();
+  				m = find_matching_mmapped_file(s->mid, &l_dummy);
+  				if (m == NULL) {
+  					PANIC("what?");
+  				}
+  				pg_lock_pd();
+  				src = m->file;
+  			}
 
-			struct file *src = s->src_file;
+  			// Seek to correct offset in file and read.
+  			lock_acquire(&sys_lock);
+  			file_seek(src, s->offset);
+  			if (file_read(src, kpage, PGSIZE - s->trailing_zeroes)
+  					!= (int) (PGSIZE - s->trailing_zeroes)) {
+  				PANIC("Couldn't read page from file.");
+  				NOT_REACHED();
+  			}
+  			lock_release(&sys_lock);
 
+  			memset(kpage + (PGSIZE - s->trailing_zeroes),
+  					0, s->trailing_zeroes);
+  		}
+  		else if (s->type == ZERO_PG) {
+  			memset(kpage, 0, PGSIZE);
+  		}
+  		else if (s->type == OTHER_PG) {
+  			// TODO
+  		}
+  		else {
+  			PANIC("Impossible page type.");
+  			NOT_REACHED();
+  		}
 
-			// If the file-descriptor isn't -1 we assume it was
-			// memory-mapped. Then we must look up info about the file using
-			// a syscall.
-			if(s->fd != -1) {
-				struct list_elem *l_dummy;
-				struct mmap_element *m;
-				pg_release_pd();
-				m = find_matching_mmapped_file(s->mid, &l_dummy);
-				if (m == NULL) {
-					PANIC("what?");
-				}
-				pg_lock_pd();
-				src = m->file;
-			}
+  		// Overwrite the old page table entry.
+  		if (!pagedir_set_page(
+  				t->pagedir, s->vaddr, kpage, s->writable, false)) {
+  			PANIC("Couldn't install page in page fault handler.");
+  			NOT_REACHED();
+  		}
 
-			// Seek to correct offset in file and read.
-			lock_acquire(&sys_lock);
-			file_seek(src, s->offset);
-			if (file_read(src, kpage, PGSIZE - s->trailing_zeroes)
-					!= (int) (PGSIZE - s->trailing_zeroes)) {
-				PANIC("Couldn't read page from file.");
-				NOT_REACHED();
-			}
-			lock_release(&sys_lock);
-
-			memset(kpage + (PGSIZE - s->trailing_zeroes),
-					0, s->trailing_zeroes);
-		}
-		else if (s->type == ZERO_PG) {
-			memset(kpage, 0, PGSIZE);
-		}
-		else if (s->type == OTHER_PG) {
-			// TODO
-		}
-		else {
-			PANIC("Impossible page type.");
-			NOT_REACHED();
-		}
-
-		// Overwrite the old page table entry.
-		if (!pagedir_set_page(
-				t->pagedir, s->vaddr, kpage, s->writable, false)) {
-			PANIC("Couldn't install page in page fault handler.");
-			NOT_REACHED();
-		}
-
-		fr_unpin(kpage);
+  		fr_unpin(kpage);
     }
 
     //printf("--> we're done with page fault handler\n\n");
