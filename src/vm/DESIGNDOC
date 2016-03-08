@@ -20,17 +20,19 @@ Dave Luo <dluo@caltech.edu>
    on Moodle.)
 
    Repository URL: login.cms.caltech.edu:/cs/courses/cs124/teams/Curiosity 
-   commit TODO on branch jabberwocky
+   Commit: 
 
 ---- PRELIMINARIES ----
 
 >> If you have any preliminary comments on your submission, notes for the
 >> TAs, or extra credit, please give them here.
+
 None.
 
 >> Please cite any offline or online sources you consulted while
 >> preparing your submission, other than the Pintos documentation, course
 >> text, lecture notes, and course instructors.
+
 Wikipedia for various things. Google image search for pictures of page table
 entries. Stuff like that.
 
@@ -81,25 +83,10 @@ not required by the question.
 
 //------------------------------- Frame table ---------------------------------
 
-/*! Starting address of the user pages in physical memory. Initialized in
-    palloc.c. Used to translate from a frame table index to a kernel address
-    and vice versa.*/
-extern void *start_of_user_pages_phys;
-
-/*! Number of user pages in physical memory. Starting address of the user 
-    pages in physical memory. Initialized in palloc.c. Used to allocate the
-    correct number of frame table elements. */
-extern size_t num_user_pages;
-
-/*! The frame table array. Each page frame has one entry in this array. */
-struct ftbl_elem *ftbl;
-
-/*! This lock should be used whenever the frame table is used. */
-struct lock ftbl_lock;
-
 /*! The contents of a single frame table entry. */
 struct ftbl_elem {
-    /*!< Corresponding virtual address. */
+
+    /*! Corresponding virtual address. */
     void *corr_vaddr;           
 
     /*! Info about the owning thread including its page directory pointer,
@@ -114,14 +101,15 @@ struct ftbl_elem {
     uint32_t flags;
     
     /*! Type of the page associated with this frame. */
-    struct pgtype type;
+    enum pgtype type;
     
+    /*! True if writable page, false otherwise. */
     bool writable;
     
-    /*!< File descriptor for src file. -1 if none. */
+    /*! File descriptor for src file. -1 if none. */
     int fd;                 
     
-    /*!< Source file, could be null if none. */
+    /*! Source file, could be null if none. */
     struct file *src_file;  
     
     /*! The number of zeroes that follow the last bit of this page. Will be set
@@ -130,9 +118,24 @@ struct ftbl_elem {
         PGSIZE, inclusive. */
     uint32_t trailing_zeroes;
     
-    /*!< Offset in the corresponding src file. */
+    /*! Offset in the corresponding source file. */
     off_t offset;           
 };
+
+/*! Starting address of the user pages in physical memory. Initialized in
+    palloc.c. Used to translate from a frame table index to a kernel address
+    and vice versa. */
+extern void *start_of_user_pages_phys;
+
+/*! Number of user pages in physical memory. Initialized in palloc.c. Used to
+    allocate the correct number of frame table elements in a calloc call. */
+extern size_t num_user_pages;
+
+/*! The frame table array. Each page frame has one entry in this array. */
+struct ftbl_elem *ftbl;
+
+/*! This lock should be used whenever the frame table is used. */
+struct lock ftbl_lock;
 
 //------------------------- Supplemental page table ---------------------------
 
@@ -142,19 +145,23 @@ struct ftbl_elem {
     the stack. */
 enum pgtype { MMAPD_FILE_PG, EXECD_FILE_PG, ZERO_PG, OTHER_PG };
 
+/* A lock that was not used in the final submission but that seems necessary
+    It was in deadlock with ftbl_lock in our current implementation. */
+struct lock pglock;
+
 /*! Supplemental page table element. There is one of these per allocated page
     for each user process. Instead of putting these in a hash table we
     put them somewhere in kernel space then pack a pointer to each in its
     corresponding page table entry. */
 struct spgtbl_elem {
     void *paddr;            /*!< Physical address of this page. */
-    void *vaddr;            /*!< Virtual address of this page. "Key". */
+    void *vaddr;            /*!< Virtual address of this page. */
     bool writable;          /*!< If true is read/write, else is read only. */
     enum pgtype type;       /*!< The sort of page this is. */
-    int mid;                /*!< Mmap'd file id. */
+    int mid;                /*!< Mmap'd file ID. */
     int fd;                 /*!< File descriptor for src file. -1 if none. */
     struct file *src_file;  /*!< Source file, could be null if none. */
-    off_t offset;           /*!< Offset in the corresponding src file. */
+    off_t offset;           /*!< Offset in the corresponding source file. */
 
     /*! Sanity check in case supplemental page table isn't loaded correctly. */
     uint32_t magic;
@@ -189,12 +196,11 @@ loading, memory-mapping, or eviction, but before it's paged in, we allocate a
 supplementary page table entry and overwrite the PTE with its address. We
 depend on these addresses always being even to differentiate pointers in PTEs
 from normal PTEs. That is, we depend on the pointers having a least significant
-bit of 1. This is guaranteed by the malloc implementation because requested 
-sizes are rounded up to nonzero powers of two and because its pool's starting 
-address is page-aligned (and therefore even). Supplementary page table entries
-contain file information in case corresponding pages are from memory-mapped
-files, and they contain indices into the swap table in case corresponding pages
-were evicted.
+bit of 0. This is guaranteed by the malloc implementation because requested 
+regions are rounded up to sizes of nonzero powers of two and because regions
+are d-word aligned. Supplementary page table entries contain file information 
+in case corresponding pages are from memory-mapped files, and they contain 
+indices into the swap table in case corresponding pages were evicted.
 
 >> A3: How does your code coordinate accessed and dirty bits between
 >> kernel and user virtual addresses that alias a single frame, or
@@ -231,13 +237,8 @@ the corresponding PTE.
 >> `struct' member, global or static variable, `typedef', or
 >> enumeration.  Identify the purpose of each in 25 words or less.
 
-/* A lock to make sure swap was free for 8 consecutive sector writes */
+/* A lock to make sure swap is free for 8 consecutive sector writes. */
 struct lock swap_lock;
-/* A lock to make sure only one eviction was ongoing at a time */
-struct lock ftbl_lock;
-/* A lock that was not used in the final submission but that seems necessary
-    It was in deadlock with ftbl_lock in our current implementation. */
-struct lock pglock;
 
 /*! The bitmap used to find free swap slots. Bits are false if available, true
     if not. */
@@ -250,7 +251,7 @@ struct ftbl_elem {
     /*! Owned by frame.c. */
     /**@{*/
 
-    void *corr_vaddr;           /*!< Corresponding virtual address. */
+    void *corr_vaddr;       /*!< Corresponding virtual address. */
 
     /*! Info about the owning thread including its page directory pointer,
         which is needed to access the dirty and accessed bits in the
@@ -267,9 +268,9 @@ struct ftbl_elem {
      */
     uint32_t flags;
 
-    int mid;                /*! Memory mapped file ID, -1 if not present. */
-    enum pgtype type;       /*! Type of the page associated with this frame. */
-    bool writable;          /*! Whether this frame is writable. */
+    int mid;                /*!< Memory mapped file ID, -1 if not present. */
+    enum pgtype type;       /*!< Type of page associated with this frame. */
+    bool writable;          /*!< Whether this frame is writable. */
 
     //--------------------- File related data below ---------------------------
     int fd;                 /*!< File descriptor for src file. -1 if none. */
@@ -291,9 +292,10 @@ struct ftbl_elem {
 >> B2: When a frame is required but none is free, some frame must be
 >> evicted.  Describe your code for choosing a frame to evict.
 
-We currently use a pseudo-random eviction process. Getting concurrency
-to work well was more important than efficient eviction (since one is
-considerably harder than the other). We prioritized accordingly.
+We're doing random eviction right now. See "uint32_t evict_rand(void)". 
+We implemented random eviction to get the basic swap table functionality
+working then tried to implement a more sophisticated eviction strategy but
+ran out of time.
 
 >> B3: When a process P obtains a frame that was previously used by a
 >> process Q, how do you adjust the page table (and any other data
@@ -312,7 +314,7 @@ We defined a stack size of 8mb. All accesses that are between PHYS_BASE and
 8mb below that and which are within 32 bytes of the stack pointer are
 considered good "stack growth" candidates. Obviously accesses much above esp
 are valid, but they would either result in normal accesses or would force an
-evicted page back into memory from swap. They shouldn't expand the stack down.
+evicted page back into memory from swap.
 
 ---- SYNCHRONIZATION ----
 
@@ -321,13 +323,15 @@ evicted page back into memory from swap. They shouldn't expand the stack down.
 >> textbook for an explanation of the necessary conditions for
 >> deadlock.)
 
-We were just extremely conservative and had global page directory and 
-filesystem locks. Whenever PTEs are inspected or changed we use a lock, and
-whenever we write or read from disk we get a lock on the filesystem. There is
-probably room for more parallelism but our implementation seems fast and
-doesn't deadlock. The 'necessary and sufficient conditions' for deadlock are 
-avoided because of the sequential and careful use of waiting locks. Much of
-that code was written for the previous project.
+We were just conservative and had global page directory and filesystem locks. 
+Whenever PTEs are inspected or changed we use a lock, and whenever we write or
+read from disk we get a lock on the filesystem. However deadlock is the reason
+that the following tests fail (we fail 4/109):
+
+  - page-parallel
+  - page-merge-par
+  - page-merge-stk
+  - page-merge-mm
 
 >> B6: A page fault in process P can cause another process Q's frame
 >> to be evicted.  How do you ensure that Q cannot access or modify
@@ -363,7 +367,7 @@ done with a volatile dummy variable:
   // ... 
   dummy = *((uint32_t *)addr);
   
-In mmap we don't actually load anything either; when the user accesse memory
+In mmap we don't actually load anything either; when the user accessea memory
 in an mmapped region we just wait for page faults to lazily load data.
 Accesses to invalid addresses are dealt with in the page fault handler.
 Since an invalid access or write in a real program generates a segfault 
@@ -379,8 +383,8 @@ expect.
 >> along this continuum and why you chose to design it this way.
 
 We have a single lock for critical code related to page directories. The
-lock is invoked in only small sections of code, so I'm pretty sure that 
-enables quite a bit of parallelism. There is probably a lot of room for
+lock is invoked in only small sections of code, so we're pretty sure that 
+enables quite a bit of parallelism. There is likely a lot of room for
 improvement.
 
              MEMORY MAPPED FILES
@@ -394,21 +398,20 @@ improvement.
 
 /*! Element in per-thread list of memory-mapped files. */
 struct mmap_element {
-    int mid;
-    int fd;
-    void *addr;
-    struct file *file;
-    size_t size;
-    struct list_elem m_elem;
+    int mid;                  /*!< Memory-mapped file ID. */
+    int fd;                   /*!< File descriptor. */
+    void *addr;               /*!< Address of start of memory-mapped region. */
+    struct file *file;        /*!< File pointer. */
+    size_t size;              /*!< Size of corresponding file. */
+    struct list_elem m_elem;  
 };
 
 /*! This is the kernel thread/user process struct that come with Pintos.
     It's been modified to contain a list of memory mapped files. */
 struct thread {
     // ...
-
-    /*! List of all memory-mapped files. */
-    struct list mmapped_files;
+    
+    struct list mmapped_files; /*!< List of all memory-mapped files. */
     
     // ...
 };
@@ -441,8 +444,8 @@ case we make the mapping fail.
 >> the two situations.
 
 The code could probably be coalesced a bit: a lot is duplicated. The mmap 
-code has more edge and corner cases checked than load_segment, so we didn't 
-try very hard to consolidate because we were sort on time :-).
+code has more edge and corner cases checked than load_segment, but we didn't 
+try very hard to consolidate because we were short on time :-).
 
                SURVEY QUESTIONS
                ================
