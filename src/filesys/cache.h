@@ -6,6 +6,9 @@
 #include "devices/block.h"
 #include "lib/kernel/list.h"
 
+
+/* ############# Constants ############### */
+
 /* Sizing in memory of the cache of disk sectors for files */
 #define NUM_DISK_SECTORS_CACHED 64
 #define NUM_DISK_CACHE_PAGES 8
@@ -15,6 +18,8 @@ typedef uint32_t cache_sector_id;
     vs write-ahead, vs. normal operation). Works only because we have
     a tiny disk (8MB) cap. */
 #define SILLY_OLD_DISK_SECTOR (block_sector_t) 0xFFFFFFFF
+
+/* ############# Structures ############### */
 
 /*! Cache Meta^2 Data, containing flags and locks useful for concurrent 
     reading/writing access, and eviction. */
@@ -43,24 +48,10 @@ struct cache_meta_data {
             blocks threads waiting for the current disk sector */
 };
 
-/*! Initialize the disk cache and cache meta^2 data (different than inode
-    meta data). Must be called after kernel pages have been allocated. 
+/* ############# Stubs ############### */
 
-    This function will either succeed or panic the kernel. */
 void file_cache_init(void);
-
-/*! The file system read/write calls see this as their interface to the cache.
-    It synchronously checks whether (t) is in our cache. If it is, it returns
-    its ID. If it isn't, it tries to allocate a free cache sector with 
-    that disk sector. If it fails, it attempts an eviction. The upshot is
-    this call will either succeed or panic the kernel. 
-
-    After this call the caller may acquire the read/write/evict lock,
-    though no guarantees are made as to whether the intended sector is in
-    the cache at the returned location, as we're Golden-Rule crabbing, 
-    releasing locks quickly. */
 cache_sector_id crab_into_cached_sector(block_sector_t t);
-
-
+void crab_outof_cached_sector(cache_sector_id c);
 
 #endif /* filesys/cache.h */

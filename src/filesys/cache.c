@@ -82,7 +82,31 @@ bool try_allocating_free_cache_sector(cache_sector_id* c);
 cache_sector_id select_cache_sector_for_eviction(void);
 void evict_cached_sector (cache_sector_id* c);
 
-/*! The file system read/write calls see this as their interface to the cache.
+/*! The system calls use file_read/write which use inode_read/write, which
+    use block_read/write with target sectors.
+
+    This is the wrapper for the cache that inode uses. We deal with block_read
+    and block_write, and inode gets to work with a buffer in memory.
+
+    So this function is part of the interface to the cache.
+    It implements a cache_lock-check-release-sector_lock-act crabbing mechanism.
+    The caller can assume that when a cache sector is returned, it contains
+    the correct sector and that they have been granted a lock to act on it
+    as specified in readnotwrite. 
+
+    The catch is that the caller must be sure to crab out of the sector when
+    they're done with it. 
+
+    The idea is that readahead, writebehind, eviction, swapping, these all
+    happen under the hood of this function. The inode functions just worry about
+    how to interpret files, how to extend them, etc. but when they want to 
+    actually do reads/writes, they come here and can assume the cache has
+    what they need.
+
+    The requested sector on disk, t, must already exist on the free-space map 
+    of the disk ==TODO== What about file extension?
+    
+    ==TODO== The operation below doesn't yet meet the spec above.
     It synchronously checks whether (t) is in our cache. If it is, it returns
     its ID. If it isn't, it tries to allocate a free cache sector with 
     that disk sector. If it fails, it attempts an eviction. The upshot is
@@ -92,10 +116,19 @@ void evict_cached_sector (cache_sector_id* c);
     though no guarantees are made as to whether the intended sector is in
     the cache at the returned location, as we're Golden-Rule crabbing, 
     releasing locks quickly. */
-cache_sector_id crab_into_cached_sector(block_sector_t t) {
+cache_sector_id crab_into_cached_sector(block_sector_t t, bool readnotwrite) {
     //==TODO== IMPLEMENT
-    
+
     return 0;
+}
+
+/*! Go to the read/write/diskio lock for the cache sector in question
+    and appropriately and synchronously reduce the read/write counts
+    to indicate you're no longer accessing the sector in question.
+
+    Handle the case of being the last reader, or writer. */
+void crab_outof_cached_sector(cache_sector_id c, bool readnotwrite) {
+    //==TODO== IMPLEMENT
 }
 
 /*! Bring in a sector (t) from the disk to our cache at index (c).
