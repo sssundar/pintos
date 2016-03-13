@@ -39,6 +39,7 @@
 
 #ifdef FILESYS
 
+#include "threads/synch.h"
 #include "devices/block.h"
 #include "devices/ide.h"
 #include "filesys/filesys.h"

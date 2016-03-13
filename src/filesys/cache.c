@@ -6,7 +6,11 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+
 #include <debug.h>
+#include <stdio.h>
+#include <string.h>
+
 #include "devices/block.h"
 #include "lib/kernel/list.h"
 #include "threads/synch.h"
@@ -76,7 +80,9 @@ void file_cache_init(void) {
 
     struct cache_meta_data *meta_walker = supplemental_filesystem_cache_table;
     void *fs_cache = file_system_cache;
-    for (int k = 0; k < NUM_DISK_SECTORS_CACHED; k++) {        
+
+    int k;
+    for (k = 0; k < NUM_DISK_SECTORS_CACHED; k++) {        
         meta_walker->cid = k;
         meta_walker->head_of_sector_in_memory = fs_cache;
         meta_walker->cache_sector_free = true;
@@ -186,9 +192,10 @@ cache_sector_id crab_into_cached_sector(block_sector_t t, bool readnotwrite) {
     
         lock_acquire(&allow_cache_sweeps);
     
-        for (int k = 0; k < NUM_DISK_SECTORS_CACHED; k++) {        
+        int k;
+        for (k = 0; k < NUM_DISK_SECTORS_CACHED; k++) {        
     
-            if (!meta_walker->free) {                
+            if (!meta_walker->cache_sector_free) {                
     
                 if ( (!meta_walker->cache_sector_evicters_ignore &&
                         (meta_walker->current_disk_sector == t) ) ||
@@ -342,9 +349,9 @@ cache_sector_id crab_into_cached_sector(block_sector_t t, bool readnotwrite) {
 
             lock_acquire(&allow_cache_sweeps);
 
-            &(meta_walker+target)->cache_sector_accessed = false;
-            &(meta_walker+target)->cache_sector_dirty = false;
-            &(meta_walker+target)->old_disk_sector = SILLY_OLD_DISK_SECTOR;
+            (meta_walker+target)->cache_sector_accessed = false;
+            (meta_walker+target)->cache_sector_dirty = false;
+            (meta_walker+target)->old_disk_sector = SILLY_OLD_DISK_SECTOR;
 
             /* IRRELEVANT: Read = True, Write = False */
             /* DiskIO = True, CacheRW = False */
@@ -402,8 +409,9 @@ bool try_allocating_free_cache_sector(cache_sector_id* c, block_sector_t t) {
     
     meta_walker = supplemental_filesystem_cache_table; /* Base */
     
-    for (int k = 0; k < NUM_DISK_SECTORS_CACHED; k++) {        
-        if (meta_walker->free) {            
+    int k;
+    for (k = 0; k < NUM_DISK_SECTORS_CACHED; k++) {        
+        if (meta_walker->cache_sector_free) {            
             meta_walker->cache_sector_free = false;
             meta_walker->cache_sector_evicters_ignore = true;
             meta_walker->current_disk_sector = t;
@@ -463,7 +471,8 @@ void select_cache_sector_for_eviction(cache_sector_id *c, block_sector_t t) {
 
     while (!found_an_eviction_candidate) {
         
-        for (int k = 0; k < NUM_DISK_SECTORS_CACHED; k++) {            
+        int k;
+        for (k = 0; k < NUM_DISK_SECTORS_CACHED; k++) {            
             
             if (    !(meta_walker+cache_head)->cache_sector_evicters_ignore ) {
                 
@@ -519,8 +528,7 @@ void push_sector_from_cache_to_disk(block_sector_t t, cache_sector_id c) {
     block_write(
         fs_device, 
         t, 
-        (const void *) (supplemental_filesystem_cache_table
-                            +c)->head_of_sector_in_memory
+        (supplemental_filesystem_cache_table+c)->head_of_sector_in_memory
         );
 }
 
@@ -537,8 +545,7 @@ void pull_sector_from_disk_to_cache(block_sector_t t, cache_sector_id c) {
     block_read(
         fs_device, 
         t, 
-        (const void *) (supplemental_filesystem_cache_table
-                            +c)->head_of_sector_in_memory
+        (supplemental_filesystem_cache_table+c)->head_of_sector_in_memory
         );
 }
 
