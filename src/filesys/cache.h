@@ -69,5 +69,6 @@ cache_sector_id crab_into_cached_sector(block_sector_t t, bool readnotwrite);
 void crab_outof_cached_sector(cache_sector_id c, bool readnotwrite);
 void cache_read(cache_sector_id src, void *dst, int offset, size_t bytes);
 void cache_write(cache_sector_id dst, void *src, int offset, int bytes);
+void *get_cache_sector_base_addr(cache_sector_id c);
 
 #endif /* filesys/cache.h */

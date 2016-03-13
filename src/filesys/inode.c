@@ -44,14 +44,21 @@ struct inode {
 static block_sector_t byte_to_sector(const struct inode *inode, off_t pos) {
     ASSERT(inode != NULL);
 
+    block_sector_t result; 
+    
     cache_sector_id src = crab_into_cached_sector(inode->sector, true);    
-    cache_read(src, buffer + bytes_read, sector_ofs, chunk_size);
-    crab_outof_cached_sector(src, true);
+    
+    struct inode_disk *data = 
+        (struct inode_disk *) get_cache_sector_base_addr(src);            
+    
+    if (pos < data->length)
+        result = data->start + pos / BLOCK_SECTOR_SIZE;
+    else 
+        result = -1;
+    
+    crab_outof_cached_sector(src, true);        
 
-    if (pos < inode->data.length)
-        return inode->data.start + pos / BLOCK_SECTOR_SIZE;
-    else
-        return -1;
+    return result;
 }
 
 /*! List of open inodes, so that opening a single inode twice
@@ -156,17 +163,31 @@ void inode_close(struct inode *inode) {
     if (--inode->open_cnt == 0) {
         /* Remove from inode list and release lock. */
         list_remove(&inode->elem);
- 
+        
         /* Deallocate blocks if removed. */
         if (inode->removed) {
+
+            block_sector_t start;
+            off_t length; 
+
+            cache_sector_id src = crab_into_cached_sector(inode->sector, true);        
+            
+            struct inode_disk *data = 
+                (struct inode_disk *) get_cache_sector_base_addr(src);             
+
+            start = data->start;
+            length = data->length;
+
+            crab_outof_cached_sector(src, true);        
+
             free_map_release(inode->sector, 1);
-            free_map_release(inode->data.start,
-                             bytes_to_sectors(inode->data.length)); 
+            free_map_release(start,
+                             bytes_to_sectors(length)); 
         }
 
         free(inode); 
     }
-}
+}    
 
 /*! Marks INODE to be deleted when it is closed by the last caller who
     has it open. */
