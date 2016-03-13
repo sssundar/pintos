@@ -45,7 +45,7 @@ int get_user (const uint8_t *uaddr) {
     if (is_user_vaddr(uaddr)) {
 	    void *kaddr = pagedir_get_page(thread_current()->pagedir, uaddr);
 	    if (kaddr != NULL) {
-	        result = (int) ( *((uint8_t *) kaddr) & ((unsigned int) 0xFF));        
+	        result = (int) ( *((uint8_t *) uaddr) & ((unsigned int) 0xFF));        
 	    } 	
     }   
     return result;   

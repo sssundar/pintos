@@ -39,10 +39,12 @@
 
 #ifdef FILESYS
 
+#include "threads/synch.h"
 #include "devices/block.h"
 #include "devices/ide.h"
 #include "filesys/filesys.h"
 #include "filesys/fsutil.h"
+#include "filesys/cache.h"
 
 #endif
 
@@ -134,7 +136,7 @@ int main(void) {
 #endif
 
     printf("Boot complete.\n");
-
+    
     /* Run actions specified on kernel command line. */
     run_actions(argv);
 

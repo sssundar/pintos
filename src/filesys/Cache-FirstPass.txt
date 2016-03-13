@@ -1,0 +1,94 @@
+--------------------------------------------------------------------------------
+CS124 - Project 6
+Getting Started: Filesystem Cache
+Goal: First Pass, Testing Caching, Eviction, Concurrency, and Wrappers 
+This Document Contains: A Few To Do's
+--------------------------------------------------------------------------------
+
+-- Maintain the global filesystem lock on first pass
+	Remove system call sys_locks on second pass
+
+-- Modify inode read/write/create/seek/tell calls 
+	-- Known Callers:	
+		free-map.c -> bitmap.c -> file.c -> inode.c 
+		syscall.c -> file.c -> inode.c
+
+	-- First Pass Implementations Needing Adjustment in Second Pass		
+		inode_read_at
+		inode_write_at
+			Currently
+				Still uses contiguous file structures, but now looks to cache, crabbing in and out.				
+				Good enough for first pass.
+			Eventually,
+				Need traversals of inode index (encapsulate an "n-th sector" search in a function)						
+
+		free map & bitmap concurrency
+			Currently,
+				Rely heavily on global filesystem lock
+				bitmap flips are not atomic with scans
+			Eventually,
+				Need to resolve the following issue:
+				if a thread removes sectors from the free map, then another allocates those, and both are blocked
+				on writing changes to file, we might change the order of operations and wipe files from memory
+				i think we need synchronized accesses to the free-map - all the way through writing to disk
+				it's a global lock, then - bad! 
+
+				an alternative is to use the local copy of the free map, and only write to disk on write-back
+				faster return to concurrency, but more prone to losing files if the system crashes.
+					would need to copy consistent state of disk before write-back, so allocate two free-maps, one
+					as a buffer? or just write it over as is, and expect background journaling (not implemented)
+					to look for dead ends?
+
+	-- Functionality Still To Implement
+		Mentality: Inode accesses always flow through the cache (predictable memory utilization, potentially faster)		
+		Cache should be the only one calling block anything.		
+
+		inode_open
+			Currently,	
+				inode->data has been removed.
+				Am changing all inode accesses to ->data to reference the index sector instead. 				
+			Eventually,
+				needs to become thread safe. searches of the inode list must be atomic.
+
+		inode_close
+			inode should not have a data->start since it isn't useful once we have indexed inodes
+			we need to implement a linear traversal of the inode data to free it when the inode is removed
+			otherwise we can do nothing; write-behind will take care of writeback, we can be lazy
+
+			removal is tricky.
+				we can set the removal flag, then whoever closes an inode captures an inode_access lock
+				then if we're the last to hold the inode, and we try to close, we don't release the lock quickly,
+				so other's can't open it, and we systematically remove the file from directory structures, from
+				the free map, and from the cache. with the cache, we need to be careful. we don't want it getting
+				written behind us to disk if it's not allocated. but concurrency means someone else might
+				allocate the same block after we deallocate but before write-behind has realized the cache entry
+				was deleted from disk. so we need to quickly sweep the cache (with a lock) before we release the free-map
+				to make sure we flag all related entries as "do not write back" and then we can remove from the free map
+				at our leisure, in reverse order (remove the on-disk inode base index last). 
+
+		inode_create 
+			Currently,
+				uses bitmap'd free map to allocate several contiguous sectors for a new file at once
+				uses block_write to get these on disk along with the inode
+			Eventually,				
+				allocate one sector for new file inode, none for data, regardless of length specified
+				use cache_write with the inode in question
+					with a flag saying "never been allocated before, 
+					so don't try to get from disk, just make room"
+				rely on eviction and write-behind to get it on disk
+				rely on file extention and indexing for demand-allocation of data sectors
+					for example, inode index has linear ordering, so if an entry is silly, allocate it then, and fill it with zeros.
+
+
+Future Problems
+---------------
+
+More than 64 concurrent evictions attempted. Currently, panic.
+In current flow, can't queue evictions - only hold "current, old" memory
+
+Must make sure intentional and inadvertant exit()s close all open files.
+
+Not handling journaling + robustness to system crashes, yet. 
+
+Write-behind needs to modify dirty bit.
+
