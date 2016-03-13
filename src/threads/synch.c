@@ -315,3 +315,182 @@ void cond_broadcast(struct condition *cond, struct lock *lock) {
         cond_signal(cond, lock);
 }
 
+/*! Initializes a file sector read/write lock. */
+void rw_init(struct rwlock *rwlock) {
+	ASSERT(rwlock != NULL);
+
+	cond_init(&rwlock->rcond);
+	cond_init(&rwlock->wcond);
+	lock_init(&rwlock->lock);
+
+	rwlock->num_waiting_readers = 0;
+	rwlock->num_waiting_writers = 0;
+	rwlock->num_current_readers = 0;
+	rwlock->mode = UNLOCKED;
+}
+
+/*! Acquires the given read/write lock as a reader if READ is true or as a
+    writer if READ is false. Waits if necessary. Ensures fairness by e.g.
+    making a (new) reader wait if a writer is waiting for some (old) readers
+    to finish.
+
+    TODO If EVICT is true then... */
+void rw_acquire(struct rwlock *rwlock, bool read, bool evict) {
+	ASSERT(rwlock != NULL);
+
+	lock_acquire(&rwlock->lock);
+	switch (rwlock->mode) {
+	case UNLOCKED:
+		ASSERT(rwlock->num_waiting_readers == 0);
+		ASSERT(rwlock->num_waiting_writers == 0);
+		/* If the mode is UNLOCKED then just acquire the lock. */
+		if (read)
+			rwlock->mode = RLOCKED;
+		else
+			rwlock->mode = WLOCKED;
+		break;
+	case RLOCKED:
+		/*
+		If the mode is RLOCKED, no writers are blocked, and a new readers tries
+		to get the lock then it gets it immediately.
+
+	    If the mode is RLOCKED, no writers are blocked, and a writer tries to
+	    get the lock then it blocks until the readers are done. But if a new
+	    reader comes along it must wait for the writer to finish. */
+		if (read) {
+			if (rwlock->num_waiting_writers == 0) {
+				// Just join the pool of readers and exit. This means doing
+				// nothing here.
+			}
+			else {
+				rwlock->num_waiting_readers++;
+				do {
+					cond_wait(&rwlock->rcond, &rwlock->lock);
+				} while(rwlock->mode != RLOCKED);
+				rwlock->num_waiting_readers--;
+				ASSERT(rwlock->mode == RLOCKED);
+			}
+		}
+		else {
+			rwlock->num_waiting_writers++;
+			do {
+				cond_wait(&rwlock->wcond, &rwlock->lock);
+			} while (rwlock->mode != WLOCKED);
+			rwlock->num_waiting_writers--;
+			ASSERT(rwlock->mode == WLOCKED);
+		}
+		break;
+	case WLOCKED:
+		/*
+		If the mode is WLOCKED and a writer tries to get the lock then it
+		blocks until the original writer is finished. But if a reader is
+		waiting too then the reader gets the lock before the new writer
+		does. */
+		if (read) {
+			rwlock->num_waiting_readers++;
+			do {
+				cond_wait(&rwlock->rcond, &rwlock->lock);
+			} while(rwlock->mode != RLOCKED);
+			rwlock->num_waiting_readers--;
+			ASSERT(rwlock->mode == RLOCKED);
+		}
+		else {
+			rwlock->num_waiting_writers++;
+			do {
+				cond_wait(&rwlock->wcond, &rwlock->lock);
+			} while (rwlock->mode != WLOCKED);
+			rwlock->num_waiting_writers--;
+			ASSERT(rwlock->mode == WLOCKED);
+		}
+		break;
+	case PENDING_EVICTION:
+		// TODO
+		break;
+	default:
+		PANIC("Unexpected rwlock mode while acquiring a read/write lock.");
+		NOT_REACHED();
+		break;
+	}
+
+	if (read) {
+		rwlock->num_current_readers++;
+	}
+
+	lock_release(&rwlock->lock);
+}
+
+/*! Releases the given read/write lock as a reader if READ is true or as a
+    writer if READ is false. Ensures fairness by e.g. signaling the appropriate
+    reader or writer to wake up and acquire the r/w lock.
+
+ 	TODO If EVICT is true then...
+ */
+void rw_release(struct rwlock *rwlock, bool read, bool evict) {
+	ASSERT(rwlock != NULL);
+
+	lock_acquire(&rwlock->lock);
+	switch (rwlock->mode) {
+	case UNLOCKED:
+		// Can't release a lock if the mode is UNLOCKED...
+		PANIC("Can't release unlocked lock!");
+		NOT_REACHED();
+		break;
+	case RLOCKED:
+		// Must be a reader to release from an RLOCKED state.
+		ASSERT(read);
+		// A reader is finishing so decrement the number of current ones.
+		rwlock->num_current_readers--;
+		if (rwlock->num_waiting_writers == 0
+				&& rwlock->num_waiting_readers == 0) {
+			// Don't need to signal anyone.
+			if (rwlock->num_current_readers == 0)
+				rwlock->mode = UNLOCKED;
+		}
+		else if (rwlock->num_waiting_writers == 0
+				&& rwlock->num_waiting_readers > 0) {
+			// This case might happen when there is are some writers who
+			// release the rwlock, wake up a pool of readers, then right
+			// before that pool acquires the rwlock's monitor another reader
+			// SWOOPS IN and grabs the monitor. It then starts to wait.
+			// When the pool of readers finishes it comes here and sees OMG
+			// there's a waiting reader. Weird, but whatever I'll signal him.
+			cond_broadcast(&rwlock->rcond, &rwlock->lock);
+		}
+		else { // If there are some waiting writers...
+			// ...signal one of them to wake up if we're the last reader.
+			if (rwlock->num_current_readers == 0) {
+				rwlock->mode = WLOCKED;
+				cond_signal(&rwlock->wcond, &rwlock->lock);
+			}
+		}
+		break;
+	case WLOCKED:
+		// Must be a writer to release from a WLOCKED state.
+		ASSERT(!read);
+		if (rwlock->num_waiting_writers == 0
+				&& rwlock->num_waiting_readers == 0) {
+			// Don't need to signal anyone.
+			rwlock->mode = UNLOCKED;
+		}
+		// If there are any waiting readers at all then we transfer control to
+		// them after this writer finishes.
+		else if (rwlock->num_waiting_readers > 0) {
+			rwlock->mode = RLOCKED;
+			cond_broadcast(&rwlock->rcond, &rwlock->lock);
+		}
+		// If there are some waiting writers but NO waiting readers then...
+		else {
+			// ...signal one waiting writer to wake up.
+			cond_signal(&rwlock->wcond, &rwlock->lock);
+		}
+		break;
+	case PENDING_EVICTION:
+		// TODO
+		break;
+	default:
+		PANIC("Unexpected rwlock mode while releasing a read/write lock.");
+		NOT_REACHED();
+		break;
+	}
+	lock_release(&rwlock->lock);
+}
