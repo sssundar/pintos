@@ -43,6 +43,11 @@ struct inode {
     POS. */
 static block_sector_t byte_to_sector(const struct inode *inode, off_t pos) {
     ASSERT(inode != NULL);
+
+    cache_sector_id src = crab_into_cached_sector(inode->sector, true);    
+    cache_read(src, buffer + bytes_read, sector_ofs, chunk_size);
+    crab_outof_cached_sector(src, true);
+
     if (pos < inode->data.length)
         return inode->data.start + pos / BLOCK_SECTOR_SIZE;
     else

@@ -28,20 +28,6 @@ struct lock {
     struct semaphore semaphore; /*!< Binary semaphore controlling access. */
 };
 
-
-
-
-/*==TODO== Included as stubs so cache.* can compile. Hamik, replace at will.*/
-struct rwlock {
-	int filler;
-};
-void rw_init(struct rwlock*);
-void rw_acquire(struct rwlock*, bool, bool);
-void rw_release(struct rwlock*, bool, bool);
-/*==TODO== Included as stubs so cache.* can compile. Hamik, replace at will.*/
-
-
-
 void lock_init(struct lock *);
 void lock_acquire(struct lock *);
 bool lock_try_acquire(struct lock *);
