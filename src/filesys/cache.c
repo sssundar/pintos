@@ -129,6 +129,40 @@ void mark_cache_sector_as_accessed(cache_sector_id c) {
     lock_release(&allow_cache_sweeps);
 }
 
+/*! Accessor. Assumes appropriate rw_lock held. 
+    Reads BYTES bytes from file cache sector SRC into DST, 
+    starting at position (OFFSET > 0) in SRC. */
+void cache_read(cache_sector_id src, void *dst, int offset, size_t bytes) {
+
+    ASSERT(offset+bytes-1 < BLOCK_SECTOR_SIZE);
+
+    ASSERT(offset > 0);
+    ASSERT(bytes > 0);
+
+    memcpy(dst, 
+            (void *) (  (uint32_t) (supplemental_filesystem_cache_table+
+                                    src)->head_of_sector_in_memory + 
+                        (uint32_t) offset), 
+            bytes);
+}
+
+/*! Accessor. Assumes appropriate rw_lock held. 
+    Writes BYTES bytes from BUFFER into file cache sector C 
+    starting at position OFFSET in C. */
+void cache_write(cache_sector_id dst, void *src, int offset, int bytes) {
+
+    ASSERT(offset+bytes-1 < BLOCK_SECTOR_SIZE);
+
+    ASSERT(offset > 0);
+    ASSERT(bytes > 0);
+
+    memcpy((void *) (   (uint32_t) (supplemental_filesystem_cache_table+
+                                    dst)->head_of_sector_in_memory + 
+                        (uint32_t) offset), 
+            src
+            bytes);
+}
+
 /*! Must be called after acquiring a r/w lock. Verifies that the intended
     disk sector is in residence in the cache sector locked. Given that
     the r/w lock is held, there is no question of the cache being in-eviction 
