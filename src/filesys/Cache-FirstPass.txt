@@ -5,30 +5,67 @@ Goal: First Pass, Testing Caching, Eviction, Concurrency, and Wrappers
 This Document Contains: A Few To Do's
 --------------------------------------------------------------------------------
 
-Maintain the global filesystem lock (will be removed on second pass)
+Maintain the global filesystem lock on first pass
+	Remove system call sys_locks on second pass
 
-Modify inode read/write/seek/tell calls as called by file.c wrappers.
-Eventually, remove system call sys_locks.
+Modify inode read/write/create/seek/tell calls 
+	Known Callers:	
+		free-map.c -> bitmap.c -> inode.c 
+		syscall.c -> file.c -> inode.c
 
-Inodes must now remember not the sector index on disk, but the sector in the
-file cache. They point to the file disk_inode (containing the nested
-listings numbering the relevant data sectors on disk).
+	Functionality To Implement - Inode always flows through the cache (predictable memory utilization, potentially faster)		
+				
+		inode_read_at
+			for now, maintain contiguous file structures, so just swap block_read for cache_read
+			remove bounce buffer
 
-	These pointers will only be null on first-open after a boot/close.
-	Once we've gotten the file inode once, we'll have some value here.
-	We cannot assume it's valid. 
+			eventually, need traversals (encapsulate an "n-th sector" search in a function)			
+			crab in - read from cache directly - crab out
+		inode_write_at
+			same deal - ignore extensions, etc. just assume it's already on disk, and crab in - write - crab out
 
-Edge Cases Noted
-----------------
+		inode_open
+			inode_data should not exist. We should just use the disk sector field so we can look it up in the cache.
 
-More than 64 concurrent evictions attempted. Need a semaphore to allow
-up to 64 evictions to proceed, but no more, and queue up any more that are
-requested.
+		inode_close
+			inode should not have a data->start since it isn't useful once we have indexed inodes
+			we need to implement a linear traversal of the inode data to free it when the inode is removed
+			otherwise we can do nothing; write-behind will take care of writeback, we can be lazy
 
-Should make sure that write_ahead stops eviction of that cache from happening.
-	write_ahead will get r/w/e/ lock (e) and use it differently.
+			removal is tricky.
+				we can set the removal flag, then whoever closes an inode captures an inode_access lock
+				then if we're the last to hold the inode, and we try to close, we don't release the lock quickly,
+				so other's can't open it, and we systematically remove the file from directory structures, from
+				the free map, and from the cache. with the cache, we need to be careful. we don't want it getting
+				written behind us to disk if it's not allocated. but concurrency means someone else might
+				allocate the same block after we deallocate but before write-behind has realized the cache entry
+				was deleted from disk. so we need to quickly sweep the cache (with a lock) before we release the free-map
+				to make sure we flag all related entries as "do not write back" and then we can remove from the free map
+				at our leisure, in reverse order (remove the on-disk inode base index last). 
 
-How should we handle file removal? We could have a deletion queue for an
-inode and wait till everyone has closed it, then delete atomically?
+		inode_create 
+			Currently,
+				uses bitmap'd free map to allocate several contiguous sectors for a new file at once
+				uses block_write to get these on disk along with the inode
+			Eventually,				
+				allocate one sector for new file inode, none for data, regardless of length specified
+				use cache_write with the inode in question
+					with a flag saying "never been allocated before, 
+					so don't try to get from disk, just make room"
+				rely on eviction and write-behind to get it on disk
+				rely on file extention and indexing for demand-allocation of data sectors
+					for example, inode index has linear ordering, so if an entry is silly, allocate it then, and fill it with zeros.
+
+
+Future Problems
+---------------
+
+More than 64 concurrent evictions attempted. Currently, panic.
+Should be able to queue up on an evicting cache sector, why not. 
+
+Must make sure intentional and inadvertant exit()s close all open files.
+
+Not handling journaling + robustness to system crashes, yet. 
 
 Write-behind needs to modify dirty bit.
+
