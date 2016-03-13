@@ -599,3 +599,7 @@ void evict_cached_sector (cache_sector_id c) {
             (supplemental_filesystem_cache_table + c)->old_disk_sector, c);
     } 
 }
+
+void flush_cache_to_disk(void) {
+
+}
