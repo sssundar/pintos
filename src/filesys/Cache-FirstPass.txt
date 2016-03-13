@@ -1,58 +1,15 @@
 --------------------------------------------------------------------------------
 CS124 - Project 6
-Getting Started: Filesystem Cache, First Pass
-Testing Caching, Eviction and Wrappers 
+Getting Started: Filesystem Cache
+Goal: First Pass, Testing Caching, Eviction, Concurrency, and Wrappers 
+This Document Contains: A Few To Do's
 --------------------------------------------------------------------------------
 
-Metadata is in inodes on disk, related to files and their contents.
-Meta^2 data is how we keep track of the buffer cache (accessed, dirty, ...)
-
 Maintain the global filesystem lock (will be removed on second pass)
-
-Maintain a global allow_cache_sweeps lock permanently
-	This allows threads to search the cache meta^2 data for their 
-	sector of interest without having to worry about whether sector meta^2 data
-	changes partway through. They cannot spend a long time holding this lock.
-	See discussion of crabbing in Lecture 25!
-
-Use palloc to allocate 64 contiguous sectors, or 8 pages, in kernel space
-	in init.c, using a new function such as file_cache_init()
-
-Statically allocate a kernel page for all the meta^2 data.
-
-/*! Cache Meta^2 Data, containing flags and locks useful for concurrent 
-	reading/writing access, and eviction. */
-struct cache_meta_data {
-	void *head_of_sector_in_memory; 
-		/* 	Kernel virtual address (never paged out) of start of this cache 
-			sector */
-	bool cache_sector_free;
-	 	/* we only allow single-sector wide allocation at a time */
-	bool cache_sector_dirty;
-		/* preferentially do not evict if possible */
-	bool cache_sector_accessed;
-		/* for basic clock eviction algorithm */
-	bool cache_sector_evicters_ignore;
-		/* 	flag saying we're currently evicting, or writing ahead, 
-			so might want to check old_disk_sector (if >= 0) 
-			as well if you are sweeping meta^2 data. also (ideally) don't try
-			to evict this again till I finish! */
-	block_sector_t old_disk_sector;
-		/* the disk sector we're evicting */
-	block_sector_t current_disk_sector;
-		/* 	it is the disk sector we're bringing (after eviction), 
-			or have already brought, in */
-	struct rwlock; 
-		/* 	cache sector read/write/eviction lock (multiple access exclusion) 
-		 	blocks threads waiting for the current disk sector */
-};
 
 Modify inode read/write/seek/tell calls as called by file.c wrappers.
 Eventually, remove system call sys_locks.
 
-----------------------------------
-Basic Cache Concurrency - Crabbing 
-----------------------------------
 Inodes must now remember not the sector index on disk, but the sector in the
 file cache. They point to the file disk_inode (containing the nested
 listings numbering the relevant data sectors on disk).
@@ -60,59 +17,6 @@ listings numbering the relevant data sectors on disk).
 	These pointers will only be null on first-open after a boot/close.
 	Once we've gotten the file inode once, we'll have some value here.
 	We cannot assume it's valid. 
-
-	One approach, detailed in lecture 25:
-
-		We lock the cache against eviction
-		We find our index, and use it to find our data block
-		We release the cache eviction lock
-		We lock our data block
-		We check that our data block's entry in the cache sector mapping is 
-			still right
-		We proceed to do whatever we wanted to do.
-
-	Suppose the index weren't found - then we bring it in, possibly evicting 
-		some other sector			
-
---------------
-Clock Eviction 
---------------
-Ignore until basic stuff works.
-
-Maintain a circular queue structure of cache sectors (just indices 0..63)
-Head pointer only. Need to synchronize access.
-
-We'll just pick cache sectors for eviction as "if any are not being accessed, 
-those (if not currently being evicted/writebehind), else anything (not currently 
-being evicted/writtenbehind).
-
-We acquire the allow_cache_sweeps lock
-Now the outside world sees our eviction choices as atomic.
-We set the evictors_ignore flag for the sector being evicted so the kernel 
-doesn't try to evict it again, and so writeahead ignores us. This also helps 
-incoming threads know to look at the old sector (if it's meaningful).
-We release the allow_cache_sweeps lock
-
-We request an eviction lock (r/w/e)->e.
-We set old_disk_sector to current_disk_sector
-We set current_disk_sector to the thing we're going to bring in
-We do the eviction (not yet the replacement) if cache_sector_dirty is set
-
-We acquire the allow_cache_sweeps lock
-We clear the cache_sector_accessed bit
-We do not touch cache_sector_free - we'll replace this sector ourselves.
-We remove old_disk_sector 
-We wake up everyone in the eviction wait list, even those waiting on the soon
-to-be- replacement. Let them duke it out, or block on us again.
-We release the allow_cache_sweeps lock
-
-We proceed with replacement of the evicted cache.
-New inquiries into the replacement will block on our read/write lock
-cache_sector_accessed is set by anyone who blocks on us.
-	by the rwlock accessors, and cleared by write-behind.
-
-We release the r/w/e eviction lock. We're done!
-
 
 Edge Cases Noted
 ----------------
@@ -123,3 +27,8 @@ requested.
 
 Should make sure that write_ahead stops eviction of that cache from happening.
 	write_ahead will get r/w/e/ lock (e) and use it differently.
+
+How should we handle file removal? We could have a deletion queue for an
+inode and wait till everyone has closed it, then delete atomically?
+
+Write-behind needs to modify dirty bit.
