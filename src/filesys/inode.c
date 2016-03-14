@@ -179,10 +179,11 @@ void inode_close(struct inode *inode) {
             length = data->length;
 
             crab_outof_cached_sector(src, true);        
-
+            
             free_map_release(inode->sector, 1);
             free_map_release(start,
                              bytes_to_sectors(length)); 
+
         }
 
         free(inode); 
@@ -240,7 +241,7 @@ off_t inode_read_at(struct inode *inode, void *buffer_, off_t size, off_t offset
         */
 
         cache_sector_id src = crab_into_cached_sector(sector_idx, true);            
-        cache_read(src, buffer + bytes_read, sector_ofs, chunk_size);
+        cache_read(src, (void *) (buffer + bytes_read), sector_ofs, chunk_size);
         crab_outof_cached_sector(src, true);
       
         /* Advance. */
@@ -312,7 +313,7 @@ off_t inode_write_at(struct inode *inode, const void *buffer_, off_t size, off_t
         */
 
         cache_sector_id dst = crab_into_cached_sector(sector_idx, false);          
-        cache_write(dst, buffer + bytes_written, sector_ofs, chunk_size);
+        cache_write(dst, (void *) (buffer + bytes_written), sector_ofs, chunk_size);
         crab_outof_cached_sector(dst, false);
     
         /* Advance. */
@@ -344,6 +345,15 @@ void inode_allow_write (struct inode *inode) {
 
 /*! Returns the length, in bytes, of INODE's data. */
 off_t inode_length(const struct inode *inode) {
-    return inode->data.length;
+    cache_sector_id src = crab_into_cached_sector(inode->sector, true);    
+    
+    struct inode_disk *data = 
+        (struct inode_disk *) get_cache_sector_base_addr(src);            
+    
+    off_t l = data->length;    
+    
+    crab_outof_cached_sector(src, true);        
+
+    return l;
 }
 

@@ -45,6 +45,10 @@ extern struct list executing_files;
 
 extern struct lock eflock;
 
+bool timer_initd;
+extern struct semaphore crude_time;
+extern long long total_ticks;  /*!< # of total ticks. Used as crude timer. */
+
 /*! Maximum file descriptor assigned so far. */
 int max_fd = 3;
 
@@ -109,7 +113,9 @@ void thread_init(void) {
     initial_thread = running_thread();    
     init_thread(initial_thread, "main", PRI_DEFAULT, 0, NULL);        
     initial_thread->status = THREAD_RUNNING;    
-    initial_thread->tid = allocate_tid();    
+    initial_thread->tid = allocate_tid();
+
+    timer_initd = false;
 }
 
 /*! Starts preemptive thread scheduling by enabling interrupts.
@@ -142,6 +148,8 @@ void thread_tick(void) {
     else
         kernel_ticks++;
 
+    total_ticks++;
+
     /* Enforce preemption. */
     if (++thread_ticks >= TIME_SLICE)
         intr_yield_on_return();
@@ -164,9 +172,7 @@ void thread_print_stats(void) {
     before the new thread is scheduled.  Use a semaphore or some other form of
     synchronization if you need to ensure ordering.
 
-    The code provided sets the new thread's `priority' member to PRIORITY, but
-    no actual priority scheduling is implemented.  Priority scheduling is the
-    goal of Problem 1-3. */
+    The code provided sets the new thread's `priority' member to PRIORITY. */
 tid_t thread_create(const char *name, int priority, thread_func *function,
                     void *aux, uint8_t flag_child,
 					struct list *parents_child_list,
@@ -562,6 +568,11 @@ void thread_schedule_tail(struct thread *prev) {
     /* Activate the new address space. */
     process_activate();
 #endif
+
+    // Crude timer facility.
+    if (timer_initd && total_ticks > 0
+    		&& total_ticks % TICKS_UNTIL_WRITEBACK == 0)
+		sema_up(&crude_time); // No waiting happens here.
 
     /* If the thread we switched from is dying, destroy its struct thread.
        This must happen late so that thread_exit() doesn't pull out the rug

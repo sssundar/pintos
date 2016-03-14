@@ -1,4 +1,3 @@
-#include "filesys/filesys.h"
 #include <debug.h>
 #include <stdio.h>
 #include <string.h>
@@ -7,11 +6,27 @@
 #include "filesys/inode.h"
 #include "filesys/directory.h"
 #include "filesys/cache.h"
+#include "filesys/filesys.h"
+#include "threads/thread.h"
+#include "threads/malloc.h"
+
+struct lock monitor_ra;			   /*!< Used to wake up read-ahead. */
+struct condition cond_ra;          /*!< Used to wake up read-ahead. */
+
+struct semaphore crude_time;       /*!< Downed here, upped in thread_tick */
+extern bool timer_initd;
+
+/*! List of the sectors N whose next elements N + 1 should be read ahead. */
+struct list ra_sectors;
+
+long long total_ticks;             /*!< Crude timer's tick count. */
 
 /*! Partition that contains the file system. */
 struct block *fs_device;
 
 static void do_format(void);
+void write_behind_func(void *aux);
+void read_ahead_func(void *aux);
 
 /*! Initializes the file system module.
     If FORMAT is true, reformats the file system. */
@@ -23,8 +38,23 @@ void filesys_init(bool format) {
     inode_init();
     file_cache_init(); 
     free_map_init();    
-    
-    if (format) 
+
+    // Initialize the read-ahead and write-behind helper threads.
+    list_init(&ra_sectors);
+    lock_init(&monitor_ra);
+    cond_init(&cond_ra);
+    sema_init(&crude_time, 0);
+    total_ticks = 0;
+
+    thread_create("write-behind", PRI_DEFAULT, write_behind_func, NULL, 1,
+    		&thread_current()->child_list, thread_current());
+
+    thread_create("read-ahead", PRI_DEFAULT, read_ahead_func, NULL, 1,
+        	&thread_current()->child_list, thread_current());
+
+    timer_initd = true;
+
+    if (format)
         do_format();
 
     free_map_open();
@@ -86,5 +116,44 @@ static void do_format(void) {
         PANIC("root directory creation failed");
     free_map_close();
     printf("done.\n");
+}
+
+/*! Iterate over all the cache entries periodically, writing the dirty ones
+    back to disk to protect against a system crash. The timing is done with
+    a condition variable that is signalling from thread_tick.
+ */
+void write_behind_func(void *aux UNUSED) {
+	do {
+		sema_down(&crude_time); // Wait.
+		flush_cache_to_disk();
+	} while (true);
+}
+
+/*! Whenever a sector is read in from disk, the next one to read is queued up
+    in ra_sectors and this thread is woken up. This thread is responsible for
+    reading in that sector in the background. */
+void read_ahead_func(void *aux UNUSED) {
+
+	do {
+		lock_acquire(&monitor_ra);
+		while(list_size(&ra_sectors) == 0) {
+			cond_wait(&cond_ra, &monitor_ra);
+		}
+
+		struct list_elem *l = list_pop_front(&ra_sectors);
+		struct ra_sect_elem *rasect =
+				list_entry(l, struct ra_sect_elem, ra_elem);
+
+		// Read in the next sector from disk.
+		crab_outof_cached_sector(
+				crab_into_cached_sector(rasect->sect_n, true), true);
+
+		// printf("---> I just saw block_sector_t: %u \n", rasect->sect_n);
+
+		free(rasect);
+
+		lock_release(&monitor_ra);
+	} while (true);
+
 }
 

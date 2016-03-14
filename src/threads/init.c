@@ -138,7 +138,7 @@ int main(void) {
     printf("Boot complete.\n");
     
     /* Run actions specified on kernel command line. */
-    run_actions(argv);
+    run_actions(argv);    
 
     /* Finish up. */
     shutdown();

@@ -61,6 +61,8 @@ struct cache_meta_data {
     struct lock pending_io_lock;
 };
 
+struct lock allow_cache_sweeps; 
+
 /* ############# Stubs ############### */
 
 void file_cache_init(void);
@@ -69,6 +71,8 @@ void crab_outof_cached_sector(cache_sector_id c, bool readnotwrite);
 void cache_read(cache_sector_id src, void *dst, int offset, size_t bytes);
 void cache_write(cache_sector_id dst, void *src, int offset, int bytes);
 void *get_cache_sector_base_addr(cache_sector_id c);
+struct cache_meta_data *get_cache_metadata(cache_sector_id c);
 void flush_cache_to_disk(void);
+block_sector_t get_next_sector(block_sector_t curr_sector);
 
 #endif /* filesys/cache.h */

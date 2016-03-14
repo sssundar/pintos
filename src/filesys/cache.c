@@ -32,6 +32,10 @@ bool is_disk_sector_in_cache (cache_sector_id c, block_sector_t t);
 
 /* =============== Statically Allocated Variables ================= */ 
 
+/*! List of the sectors N whose next elements N + 1 should be read ahead.
+    defined in filesys.c. */
+extern struct list ra_sectors;
+
 /*! Cache circular queue head index for clock eviction */
 cache_sector_id cache_head;
 
@@ -47,6 +51,10 @@ struct cache_meta_data *supplemental_filesystem_cache_table;
 
 /* Pointer to the pages associated with the file system cache itself */
 void *file_system_cache;
+
+// The following two are defined in filesys.c.
+extern struct lock monitor_ra;
+extern struct condition cond_ra;
 
 /* ========================= Functions ================== */
 
@@ -129,6 +137,12 @@ void mark_cache_sector_as_accessed(cache_sector_id c) {
     lock_release(&allow_cache_sweeps);
 }
 
+/*! Gets sector N + 1 given sector N. */
+block_sector_t get_next_sector(block_sector_t curr_sector) {
+	// TODO CHANGE THIS OR DIE. That is, change after inode indirection is done
+	return curr_sector + 1;
+}
+
 /*! Accessor. Assumes appropriate rw_lock held. 
     Reads BYTES bytes from file cache sector SRC into DST, 
     starting at position (OFFSET > 0) in SRC. */
@@ -136,14 +150,68 @@ void cache_read(cache_sector_id src, void *dst, int offset, size_t bytes) {
 
     ASSERT(offset+bytes-1 < BLOCK_SECTOR_SIZE);
 
-    ASSERT(offset > 0);
-    ASSERT(bytes > 0);
+    ASSERT(offset >= 0);
 
     memcpy(dst, 
             (void *) (  (uint32_t) (supplemental_filesystem_cache_table+
                                     src)->head_of_sector_in_memory + 
                         (uint32_t) offset), 
             bytes);
+
+    /* Add the next sector to the read-ahead queue. */
+    lock_acquire(&monitor_ra);
+    if (list_size(&ra_sectors) >= NUM_DISK_SECTORS_CACHED) {
+    	lock_release(&monitor_ra);
+    	return;
+    }
+    block_sector_t curr_sector = get_cache_metadata(src)->current_disk_sector;
+    block_sector_t next_sector = get_next_sector(curr_sector);
+
+    // Make sure next sector isn't already in the read-ahead queue.
+    struct list_elem *l;
+    struct ra_sect_elem *rasect;
+    bool found = false;
+    for (l = list_begin(&ra_sectors);
+			l != list_end(&ra_sectors);
+			l = list_next(l)) {
+		rasect = list_entry(l, struct ra_sect_elem, ra_elem);
+		if (rasect->sect_n == next_sector) {
+			found = true;
+			break;
+		}
+	}
+    if (found) {
+    	lock_release(&monitor_ra);
+    	return;
+    }
+
+    // Make sure the next sector isn't already in the cache.
+    struct cache_meta_data *meta_walker = supplemental_filesystem_cache_table;
+    //printf("--> about to acquire allow cache sweeps lock.\n");
+	lock_acquire(&allow_cache_sweeps);
+	int k;
+	for (k = 0; k < NUM_DISK_SECTORS_CACHED; k++) {
+		if (meta_walker[k].current_disk_sector == next_sector)
+			found = true;
+	}
+	//printf("--> about to relinquish allow cache sweeps lock.\n");
+	lock_release(&allow_cache_sweeps);
+    if (found) {
+    	lock_release(&monitor_ra);
+    	return;
+    }
+
+	// If the next sector isn't already in the read ahead queue and isn't
+	// already in the cache thne put it in the read ahead cache.
+    rasect = (struct ra_sect_elem *) malloc (sizeof(struct ra_sect_elem));
+    if (rasect == NULL) {
+    	PANIC("No space for a new ra_sect_elem.");
+    	NOT_REACHED();
+    }
+    rasect->sect_n = next_sector;
+    list_push_back(&ra_sectors, &rasect->ra_elem);
+    cond_signal(&cond_ra, &monitor_ra);
+    lock_release(&monitor_ra);
 }
 
 /*! Accessor. Assumes appropriate rw_lock held. 
@@ -153,8 +221,7 @@ void cache_write(cache_sector_id dst, void *src, int offset, int bytes) {
 
     ASSERT(offset+bytes-1 < BLOCK_SECTOR_SIZE);
 
-    ASSERT(offset > 0);
-    ASSERT(bytes > 0);
+    ASSERT(offset >= 0);    
 
     memcpy((void *) (   (uint32_t) (supplemental_filesystem_cache_table +
                                     dst)->head_of_sector_in_memory + 
@@ -166,6 +233,11 @@ void cache_write(cache_sector_id dst, void *src, int offset, int bytes) {
 /* Gets the kernel virtual address of the base of the cache sector specified */
 void *get_cache_sector_base_addr(cache_sector_id c) {
     return (supplemental_filesystem_cache_table + c)->head_of_sector_in_memory;
+}
+
+/* Gets kernel virtual address of the cache meta data structure for sector C */
+struct cache_meta_data *get_cache_metadata(cache_sector_id c) {
+    return supplemental_filesystem_cache_table + c;
 }
 
 /*! Must be called after acquiring a r/w lock. Verifies that the intended
@@ -389,6 +461,7 @@ cache_sector_id crab_into_cached_sector(block_sector_t t, bool readnotwrite) {
 
             lock_acquire(&allow_cache_sweeps);
 
+            (meta_walker+target)->cache_sector_evicters_ignore = false;
             (meta_walker+target)->cache_sector_accessed = false;
             (meta_walker+target)->cache_sector_dirty = false;
             (meta_walker+target)->old_disk_sector = SILLY_OLD_DISK_SECTOR;
@@ -514,7 +587,7 @@ void select_cache_sector_for_eviction(cache_sector_id *c, block_sector_t t) {
         int k;
         for (k = 0; k < NUM_DISK_SECTORS_CACHED; k++) {            
             
-            if (    !(meta_walker+cache_head)->cache_sector_evicters_ignore ) {
+            if (    !meta_walker[cache_head].cache_sector_evicters_ignore ) {
                 
                 if (!firstPass || (firstPass && 
                         !(meta_walker+cache_head)->cache_sector_accessed ) ) {
@@ -539,7 +612,7 @@ void select_cache_sector_for_eviction(cache_sector_id *c, block_sector_t t) {
         
                 }                
         
-            }
+            } 
             
             update_head();            
         
@@ -606,6 +679,34 @@ void evict_cached_sector (cache_sector_id c) {
     } 
 }
 
-void flush_cache_to_disk(void) {
+/*! Flushes every entry in cache to disk, whether or not it's been removed.
+    This is to test the rest of our code. It is NOT correct. 
+    It should only be called when no other threads are active.
+    
+    == TODO == Fix file removal, and this. Depending on how we handle free-maps
+        might have to that handle here as well.
 
+     */
+void flush_cache_to_disk(void) {
+    int k;
+
+    // printf("---> Flushing to disk!\n");
+
+    for (k = 0; k < NUM_DISK_SECTORS_CACHED; k++) {
+
+        /* Several concurrency bugs follow */
+        supplemental_filesystem_cache_table[k].cache_sector_evicters_ignore =
+        		true;
+
+        rw_acquire(
+        		&supplemental_filesystem_cache_table[k].read_write_diskio_lock,
+				true, true);
+        if (supplemental_filesystem_cache_table[k].cache_sector_dirty) {
+            push_sector_from_cache_to_disk(
+                supplemental_filesystem_cache_table[k].current_disk_sector, k);
+        } 
+        rw_release(
+        		&supplemental_filesystem_cache_table[k].read_write_diskio_lock,
+				true, true);
+    }
 }
