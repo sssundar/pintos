@@ -301,36 +301,12 @@ int open(const char *file){
     	fd_elem->fd = max_fd++;
     }
 
-	//fd_elem->fd = thread_current()->max_fd;
-	//thread_current()->max_fd++;
 	fd_elem->file = f;
 	list_push_back(&thread_current()->files, &fd_elem->f_elem);
 
 	lock_release(&sys_lock);
 	return fd_elem->fd;
 }
-
-/*! This is a callback function for "thread_foreach". It checks to see if
-    the given thread was loaded from a file with the given file descriptor.
-    If it was then the function needs to say there was a match, which it
-    communicates by setting "matches" to the sentinel value of -100.
- */
-/*
-void func(struct thread *t, void *matches) {
-
-	// If we already saw a matching file descriptor, don't try matching again.
-	//if(*((int *) matches) == FUNC_SENTINEL) {
-	//	return;
-	//}
-
-	if (t->filename == NULL || matches == NULL)
-		return;
-
-	if(strcmp(t->filename, (char *) matches) == 0) {
-		*((unsigned int *) matches) = (unsigned int) FUNC_SENTINEL;
-	}
-}
-*/
 
 /*! Writes size bytes from buffer to the open file fd. Returns the number of
     bytes actually written, which may be less than size if some bytes could
@@ -564,13 +540,7 @@ pid_t exec (const char *cmd_line) {
 
 	lock_release(&sys_lock);
 
-	//if (fsema != NULL)
-		//sema_up(fsema);
-
 	tid = process_execute(cmd_line);
-
-	//if (fsema != NULL)
-		//sema_down(fsema);
 
 	return (pid_t) tid;
 }

@@ -102,7 +102,7 @@ void file_cache_init(void) {
     Must only be called with the lock allow_cache_sweeps locked so access
     is synchronous. */
 static cache_sector_id update_head(void) {
-    cache_head = (cache_head + 1) & ((uint32_t) 0x0000003F);
+    cache_head = (cache_head + 1) & ((uint32_t) 0x0000003F); // This is % 64
     return cache_head;
 }
 
@@ -156,10 +156,10 @@ void cache_write(cache_sector_id dst, void *src, int offset, int bytes) {
     ASSERT(offset > 0);
     ASSERT(bytes > 0);
 
-    memcpy((void *) (   (uint32_t) (supplemental_filesystem_cache_table+
+    memcpy((void *) (   (uint32_t) (supplemental_filesystem_cache_table +
                                     dst)->head_of_sector_in_memory + 
                         (uint32_t) offset), 
-            src
+            src,
             bytes);
 }
 
@@ -257,8 +257,9 @@ cache_sector_id crab_into_cached_sector(block_sector_t t, bool readnotwrite) {
                         my sector of interest. However, it does not contain
                         it right now. Therefore, I should block on its
                         pending_io lock till it's done. */
+                	lock_release(&allow_cache_sweeps);
                     lock_acquire(&meta_walker->pending_io_lock);
-                    
+                    lock_acquire(&allow_cache_sweeps);
                     /*  Immediately release the lock and try to crab
                         for my sector again. This will wake
                         up others waiting on this lock. */
@@ -289,7 +290,7 @@ cache_sector_id crab_into_cached_sector(block_sector_t t, bool readnotwrite) {
 
             /* Read = True, Write = False */
             /* DiskIO = True, CacheRW = False */
-            rw_acquire(&(meta_walker+target)->read_write_diskio_lock, 
+            rw_acquire(&(meta_walker+target)->read_write_diskio_lock,
                         readnotwrite, 
                         false); 
 
