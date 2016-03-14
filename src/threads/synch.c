@@ -403,8 +403,9 @@ void rw_acquire(struct rwlock *rwlock, bool read, bool evict) {
 			ASSERT(rwlock->mode == WLOCKED);
 		}
 		break;
-	case PENDING_EVICTION:
-		// TODO
+	case IOLOCKED:
+		// TODO - and that read num_current_readers++ will break once we 
+        // allow this
 		break;
 	default:
 		PANIC("Unexpected rwlock mode while acquiring a read/write lock.");
@@ -484,7 +485,7 @@ void rw_release(struct rwlock *rwlock, bool read, bool evict) {
 			cond_signal(&rwlock->wcond, &rwlock->lock);
 		}
 		break;
-	case PENDING_EVICTION:
+	case IOLOCKED:
 		// TODO
 		break;
 	default:

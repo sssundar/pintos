@@ -45,7 +45,7 @@ void cond_signal(struct condition *, struct lock *);
 void cond_broadcast(struct condition *, struct lock *);
 
 /*! A read-write lock's mode. */
-enum rwmode { UNLOCKED, RLOCKED, WLOCKED, PENDING_EVICTION };
+enum rwmode { UNLOCKED, RLOCKED, WLOCKED, IOLOCKED };
 
 /*! Read/write lock. Intended for one of these to be used with each sector in
     the file cache. */
