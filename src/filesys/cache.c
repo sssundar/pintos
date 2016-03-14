@@ -262,7 +262,9 @@ cache_sector_id crab_into_cached_sector(block_sector_t t, bool readnotwrite) {
                         my sector of interest. However, it does not contain
                         it right now. Therefore, I should block on its
                         pending_io lock till it's done. */
+                    lock_release(&allow_cache_sweeps);
                     lock_acquire(&meta_walker->pending_io_lock);
+                    lock_acquire(&allow_cache_sweeps);
                     
                     /*  Immediately release the lock and try to crab
                         for my sector again. This will wake
