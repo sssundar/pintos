@@ -145,11 +145,13 @@ void read_ahead_func(void *aux UNUSED) {
 				list_entry(l, struct ra_sect_elem, ra_elem);
 
 		// Read in the next sector from disk.
+		lock_release(&monitor_ra);
 		crab_outof_cached_sector(
 				crab_into_cached_sector(rasect->sect_n, true), true);
+		lock_acquire(&monitor_ra);
+		// printf("---> I just saw block_sector_t: %u \n", rasect->sect_n);
 
-		//printf("---> I just read-ahead on sector: %u \n", rasect->sect_n);
-
+		list_remove(l);
 		free(rasect);
 
 		lock_release(&monitor_ra);
