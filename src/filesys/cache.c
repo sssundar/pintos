@@ -611,26 +611,73 @@ void evict_cached_sector (cache_sector_id c) {
     } 
 }
 
-/*! Flushes every entry in cache to disk, whether or not it's been removed.
-    This is to test the rest of our code. It is NOT correct. 
-    It should only be called when no other threads are active.
+/*! Flushes every dirty sector in cache to disk. 
+
+    This function does not handle file removal correctly, in the sense that
+    cached sectors for files that have been removed need to be handled 
+    very carefully to make sure new files that have been allocated freed
+    sectors on disk aren't being overwritten accidentally. 
     
-    == TODO == Fix file removal, and this. Depending on how we handle free-maps
-        might have to that handle here as well.
+    For the moment, we ignore this. 
+
+    This function may be called in filesys_done, and as, at that point,
+    we do not expect anything else mucking with the filesystem, except 
+    lingering read_aheads, we can safely walk through every entry acquiring
+    an io lock on each, evicting it to disk, without fear we've missed
+    a laggard who replaced a sector we checked already.
+    
+    To handle read_aheads, which might have io_locks on things we're trying
+    to flush (and which will flush them if necessary), we simply need to wait
+    till the read_ahead finishes. This only matters in filesys_done, when
+    we absolutely MUST write everything to disk. 
+    
+    ==TODO== Implement a synchronous flag-passing between read_ahead and
+    flush_cache_to_disk so that in the end-case (about to shutdown) we can
+    tell read_ahead to wrap up and let us know when it's out of the way.
 
      */
 void flush_cache_to_disk(void) {
+
     int k;
+    bool should_process;
+
     for (k = 0; k < NUM_DISK_SECTORS_CACHED; k++) {
+        
+        should_process = false;
 
-        /* Several concurrency bugs follow */
-        supplemental_filesystem_cache_table[k].cache_sector_evicters_ignore = true;
+        lock_acquire(&allow_cache_sweeps);
+        
+        if (supplemental_filesystem_cache_table[k].cache_sector_evicters_ignore) {
+            /*  ==TODO== Handle read_ahead in end-case 
+                For now, ignore this cache sector, someone else will know
+                to write it out if it's dirty */            
+        } else if (supplemental_filesystem_cache_table[k].cache_sector_dirty) {
+            should_process = true;            
+            supplemental_filesystem_cache_table[k].cache_sector_evicters_ignore=
+                true;            
+        }
 
-        rw_acquire(&supplemental_filesystem_cache_table[k].read_write_diskio_lock, true, true);
-        if (supplemental_filesystem_cache_table[k].cache_sector_dirty) {
-            push_sector_from_cache_to_disk(
-                supplemental_filesystem_cache_table[k].current_disk_sector, k);
-        } 
-        rw_release(&supplemental_filesystem_cache_table[k].read_write_diskio_lock, true, true);
+        lock_release(&allow_cache_sweeps);    
+        
+        if (should_process) {
+
+            rw_acquire(&supplemental_filesystem_cache_table[k].read_write_diskio_lock, true, true);
+            
+            if (supplemental_filesystem_cache_table[k].cache_sector_dirty) {
+                push_sector_from_cache_to_disk(
+                    supplemental_filesystem_cache_table[k].current_disk_sector, k);
+            } 
+
+            lock_acquire(&allow_cache_sweeps);
+            
+            supplemental_filesystem_cache_table[k].cache_sector_dirty = false;
+            supplemental_filesystem_cache_table[k].cache_sector_evicters_ignore = false;
+
+            rw_release(&supplemental_filesystem_cache_table[k].read_write_diskio_lock, true, true);
+            
+            lock_release(&allow_cache_sweeps);
+        }
+
     }
+    
 }
