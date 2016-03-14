@@ -148,7 +148,7 @@ void read_ahead_func(void *aux UNUSED) {
 		crab_outof_cached_sector(
 				crab_into_cached_sector(rasect->sect_n, true), true);
 
-		// printf("---> I just saw block_sector_t: %u \n", rasect->sect_n);
+		//printf("---> I just read-ahead on sector: %u \n", rasect->sect_n);
 
 		free(rasect);
 
