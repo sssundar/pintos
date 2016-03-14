@@ -29,6 +29,10 @@ typedef int tid_t;
 #define PRI_DEFAULT 31                  /*!< Default priority. */
 #define PRI_MAX 63                      /*!< Highest priority. */
 
+/*! Number of ticks until the cache is flushed to disk. Chosen to be roughly
+    three times the length of a disk write. */
+#define TICKS_UNTIL_WRITEBACK 512
+
 /* File list struct. */
 struct fd_element{
 	int fd;

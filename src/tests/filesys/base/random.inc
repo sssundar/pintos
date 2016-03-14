@@ -11,7 +11,7 @@
 #error TEST_SIZE must be a multiple of BLOCK_SIZE
 #endif
 
-#define BLOCK_CNT (TEST_SIZE / BLOCK_SIZE)
+#define BLOCK_CNT (TEST_SIZE / BLOCK_SIZE) // is 150
 
 char buf[TEST_SIZE];
 int order[BLOCK_CNT];
@@ -36,6 +36,9 @@ test_main (void)
   shuffle (order, BLOCK_CNT, sizeof *order);
   for (i = 0; i < BLOCK_CNT; i++) 
     {
+
+	  //printf("%u: Writing block %u. \n", i, order[i]);
+
       size_t ofs = BLOCK_SIZE * order[i];
       seek (fd, ofs);
       if (write (fd, buf + ofs, BLOCK_SIZE) != BLOCK_SIZE)
@@ -46,6 +49,9 @@ test_main (void)
   shuffle (order, BLOCK_CNT, sizeof *order);
   for (i = 0; i < BLOCK_CNT; i++) 
     {
+
+	  //printf("%u: Reading block %u. \n", i, order[i]);
+
       char block[BLOCK_SIZE];
       size_t ofs = BLOCK_SIZE * order[i];
       seek (fd, ofs);
