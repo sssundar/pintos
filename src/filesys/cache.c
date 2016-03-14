@@ -46,7 +46,7 @@ struct lock allow_cache_sweeps;
 struct cache_meta_data *supplemental_filesystem_cache_table;
 
 /* Pointer to the pages associated with the file system cache itself */
-void *file_system_cache; 
+void *file_system_cache;
 
 /* ========================= Functions ================== */
 
