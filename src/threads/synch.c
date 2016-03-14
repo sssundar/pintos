@@ -397,12 +397,12 @@ void rw_acquire(struct rwlock *rwlock, bool read, bool io) {
 		} else {
             /* IO Request */                        
             rwlock->num_waiting_ioers++;
-            ASSERT(rw_lock->num_waiting_ioers == 1);
+            ASSERT(rwlock->num_waiting_ioers == 1);
             do {
                 cond_wait(&rwlock->iocond, &rwlock->lock);
             } while (rwlock->mode != IOLOCKED);
-            rw_lock->num_waiting_ioers--;
-            ASSERT(rw_lock->num_waiting_ioers == 0);            
+            rwlock->num_waiting_ioers--;
+            ASSERT(rwlock->num_waiting_ioers == 0);            
         }
 		break;
 	case WLOCKED:
@@ -428,12 +428,12 @@ void rw_acquire(struct rwlock *rwlock, bool read, bool io) {
 		} else {
             /* IO Request */                        
             rwlock->num_waiting_ioers++;
-            ASSERT(rw_lock->num_waiting_ioers == 1);
+            ASSERT(rwlock->num_waiting_ioers == 1);
             do {
                 cond_wait(&rwlock->iocond, &rwlock->lock);
             } while (rwlock->mode != IOLOCKED);
-            rw_lock->num_waiting_ioers--;
-            ASSERT(rw_lock->num_waiting_ioers == 0);            
+            rwlock->num_waiting_ioers--;
+            ASSERT(rwlock->num_waiting_ioers == 0);            
         }
 		break;
 	case IOLOCKED:
@@ -452,7 +452,7 @@ void rw_acquire(struct rwlock *rwlock, bool read, bool io) {
             rwlock->num_waiting_writers--;
             ASSERT(rwlock->mode == WLOCKED);
         } else {
-            PANIC(" >1 thread requested a disk IO lock on one sector").
+            PANIC(" >1 thread requested a disk IO lock on one sector");
         }
 		break;
 	default:
