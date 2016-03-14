@@ -138,7 +138,10 @@ int main(void) {
     printf("Boot complete.\n");
     
     /* Run actions specified on kernel command line. */
-    run_actions(argv);
+    run_actions(argv);    
+
+    // ==TODO== This is an incorrect kludge for write-behind
+    flush_cache_to_disk(); 
 
     /* Finish up. */
     shutdown();

@@ -179,10 +179,11 @@ void inode_close(struct inode *inode) {
             length = data->length;
 
             crab_outof_cached_sector(src, true);        
-
+            
             free_map_release(inode->sector, 1);
             free_map_release(start,
                              bytes_to_sectors(length)); 
+
         }
 
         free(inode); 

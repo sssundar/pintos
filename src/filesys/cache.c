@@ -159,13 +159,18 @@ void cache_write(cache_sector_id dst, void *src, int offset, int bytes) {
     memcpy((void *) (   (uint32_t) (supplemental_filesystem_cache_table+
                                     dst)->head_of_sector_in_memory + 
                         (uint32_t) offset), 
-            src
+            src,
             bytes);
 }
 
 /* Gets the kernel virtual address of the base of the cache sector specified */
 void *get_cache_sector_base_addr(cache_sector_id c) {
     return (supplemental_filesystem_cache_table + c)->head_of_sector_in_memory;
+}
+
+/* Gets kernel virtual address of the cache meta data structure for sector C */
+struct cache_meta_data *get_cache_metadata(cache_sector_id c) {
+    return supplemental_filesystem_cache_table + c;
 }
 
 /*! Must be called after acquiring a r/w lock. Verifies that the intended
@@ -605,6 +610,18 @@ void evict_cached_sector (cache_sector_id c) {
     } 
 }
 
-void flush_cache_to_disk(void) {
+/*! Flushes every entry in cache to disk, whether or not it's been removed.
+    This is to test the rest of our code. It is NOT correct. 
+    
+    == TODO == Fix file removal, and this. Depending on how we handle free-maps
+        might have to that handle here as well.
 
+     */
+void flush_cache_to_disk(void) {
+    int k;
+    for (k = 0; k < NUM_DISK_SECTORS_CACHED; k++) {
+        rw_acquire(&supplemental_filesystem_cache_table[k].read_write_diskio_lock, true, true);
+        evict_cached_sector(k);
+        rw_release(&supplemental_filesystem_cache_table[k].read_write_diskio_lock, true, true);
+    }
 }
