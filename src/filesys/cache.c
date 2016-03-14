@@ -163,6 +163,11 @@ void cache_write(cache_sector_id dst, void *src, int offset, int bytes) {
             bytes);
 }
 
+/* Gets the kernel virtual address of the base of the cache sector specified */
+void *get_cache_sector_base_addr(cache_sector_id c) {
+    return (supplemental_filesystem_cache_table + c)->head_of_sector_in_memory;
+}
+
 /*! Must be called after acquiring a r/w lock. Verifies that the intended
     disk sector is in residence in the cache sector locked. Given that
     the r/w lock is held, there is no question of the cache being in-eviction 
