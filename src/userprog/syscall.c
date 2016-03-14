@@ -646,3 +646,23 @@ bool readdir(int fd, char* name){
 
   return dir_readdir(f, name);
 }
+
+/* Returns true if fd represents a directory, false if it 
+ * represents an ordinary file.*/
+bool isdir(int fd){
+  struct file *f = filesys_get_file(fd);
+  if (f == NULL){
+    return false;
+  }
+  return file_is_dir(f);
+}
+
+/* Returns the inode number of the inode associated with fd, 
+ * which may represent an ordinary file or a directory.*/
+int syscall_inumber(int fd){
+  struct file *f = filesys_get_file(fd);
+  if(f == NULL){
+	  return false;
+  }
+  return inode_get_inumber(f->inode);
+}
