@@ -47,16 +47,20 @@ void cond_broadcast(struct condition *, struct lock *);
 /*! A read-write lock's mode. */
 enum rwmode { UNLOCKED, RLOCKED, WLOCKED, IOLOCKED };
 
-/*! Read/write lock. Intended for one of these to be used with each sector in
-    the file cache. */
+/*! Read/write/disk io lock. 
+    Intended for one of these to be used with each sector in the file cache. 
+    There will never be more than one sum(waiting,active) disk io locker due
+    to the usage convention for this type of lock. */
 struct rwlock {
 	enum rwmode mode;
 	uint32_t  num_waiting_readers;
 	uint32_t num_waiting_writers;
+  uint32_t num_waiting_ioers;
 	uint32_t num_current_readers;
 	struct lock lock;
 	struct condition rcond;
 	struct condition wcond;
+  struct condition iocond;
 };
 
 void rw_init(struct rwlock *);

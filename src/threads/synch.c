@@ -321,33 +321,49 @@ void rw_init(struct rwlock *rwlock) {
 
 	cond_init(&rwlock->rcond);
 	cond_init(&rwlock->wcond);
+    cond_init(&rwlock->iocond);
 	lock_init(&rwlock->lock);
 
 	rwlock->num_waiting_readers = 0;
 	rwlock->num_waiting_writers = 0;
+    rwlock->num_waiting_ioers = 0;
 	rwlock->num_current_readers = 0;
 	rwlock->mode = UNLOCKED;
 }
 
 /*! Acquires the given read/write lock as a reader if READ is true or as a
-    writer if READ is false. Waits if necessary. Ensures fairness by e.g.
-    making a (new) reader wait if a writer is waiting for some (old) readers
-    to finish.
+    writer if READ is false, so long as IO is false. 
 
-    TODO If EVICT is true then... */
-void rw_acquire(struct rwlock *rwlock, bool read, bool evict) {
+    Waits if necessary. Attempts to be fair by e.g. making a (new) reader wait 
+    if a writer is waiting for some (old) readers to finish.
+
+    If IO is true, a thread is requesting a disk IO lock, so readers/writers
+    block once the disk IO lock is granted, till the data is valid and 
+    coherent with disk again. By external calling convention, callers must
+    ensure that only one thread is either waiting or actively holding the 
+    disk io lock. For example, in filesys/cache.c, callers use a synchronous
+    flag to check whether someone else is about to request an io lock. */
+void rw_acquire(struct rwlock *rwlock, bool read, bool io) {
 	ASSERT(rwlock != NULL);
+
+    /* If IO is true, read is arbitrary */    
+    bool write = !read && !io;    
+    read = read && !io;
 
 	lock_acquire(&rwlock->lock);
 	switch (rwlock->mode) {
 	case UNLOCKED:
 		ASSERT(rwlock->num_waiting_readers == 0);
 		ASSERT(rwlock->num_waiting_writers == 0);
+        ASSERT(rwlock->num_waiting_ioers == 0);
 		/* If the mode is UNLOCKED then just acquire the lock. */
 		if (read)
 			rwlock->mode = RLOCKED;
-		else
+		else if (write)
 			rwlock->mode = WLOCKED;
+        else
+            /* IO Request */ 
+            rwlock->mode = IOLOCKED;
 		break;
 	case RLOCKED:
 		/*
@@ -371,14 +387,23 @@ void rw_acquire(struct rwlock *rwlock, bool read, bool evict) {
 				ASSERT(rwlock->mode == RLOCKED);
 			}
 		}
-		else {
+		else if (write) {
 			rwlock->num_waiting_writers++;
 			do {
 				cond_wait(&rwlock->wcond, &rwlock->lock);
 			} while (rwlock->mode != WLOCKED);
 			rwlock->num_waiting_writers--;
 			ASSERT(rwlock->mode == WLOCKED);
-		}
+		} else {
+            /* IO Request */                        
+            rwlock->num_waiting_ioers++;
+            ASSERT(rw_lock->num_waiting_ioers == 1);
+            do {
+                cond_wait(&rwlock->iocond, &rwlock->lock);
+            } while (rwlock->mode != IOLOCKED);
+            rw_lock->num_waiting_ioers--;
+            ASSERT(rw_lock->num_waiting_ioers == 0);            
+        }
 		break;
 	case WLOCKED:
 		/*
@@ -393,19 +418,42 @@ void rw_acquire(struct rwlock *rwlock, bool read, bool evict) {
 			} while(rwlock->mode != RLOCKED);
 			rwlock->num_waiting_readers--;
 			ASSERT(rwlock->mode == RLOCKED);
-		}
-		else {
+		} else if (write) {
 			rwlock->num_waiting_writers++;
 			do {
 				cond_wait(&rwlock->wcond, &rwlock->lock);
 			} while (rwlock->mode != WLOCKED);
 			rwlock->num_waiting_writers--;
 			ASSERT(rwlock->mode == WLOCKED);
-		}
+		} else {
+            /* IO Request */                        
+            rwlock->num_waiting_ioers++;
+            ASSERT(rw_lock->num_waiting_ioers == 1);
+            do {
+                cond_wait(&rwlock->iocond, &rwlock->lock);
+            } while (rwlock->mode != IOLOCKED);
+            rw_lock->num_waiting_ioers--;
+            ASSERT(rw_lock->num_waiting_ioers == 0);            
+        }
 		break;
 	case IOLOCKED:
-		// TODO - and that read num_current_readers++ will break once we 
-        // allow this
+        if (read) {
+            rwlock->num_waiting_readers++;
+            do {
+                cond_wait(&rwlock->rcond, &rwlock->lock);
+            } while(rwlock->mode != RLOCKED);
+            rwlock->num_waiting_readers--;
+            ASSERT(rwlock->mode == RLOCKED);
+        } else if (write) {
+            rwlock->num_waiting_writers++;
+            do {
+                cond_wait(&rwlock->wcond, &rwlock->lock);
+            } while (rwlock->mode != WLOCKED);
+            rwlock->num_waiting_writers--;
+            ASSERT(rwlock->mode == WLOCKED);
+        } else {
+            PANIC(" >1 thread requested a disk IO lock on one sector").
+        }
 		break;
 	default:
 		PANIC("Unexpected rwlock mode while acquiring a read/write lock.");
@@ -413,85 +461,155 @@ void rw_acquire(struct rwlock *rwlock, bool read, bool evict) {
 		break;
 	}
 
-	if (read) {
-		rwlock->num_current_readers++;
-	}
+    if (read) {
+        rwlock->num_current_readers++;
+    }
 
 	lock_release(&rwlock->lock);
 }
 
 /*! Releases the given read/write lock as a reader if READ is true or as a
-    writer if READ is false. Ensures fairness by e.g. signaling the appropriate
-    reader or writer to wake up and acquire the r/w lock.
+    writer if READ is false, so long as IO is false. 
 
- 	TODO If EVICT is true then...
- */
-void rw_release(struct rwlock *rwlock, bool read, bool evict) {
+    Attempts to be fair by toggling between reader and writer flocks.
+
+    If IO is true, releases the disk IO lock. No IO requesters can be waiting,
+    as guaranteed by the required external calling convention. 
+
+    IO requests get priority over read/write requests. */
+void rw_release(struct rwlock *rwlock, bool read, bool io) {
 	ASSERT(rwlock != NULL);
+
+    /* If IO is true, read is arbitrary */    
+    bool write = !read && !io;    
+    read = read && !io;
 
 	lock_acquire(&rwlock->lock);
 	switch (rwlock->mode) {
-	case UNLOCKED:
+	
+    case UNLOCKED:
 		// Can't release a lock if the mode is UNLOCKED...
 		PANIC("Can't release unlocked lock!");
 		NOT_REACHED();
 		break;
+
 	case RLOCKED:
 		// Must be a reader to release from an RLOCKED state.
 		ASSERT(read);
-		// A reader is finishing so decrement the number of current ones.
+		
+        // A reader is finishing so decrement the number of current ones.
 		rwlock->num_current_readers--;
+
 		if (rwlock->num_waiting_writers == 0
-				&& rwlock->num_waiting_readers == 0) {
+				&& rwlock->num_waiting_readers == 0
+                && rwlock->num_waiting_ioers == 0) {
 			// Don't need to signal anyone.
 			if (rwlock->num_current_readers == 0)
 				rwlock->mode = UNLOCKED;
 		}
-		else if (rwlock->num_waiting_writers == 0
+
+		else if (rwlock->num_waiting_ioers == 0) {
+            
+            if (rwlock->num_waiting_writers == 0                
 				&& rwlock->num_waiting_readers > 0) {
-			// This case might happen when there is are some writers who
-			// release the rwlock, wake up a pool of readers, then right
-			// before that pool acquires the rwlock's monitor another reader
-			// SWOOPS IN and grabs the monitor. It then starts to wait.
-			// When the pool of readers finishes it comes here and sees OMG
-			// there's a waiting reader. Weird, but whatever I'll signal him.
-			cond_broadcast(&rwlock->rcond, &rwlock->lock);
+    			// This case might happen when there is are some writers who
+    			// release the rwlock, wake up a pool of readers, then right
+    			// before that pool acquires the rwlock's monitor another reader
+    			// SWOOPS IN and grabs the monitor. It then starts to wait.
+    			// When the pool of readers finishes it comes here and sees OMG
+    			// there's a waiting reader. Weird, but I'll signal him.
+    			cond_broadcast(&rwlock->rcond, &rwlock->lock);        
+            } else { // If there are some waiting writers...
+                // ...signal one of them to wake up if we're the last reader.
+                if (rwlock->num_current_readers == 0) {
+                    rwlock->mode = WLOCKED;
+                    cond_signal(&rwlock->wcond, &rwlock->lock);
+                }
+            }
 		}
-		else { // If there are some waiting writers...
-			// ...signal one of them to wake up if we're the last reader.
-			if (rwlock->num_current_readers == 0) {
-				rwlock->mode = WLOCKED;
-				cond_signal(&rwlock->wcond, &rwlock->lock);
-			}
-		}
+
+        else if (rwlock->num_waiting_ioers > 0) {
+            ASSERT(rwlock->num_waiting_ioers == 1);
+            if (rwlock->num_current_readers == 0) {
+                rwlock->mode = IOLOCKED;
+                cond_signal(&rwlock->iocond, &rwlock->lock);
+            }
+        }
+
 		break;
+
 	case WLOCKED:
 		// Must be a writer to release from a WLOCKED state.
-		ASSERT(!read);
-		if (rwlock->num_waiting_writers == 0
-				&& rwlock->num_waiting_readers == 0) {
+		ASSERT(write);
+		
+        if (rwlock->num_waiting_writers == 0
+				&& rwlock->num_waiting_readers == 0
+                && rwlock->num_waiting_ioers == 0) {
 			// Don't need to signal anyone.
 			rwlock->mode = UNLOCKED;
 		}
-		// If there are any waiting readers at all then we transfer control to
-		// them after this writer finishes.
-		else if (rwlock->num_waiting_readers > 0) {
-			rwlock->mode = RLOCKED;
-			cond_broadcast(&rwlock->rcond, &rwlock->lock);
-		}
-		// If there are some waiting writers but NO waiting readers then...
-		else {
-			// ...signal one waiting writer to wake up.
-			cond_signal(&rwlock->wcond, &rwlock->lock);
-		}
+
+		else if (rwlock->num_waiting_ioers == 0) {
+
+            // If there are any waiting readers at all then we transfer control 
+            // to them after this writer finishes.
+            if (rwlock->num_waiting_readers > 0) {
+    			rwlock->mode = RLOCKED;
+    			cond_broadcast(&rwlock->rcond, &rwlock->lock);
+    		}
+    		// If there are some waiting writers but NO waiting readers then...
+    		else {
+    			// ...signal one waiting writer to wake up.
+    			cond_signal(&rwlock->wcond, &rwlock->lock);
+    		}        
+        } 
+
+        else if (rwlock->num_waiting_ioers > 0) {
+            ASSERT(rwlock->num_waiting_ioers == 1);            
+            if (rwlock->num_current_readers == 0) {
+                rwlock->mode = IOLOCKED;
+                cond_signal(&rwlock->iocond, &rwlock->lock);
+            }
+        }
+
 		break;
+
 	case IOLOCKED:
-		// TODO
+
+        if (rwlock->num_waiting_writers == 0
+                && rwlock->num_waiting_readers == 0
+                && rwlock->num_waiting_ioers == 0) {
+            // Don't need to signal anyone.
+            rwlock->mode = UNLOCKED;
+        }
+
+        else if (rwlock->num_waiting_ioers == 0) {
+
+            // If there are any waiting readers at all then we transfer control 
+            // to them after this IO finishes.
+            if (rwlock->num_waiting_readers > 0) {
+                rwlock->mode = RLOCKED;
+                cond_broadcast(&rwlock->rcond, &rwlock->lock);
+            }
+            // If there are some waiting writers but NO waiting readers then...
+            else {
+                // ...signal one waiting writer to wake up.
+                rwlock->mode = WLOCKED;
+                cond_signal(&rwlock->wcond, &rwlock->lock);
+            }        
+        } 
+
+        else if (rwlock->num_waiting_ioers > 0) {
+            PANIC ("Read/Write/DiskIO Lock calling convention violated.");
+        }
+		
 		break;
+
 	default:
-		PANIC("Unexpected rwlock mode while releasing a read/write lock.");
+		PANIC("Unexpected rwlock mode while releasing a read/write/io lock.");
 		NOT_REACHED();
 		break;
 	}
+
 	lock_release(&rwlock->lock);
 }
