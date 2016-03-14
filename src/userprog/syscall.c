@@ -10,6 +10,8 @@
 #include "lib/kernel/stdio.h"
 #include "filesys/file.h"
 #include "filesys/filesys.h"
+#include "filesys/directory.h"
+#include "filesys/inode.h"
 #include "devices/shutdown.h"
 #include "threads/malloc.h"
 #include "devices/input.h"
@@ -568,4 +570,79 @@ pid_t exec (const char *cmd_line) {
 bool uptr_is_valid (const void *uptr) {
 	return uptr != NULL && is_user_vaddr(uptr) &&
 			pagedir_get_page(thread_current()->pagedir, uptr) != NULL;
+}
+
+/* Changes the current working directory of the process to dir, 
+ * which may be relative or absolute. Returns true if successful, 
+ * false on failure. */
+bool chdir (const char *dir){
+	if (!is_valid_filename(dir)){
+		return false;
+	}
+  struct file *f = filesys_open(dir);
+
+  if(f == NULL){
+	  return false;
+  }
+
+  thread_current()->cwd = inode_get_inumber(f->inode);
+  file_close(f);
+  return true;
+}
+
+/* Creates the directory named dir, which may be relative or absolute. 
+ * Returns true if successful, false on failure. Fails if dir already 
+ * exists or if any directory name in dir, besides the last, does
+ * not already exist. That is, mkdir("/a/b/c") succeeds only if /a/b 
+ * already exists and /a/b/c does not.*/
+bool mkdir(const char* dir){
+	lock_acquire(&sys_lock);
+
+	unsigned int inode_sector = 0;
+	unsigned int inode_flags = 0;
+	struct file *f = NULL;
+	// Basic filename is limited by 14 characters.
+	char filename[14];
+	int parent_sector = filesys_split_path(name, name_short);
+
+	if(!is_valid_filename(dir)){
+		return false;
+	}
+
+	f = file_open(inode_open(inode_sector));
+	if (f == NULL){
+		return false;
+	}
+	struct file *p = file_open(inode_open(parent_sector));
+	if (p == NULL){
+		return false;
+	}
+
+	if (!file_is_dir(parent)){
+      file_close (parent);
+	  return false;
+    }
+
+	dir_add(f, ".", inode_sector);
+	dir_add(f, "..", parent_sector);
+    
+	file_close (f);
+	file_close (p);
+	lock_release(&sys_lock);
+	return true;
+}
+
+/* Reads a directory entry from file descriptor fd, 
+ * which must represent a directory. If successful, stores the 
+ * null-terminated file name in name, which must have room for 
+ * READDIR_MAX_LEN + 1 bytes, and returns true. If no entries are 
+ * left in the directory, returns false.*/
+bool readdir(int fd, char* name){
+  if(!is_valid_filename(name))
+    return false;
+  struct file *f = filesys_get_file(fd);
+  if(f == NULL || !file_is_dir(f))
+    return false;
+
+  return dir_readdir(f, name);
 }

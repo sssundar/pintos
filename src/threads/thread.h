@@ -169,6 +169,9 @@ struct thread {
     /**@}*/
 #endif
 
+	/* Current working directory cwd */
+	unsigned int cwd;
+
     /*! Owned by thread.c. */
     /**@{*/
     unsigned magic;                     /* Detects stack overflow. */
