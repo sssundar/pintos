@@ -154,22 +154,6 @@ static void sc_handler(struct intr_frame *f) {
 	else if (sc_n == SYS_WAIT) {
 		f->eax = wait((pid_t) sc_n1);
 	}
-	else if (sc_n == SYS_CHDIR) {
-		f->eax = chdir((const char *) sc_n1);
-	}
-	else if (sc_n == SYS_MKDIR) {
-		f->eax = mkdir((const char *) sc_n1);
-	}
-	else if (sc_n == SYS_READDIR) {
-		f->eax = readdir((pid_t) sc_n1, (const char *) sc_n2);
-	}
-	else if (sc_n == SYS_ISDIR) {
-		f->eax = isdir((pid_t) sc_n1);
-	}
-	else if (sc_n == SYS_INUMBER) {
-		f->eax = inumber((pid_t) sc_n1);
-	}
-
 
 }
 
