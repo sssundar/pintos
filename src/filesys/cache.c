@@ -136,8 +136,7 @@ void cache_read(cache_sector_id src, void *dst, int offset, size_t bytes) {
 
     ASSERT(offset+bytes-1 < BLOCK_SECTOR_SIZE);
 
-    ASSERT(offset > 0);
-    ASSERT(bytes > 0);
+    ASSERT(offset >= 0);    
 
     memcpy(dst, 
             (void *) (  (uint32_t) (supplemental_filesystem_cache_table+
@@ -153,8 +152,7 @@ void cache_write(cache_sector_id dst, void *src, int offset, int bytes) {
 
     ASSERT(offset+bytes-1 < BLOCK_SECTOR_SIZE);
 
-    ASSERT(offset > 0);
-    ASSERT(bytes > 0);
+    ASSERT(offset >= 0);    
 
     memcpy((void *) (   (uint32_t) (supplemental_filesystem_cache_table+
                                     dst)->head_of_sector_in_memory + 
@@ -265,7 +263,7 @@ cache_sector_id crab_into_cached_sector(block_sector_t t, bool readnotwrite) {
                     lock_release(&allow_cache_sweeps);
                     lock_acquire(&meta_walker->pending_io_lock);
                     lock_acquire(&allow_cache_sweeps);
-                    
+
                     /*  Immediately release the lock and try to crab
                         for my sector again. This will wake
                         up others waiting on this lock. */
@@ -395,6 +393,7 @@ cache_sector_id crab_into_cached_sector(block_sector_t t, bool readnotwrite) {
 
             lock_acquire(&allow_cache_sweeps);
 
+            (meta_walker+target)->cache_sector_evicters_ignore = false;
             (meta_walker+target)->cache_sector_accessed = false;
             (meta_walker+target)->cache_sector_dirty = false;
             (meta_walker+target)->old_disk_sector = SILLY_OLD_DISK_SECTOR;
@@ -520,7 +519,7 @@ void select_cache_sector_for_eviction(cache_sector_id *c, block_sector_t t) {
         int k;
         for (k = 0; k < NUM_DISK_SECTORS_CACHED; k++) {            
             
-            if (    !(meta_walker+cache_head)->cache_sector_evicters_ignore ) {
+            if (    !meta_walker[cache_head].cache_sector_evicters_ignore ) {
                 
                 if (!firstPass || (firstPass && 
                         !(meta_walker+cache_head)->cache_sector_accessed ) ) {
@@ -545,7 +544,7 @@ void select_cache_sector_for_eviction(cache_sector_id *c, block_sector_t t) {
         
                 }                
         
-            }
+            } 
             
             update_head();            
         
@@ -614,6 +613,7 @@ void evict_cached_sector (cache_sector_id c) {
 
 /*! Flushes every entry in cache to disk, whether or not it's been removed.
     This is to test the rest of our code. It is NOT correct. 
+    It should only be called when no other threads are active.
     
     == TODO == Fix file removal, and this. Depending on how we handle free-maps
         might have to that handle here as well.
@@ -622,8 +622,15 @@ void evict_cached_sector (cache_sector_id c) {
 void flush_cache_to_disk(void) {
     int k;
     for (k = 0; k < NUM_DISK_SECTORS_CACHED; k++) {
+
+        /* Several concurrency bugs follow */
+        supplemental_filesystem_cache_table[k].cache_sector_evicters_ignore = true;
+
         rw_acquire(&supplemental_filesystem_cache_table[k].read_write_diskio_lock, true, true);
-        evict_cached_sector(k);
+        if (supplemental_filesystem_cache_table[k].cache_sector_dirty) {
+            push_sector_from_cache_to_disk(
+                supplemental_filesystem_cache_table[k].current_disk_sector, k);
+        } 
         rw_release(&supplemental_filesystem_cache_table[k].read_write_diskio_lock, true, true);
     }
 }
