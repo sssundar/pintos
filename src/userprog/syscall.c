@@ -638,13 +638,21 @@ bool mkdir(const char* dir){
  * READDIR_MAX_LEN + 1 bytes, and returns true. If no entries are 
  * left in the directory, returns false.*/
 bool readdir(int fd, char* name){
-  if(!uptr_is_valid(name))
-    return false;
-  struct file *f = get_file(fd);
-  if(f == NULL || !file_isdir(f))
-    return false;
-
-  return dir_readdir(f, name);
+	if(!uptr_is_valid(name)){
+		return false;
+	}
+	struct file *f = get_file(fd);
+	if(f == NULL || !file_isdir(f)){
+		return false;
+	}
+	
+	off_t cd = 2 * sizeof(char*);
+	if(tell(f) < cd){
+		seek(f, cd);
+	}
+	
+	strlcpy (name, f, READDIR_MAX_LEN + 1);
+	return true;
 }
 
 /* Returns true if fd represents a directory, false if it 

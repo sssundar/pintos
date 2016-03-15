@@ -163,7 +163,7 @@ void read_ahead_func(void *aux UNUSED) {
  * Return the sector of the parent directory and store
  * file name in filename. */
 int split_path_func(const char *path, char *filename){
-  const char *pslash = strrchr (path, '/');
+  const char *pslash = strrchr(path, '/');
   if (pslash == NULL){
       strlcpy (filename, path, 14);
       return thread_current ()->cwd;
@@ -172,6 +172,6 @@ int split_path_func(const char *path, char *filename){
       char partial_path[14];
       strlcpy (partial_path, path, pslash - path);
       strlcpy (filename, pslash, 14);
-      return partial_path;
+      return partial_path[0];
     }
 }

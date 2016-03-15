@@ -1,5 +1,6 @@
 #include "filesys/file.h"
 #include <debug.h>
+#include <stdbool.h>
 #include "filesys/inode.h"
 #include "threads/malloc.h"
 
@@ -62,7 +63,7 @@ off_t file_read_at(struct file *file, void *buffer, off_t size,
 
 /* Returns true if file is directory, false otherwise. */
 bool file_isdir (struct file *file){
-  return inode_get_attribute(file->inode, INODE_DIR);
+  return file->inode->removed != true;
 }
 
 /*! Writes SIZE bytes from BUFFER into FILE, starting at the file's current
