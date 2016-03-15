@@ -408,6 +408,7 @@ bool load(const char *file_name, void (**eip) (void), void **esp) {
     }
     lock_release(&eflock);
 
+    // ==TODO== Remove this when directory/filesystem accesses are thread-safe.
     lock_acquire(&sys_lock);
     file = filesys_open(progname);
     if (file == NULL) {

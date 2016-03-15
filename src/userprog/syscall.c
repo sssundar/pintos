@@ -339,6 +339,9 @@ int write(int fd, const void *buffer, unsigned size) {
 		lock_release(&sys_lock);
 		return size;
 	}
+	
+	// ==TODO== Release this because file_write should be thread_safe now
+	lock_release(&sys_lock);
 
 	for (l = list_begin(&(thread_current()->files));
 		 l != list_end(&(thread_current()->files));
@@ -346,16 +349,14 @@ int write(int fd, const void *buffer, unsigned size) {
 		r = list_entry(l, struct fd_element, f_elem);
 		if (r->fd == fd){
 			f = r->file;
-			if (!f){
-				lock_release(&sys_lock);
+			if (!f){				
 				return -1;
-			}
-			lock_release(&sys_lock);
+			}			
 			//seek(fd, 0); // This is what overwrites the file.
 			return file_write(f, buffer, size);
 		}
 	}
-	lock_release(&sys_lock);
+
 	return 0;
 }
 
@@ -368,14 +369,13 @@ int read(int fd, void *buffer, unsigned size){
 	unsigned int i;
 	struct file *f;
 	struct fd_element *r;
-	struct list_elem *l;
+	struct list_elem *l;	
 
-	lock_acquire (&sys_lock);
-
-	if (!uptr_is_valid(buffer) || fd < 0) {
-		lock_release(&sys_lock);
+	if (!uptr_is_valid(buffer) || fd < 0) {		
 		exit(-1);
 	}
+
+	lock_acquire (&sys_lock);
 
 	// Reading from stdin.
 	if (fd == STDIN_FILENO) {
@@ -387,19 +387,22 @@ int read(int fd, void *buffer, unsigned size){
 	}
 	// Reading from other kinds of files.
 	else {
+
+		// ==TODO== Release this because file_read should be thread_safe now
+		lock_release (&sys_lock);
+
 		for (l = list_begin(&thread_current()->files);
 				l != list_end(&thread_current()->files);
 				l = list_next(l)) {
 			r = list_entry(l, struct fd_element, f_elem);
 			if (r->fd == fd) {
-				f = r->file;
-				lock_release (&sys_lock);
+				f = r->file;				
 				//seek(r->fd, 0); // I.e., start reading from beginning of file.
 				return file_read(f, buffer, size);
 			}
 		}
 	}
-   	lock_release (&sys_lock);
+   	
 	return -1;
 }
 
@@ -407,8 +410,7 @@ void close(int fd) {
 	struct fd_element *r;
 	struct list_elem *l;
 	struct thread *t;
-
-	lock_acquire(&sys_lock);
+	
 	t = thread_current();
 
 	for (l = list_begin(&t->files);
@@ -421,17 +423,14 @@ void close(int fd) {
 			free(r);
 			break;
 		}
-    }
-
-	lock_release(&sys_lock);
+    }	
 }
 
 void seek(int fd, unsigned position) {
     struct file *f;
     struct fd_element *r;
     struct list_elem *l;
-
-    lock_acquire(&sys_lock);
+    
     for (l = list_begin(&thread_current()->files);
     		l != list_end(&thread_current()->files);
     		l = list_next(l)) {
@@ -440,8 +439,7 @@ void seek(int fd, unsigned position) {
     		f = r->file;
     		file_seek(f, position);
     	}
-    }
-    lock_release(&sys_lock);
+    }    
 }
 
 /*! Returns the position of the next byte to be read or written in open file
@@ -451,19 +449,16 @@ unsigned tell(int fd){
 	struct file *f;
 	struct fd_element *r;
 	struct list_elem *l;
-
-	lock_acquire(&sys_lock);
+	
 	for (l = list_begin(&thread_current()->files);
 			l != list_end(&thread_current()->files);
 			l = list_next(l)){
 		r = list_entry(l, struct fd_element, f_elem);
 		if (r->fd == fd){
-			f = r->file;
-			lock_release(&sys_lock);
+			f = r->file;			
 			return file_tell(f);
 		}
-	}
-	lock_release(&sys_lock);
+	}	
 	return -1;
 }
 
@@ -494,6 +489,7 @@ bool create (const char *file, unsigned initial_size) {
 bool remove (const char *file) {
 
 	bool success = false;
+		
 	lock_acquire(&sys_lock);
 
 	if (!uptr_is_valid(file)) {
