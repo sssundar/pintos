@@ -163,7 +163,7 @@ static void sc_handler(struct intr_frame *f) {
 		f->eax = mkdir((const char *) sc_n1);
 	}
 	else if (sc_n == SYS_READDIR) {
-		f->eax = readdir((pid_t) sc_n1, (const char *) sc_n2);
+		f->eax = readdir((pid_t) sc_n1, (char *) sc_n2);
 	}
 	else if (sc_n == SYS_ISDIR) {
 		f->eax = isdir((pid_t) sc_n1);
@@ -576,18 +576,18 @@ bool uptr_is_valid (const void *uptr) {
  * which may be relative or absolute. Returns true if successful, 
  * false on failure. */
 bool chdir (const char *dir){
-	if (!is_valid_filename(dir)){
+	if (!uptr_is_valid(dir)){
 		return false;
 	}
-  struct file *f = filesys_open(dir);
-
-  if(f == NULL){
-	  return false;
-  }
-
-  thread_current()->cwd = inode_get_inumber(f->inode);
-  file_close(f);
-  return true;
+	struct file *f = filesys_open(dir);
+	
+	if(f == NULL){
+		return false;
+	}
+	
+	thread_current()->cwd = inode_get_inumber(f->inode);
+	file_close(f);
+	return true;
 }
 
 /* Creates the directory named dir, which may be relative or absolute. 
@@ -599,13 +599,13 @@ bool mkdir(const char* dir){
 	lock_acquire(&sys_lock);
 
 	unsigned int inode_sector = 0;
-	unsigned int inode_flags = 0;
 	struct file *f = NULL;
+	struct file *p = NULL;
 	// Basic filename is limited by 14 characters.
 	char filename[14];
-	int parent_sector = filesys_split_path(name, name_short);
+	int parent_sector = split_path_func(dir, filename);
 
-	if(!is_valid_filename(dir)){
+	if(!uptr_is_valid(dir)){
 		return false;
 	}
 
@@ -613,21 +613,21 @@ bool mkdir(const char* dir){
 	if (f == NULL){
 		return false;
 	}
-	struct file *p = file_open(inode_open(parent_sector));
+	p = file_open(inode_open(parent_sector));
 	if (p == NULL){
 		return false;
 	}
 
-	if (!file_is_dir(parent)){
-      file_close (parent);
+	if (!file_isdir(p)){
+      file_close (p);
 	  return false;
     }
 
-	dir_add(f, ".", inode_sector);
-	dir_add(f, "..", parent_sector);
+	dir_add(dir, ".", inode_sector);
+	dir_add(filename, "..", parent_sector);
     
-	file_close (f);
-	file_close (p);
+	file_close(f);
+	file_close(p);
 	lock_release(&sys_lock);
 	return true;
 }
@@ -638,10 +638,10 @@ bool mkdir(const char* dir){
  * READDIR_MAX_LEN + 1 bytes, and returns true. If no entries are 
  * left in the directory, returns false.*/
 bool readdir(int fd, char* name){
-  if(!is_valid_filename(name))
+  if(!uptr_is_valid(name))
     return false;
-  struct file *f = filesys_get_file(fd);
-  if(f == NULL || !file_is_dir(f))
+  struct file *f = get_file(fd);
+  if(f == NULL || !file_isdir(f))
     return false;
 
   return dir_readdir(f, name);
@@ -650,17 +650,17 @@ bool readdir(int fd, char* name){
 /* Returns true if fd represents a directory, false if it 
  * represents an ordinary file.*/
 bool isdir(int fd){
-  struct file *f = filesys_get_file(fd);
+  struct file *f = get_file(fd);
   if (f == NULL){
     return false;
   }
-  return file_is_dir(f);
+  return file_isdir(f);
 }
 
 /* Returns the inode number of the inode associated with fd, 
  * which may represent an ordinary file or a directory.*/
-int syscall_inumber(int fd){
-  struct file *f = filesys_get_file(fd);
+int inumber(int fd){
+  struct file *f = get_file(fd);
   if(f == NULL){
 	  return false;
   }
