@@ -6,6 +6,7 @@
 #include <string.h>
 
 #include <round.h>
+#include "devices/block.h"
 #include "filesys/filesys.h"
 #include "filesys/free-map.h"
 #include "filesys/cache.h"
@@ -15,14 +16,34 @@
 /*! Identifies an inode. */
 #define INODE_MAGIC 0x494e4f44
 
+static void get_indirection_indices(uint32_t *base_first_index, 
+                                    uint32_t *base_second_index, 
+                                    uint32_t *final_first_index, 
+                                    uint32_t *final_second_index, 
+                                    off_t current_length, 
+                                    off_t final_length);
+
+static bool inode_extend(   bool create_double_indirection, 
+                            block_sector_t* doubly_indirect_, 
+                            off_t current_length, 
+                            off_t future_length);
+
 /*! On-disk inode.
     Must be exactly BLOCK_SECTOR_SIZE bytes long. */
 struct inode_disk {
     block_sector_t start;               /*!< First data sector. */
     off_t length;                       /*!< File size in bytes. */
     unsigned magic;                     /*!< Magic number. */
-    uint32_t unused[125];               /*!< Not used. */
+
+    /* Branching out to data, or INDIRECTION_BRANCH references */
+    block_sector_t ignore[124];         /* Unused */
+    block_sector_t doubly_indirect;     /* 8 Mb reference */
 };
+
+/* An indirection sector referencing data or further indirection sectors */
+struct indirection_block {
+    block_sector_t sector[128];        
+}
 
 /*! Returns the number of sectors to allocate for an inode SIZE
     bytes long. */
@@ -36,9 +57,9 @@ struct inode {
     block_sector_t sector;              /*!< Sector number of disk location. */
     int open_cnt;                       /*!< Number of openers. */
     bool removed;                       /*!< True if deleted, false otherwise.*/
-    int deny_write_cnt;                 /*!< 0: writes ok, >0: deny writes. */
-    // ==TODO== REMOVE
-    // struct inode_disk data;             /*!< Inode content. */
+    int deny_write_cnt;                 /*!< 0: writes ok, >0: deny writes. */    
+    struct lock dwc_lock;               /*! Deny Write Count Lock */
+    struct lock extension_lock;         /*! Extension lock */
 };
 
 /*! Returns the block device sector that contains byte offset POS
@@ -50,7 +71,7 @@ static block_sector_t byte_to_sector(const struct inode *inode, off_t pos) {
 
     block_sector_t result; 
     
-    cache_sector_id src = crab_into_cached_sector(inode->sector, true);    
+    cache_sector_id src = crab_into_cached_sector(inode->sector, true, false);    
     
     struct inode_disk *data = 
         (struct inode_disk *) get_cache_sector_base_addr(src);            
@@ -76,15 +97,242 @@ void inode_init(void) {
     lock_init(&open_inodes_lock);
 }
 
-/*! Initializes an inode with LENGTH bytes of data and
+/*
+Takes a current length (0) and a final length (length) and 
+
+Returns (base_first_index >= 0, base_second_index >= 0)
+Returns (final_first_index >= 0, final_second_index >= 0)
+
+As the base and final double/single indirection references we must start
+allocating at, and end up at, allocated and referenced to new data sectors, 
+to meet the length requirement. (0,0,1,2) would mean start at the beginning, and 
+fill the entire 0th double indirection referenced sector with 
+single indirection references to data sectors, and fill the 0th,1st,2nd 
+data sector references out the second double indirection referenced
+sector.
+ 
+*/
+static void 
+get_indirection_indices(    int* base_first_index, int* base_second_index, 
+                            int *final_first_index, int* final_second_index, 
+                            off_t current_length, off_t final_length) {
+
+}
+
+
+/*! 
+    Extends an inode on disk at SECTOR with CURRENT_LENGTH bytes of data
+    to handle FUTURE_LENGTH bytes of data. Does not modify inode metadata
+    on disk or in memory other than adding index references. e.g. update
+    the length yourself!
+
+    You must enter this function with a file extension lock held, but
+    you may release on exit at your leisure. 
+
+    Returns false and de-allocates the sectors handled, 
+    if memory or disk allocation fails. Does not de-allocate
+    SECTOR.
+
+    If create_double_indirection is true, will allocate a doubly indirect 
+    index sector and return its sector on disk in DOUBLY_INDIRECT. 
+    Otherwise, will expect that pointer to be the double indirection reference
+    for your inode in question. 
+
+    */
+static bool inode_extend(   bool create_double_indirection, 
+                            block_sector_t* doubly_indirect_, 
+                            off_t current_length, 
+                            off_t future_length) {
+    struct indirection_block *emptiness = NULL;    
+
+    uint32_t base_first_index, base_second_index, first_index, second_index;         
+    cache_sector_id data, singly, doubly;
+    uint32_t first_sweep, second_sweep;
+    bool double_indirection_flag, first_sweep_flag, second_sweep_flag;
+    uint32_t second_sweep_limit;                        
+    block_sector_t single_indirection_sector, data_sector;            
+    struct indirection_block *cached_single_indirection_sector;
+    struct indirection_block *cached_double_indirection_sector;
+
+    emptiness = calloc(1, sizeof(*emptiness));
+
+    if (emptiness != NULL) {
+        /*  Set all entries in emptiness to SILLY_OLD_DISK_SECTOR,
+            as our sentinels */
+        memset( (void *) emptiness, 
+                (int) ((unsigned char) 0xFF),
+                BLOCK_SECTOR_SIZE);
+    } else {
+        return false;
+    }
+
+    /* Find the indirection blocks necessary for length bytes */                      
+    get_indirection_indices(&base_first_index, &base_second_index, 
+                            &first_index, &second_index, 
+                            current_length, future_length);
+        
+    /*  In the case of creation, we don't have a doubly indirect sector
+    to start with. Let's get one. */
+    if (create_double_indirection) {
+        double_indirection_flag = 
+            free_map_allocate(1, doubly_indirect_);                    
+        if (!double_indirection_flag) {
+            free(emptiness);
+            return false;
+        }
+    }
+
+    block_sector_t doubly_indirect = *doubly_indirect_;
+
+    /*  Bring this doubly indirect map in, cache, pin, and clear it if 
+        necessary */                    
+    doubly = crab_into_cached_sector(doubly_indirect, 
+                                        false, 
+                                        create_double_indirection);                        
+
+    cached_double_indirection_sector = 
+        (struct indirection_block *) get_cache_sector_base_addr(doubly);
+
+    if (create_double_indirection) {
+        memcpy( (void *) cached_double_indirection_sector, 
+                (void *) emptiness, 
+                (size_t) BLOCK_SECTOR_SIZE );             
+    }
+
+    /*  Want to avoid pinning several cache sectors in sequence,
+        has the potential for deadlock if we over-constrain the 
+        cache */
+    crab_outof_cached_sector( doubly, false );                
+
+    /*  Now, sweep through and allocate all the first level indirection
+        sectors. */                        
+    for (   first_sweep = base_first_index; 
+            first_sweep < first_index+1; 
+            first_sweep++) {                
+
+        /* Allocate and remember the next single indirection sector */
+        doubly = crab_into_cached_sector(doubly_indirect, 
+                                            false, 
+                                            false);
+        cached_double_indirection_sector = 
+            (struct indirection_block *) 
+                get_cache_sector_base_addr(doubly);
+    
+        first_sweep_flag = free_map_allocate(1, 
+                                &single_indirection_sector);
+        
+        if (first_sweep_flag)
+            cached_double_indirection_sector->sector[first_sweep] = 
+                single_indirection_sector;
+        else 
+            single_indirection_sector = SILLY_OLD_DISK_SECTOR;
+
+        /*  Want to avoid pinning several cache sectors in sequence,
+            has the potential for deadlock if we over-constrain the 
+            cache */
+        crab_outof_cached_sector( doubly, false );
+        
+        if (!first_sweep_flag) {          
+            /* Release disk allocations immediately outside this loop */
+            break;
+        } 
+
+        /*  Now the double indirection sector contains a reference
+        to a single indirection sectors that we need to cache, clear,
+        then flesh out with cleared data sector references */
+        
+        /* Cache the single indirection sector */                
+        singly = crab_into_cached_sector(single_indirection_sector, 
+                                            false, 
+                                            true);
+
+        cached_single_indirection_sector = 
+            (struct indirection_block *) 
+                get_cache_sector_base_addr(singly);
+
+        //==TODO== only if this is being created from scratch.. 
+        memcpy( (void *) cached_single_indirection_sector, 
+                (void *) emptiness, 
+                (size_t) BLOCK_SECTOR_SIZE );     
+
+        crab_outof_cached_sector(singly, false);                                                    
+
+        /* Set up to get and clear second_sweep_limit data sectors */
+        if (first_sweep == first_index-1)
+            second_sweep_limit = second_index+1;
+        else
+            second_sweep_limit = INDIRECTION_REFERENCES; 
+        // TODO THIS CODE IS WRONG - base_second index only initially, on
+        // the first sweep base, and second_sweep_limit only at the 
+        // last-first sweep. Shit.
+        for (   second_sweep = base_second_index; 
+                second_sweep < second_sweep_limit; 
+                second_sweep++) {
+            singly = crab_into_cached_sector(single_indirection_sector, 
+                                            false, 
+                                            false);
+            cached_single_indirection_sector = 
+                (struct indirection_block *) 
+                    get_cache_sector_base_addr(singly);
+
+            /* Allocate the next data sector */
+            second_sweep_flag = 
+                free_map_allocate(
+                    1, 
+                    &data_sector );
+                                    
+            if (second_sweep_flag)
+                cached_single_indirection_sector->
+                        sector[second_sweep] = data_sector;
+            else 
+                data_sector = SILLY_OLD_DISK_SECTOR;
+            
+            crab_outof_cached_sector(singly, false); 
+
+            if (!second_sweep_flag) {
+                /*  Release disk allocations immediately 
+                    outside this loop */
+                break;
+            }
+
+            /* Now, cache and clear the data sector */
+            crab_into_cached_sector(data_sector, false, true);
+            crab_outof_cached_sector(data_sector, false);
+        }
+    }                        
+
+    /* Clean up if things went wrong */
+    if (!first_sweep_flag || !second_sweep_flag) {            
+
+        cleanup_failed_extension(   base_first_index, 
+                                    base_second_index, 
+                                    doubly_indirect);
+        *doubly_indirect_ = SILLY_OLD_DISK_SECTOR;
+        return false;
+    }
+
+    return true;
+}
+
+/*! 
+    Initializes an inode with LENGTH bytes of data and
     writes the new inode to sector SECTOR on the file system
     device.
-    Returns true if successful.
-    Returns false if memory or disk allocation fails. */
-bool inode_create(block_sector_t sector, off_t length) {
-    struct inode_disk *disk_inode = NULL;
-    bool success = false;
 
+    You must enter this function with a file extension lock held,
+    so that the inode referencing this inode_disk created can be
+    atomically and rapidly placed into the inode_list. Then other
+    file-opens will not try to create new inodes for the same file.
+    Returns true if successful.
+    
+    Returns false and de-allocates the sectors handled, 
+    if memory or disk allocation fails. Does not de-allocate
+    the sector the inode_disk was supposed to be placed in. 
+    */
+bool inode_create(block_sector_t sector, off_t length) {
+    struct inode_disk *disk_inode = NULL;    
+    bool success = false;
+    
     ASSERT(length >= 0);
 
     /* If this assertion fails, the inode structure is not exactly
@@ -92,24 +340,133 @@ bool inode_create(block_sector_t sector, off_t length) {
     ASSERT(sizeof *disk_inode == BLOCK_SECTOR_SIZE);
 
     disk_inode = calloc(1, sizeof *disk_inode);
+    
     if (disk_inode != NULL) {
-        size_t sectors = bytes_to_sectors(length);
         disk_inode->length = length;
-        disk_inode->magic = INODE_MAGIC;
-        if (free_map_allocate(sectors, &disk_inode->start)) {
-            block_write(fs_device, sector, disk_inode);
-            if (sectors > 0) {
-                static char zeros[BLOCK_SECTOR_SIZE];
-                size_t i;
-              
-                for (i = 0; i < sectors; i++) 
-                    block_write(fs_device, disk_inode->start + i, zeros);
-            }
-            success = true; 
+        disk_inode->magic = INODE_MAGIC;        
+                        
+        if (inode_extend(true, &disk_inode->doubly_indirect, 0, length)) {
+            /* Write the disk_inode to disk, too! */
+            
+            cache_sector_id di = crab_into_cached_sector(sector, false, true);
+            memcpy( get_cache_sector_base_addr(di),                        
+                    (void *) disk_inode, 
+                    (size_t) BLOCK_SECTOR_SIZE );     
+            crab_outof_cached_sector(di, false);
+
+            success = true;         
         }
-        free(disk_inode);
+                    
+        free(disk_inode);        
     }
+
     return success;
+}
+
+/*! Cleans up after a failed file extension, either during creation or afterward
+    A file extension lock must be held on the inode prior to entry.
+
+    Starts at base_first_index and base_second index, and goes until
+    it sees silly references in the index referenced by doubly_indirect.
+    It frees this index sector as well if the base indices are both zero,
+    as this indicates the file had length zero before. 
+
+    It is up to the caller to free their inode_disk and inode (if necessary) 
+    depending on the circumstances under which this function was called. */
+void cleanup_failed_extension(  uint32_t base_first_index, 
+                                uint32_t base_second_index, 
+                                block_sector_t doubly_indirect) {
+    cache_sector_id singly, doubly;
+    uint32_t first_sweep, second_sweep;    
+    block_sector_t single_indirection_sector, data_sector;            
+    struct indirection_block *cached_single_indirection_sector;
+    struct indirection_block *cached_double_indirection_sector;
+
+    for (   first_sweep = base_first_index; 
+            first_sweep < INDIRECTION_REFERENCES; 
+            first_sweep++) {
+        /* Get single indirection referenced if it's not silly */
+        
+        doubly = crab_into_cached_sector(doubly_indirect, 
+                                            false, 
+                                            false);
+        cached_double_indirection_sector = 
+            (struct indirection_block *) 
+                get_cache_sector_base_addr(doubly);
+        
+        single_indirection_sector = 
+            cached_double_indirection_sector->sector[first_sweep];
+
+        if (single_indirection_sector == SILLY_OLD_DISK_SECTOR ) {
+            /* No more! */
+            break;
+        } else {                    
+        /*  Replace single indirection reference with a silly reference. 
+            Not strictly necessary for creation cleanup, but 
+            it is necessary if we're just cleaning up a failed
+            extension.
+
+            Note that this isn't preserving the linear contiguous 
+            structure of the disk_inode index, so we'd better have a 
+            file lock (on this file) as we do this */
+
+            &cached_double_indirection_sector->sector[first_sweep] = 
+                SILLY_OLD_DISK_SECTOR;
+        }
+
+        /*  Want to avoid pinning several cache sectors in sequence,
+            has the potential for deadlock if we over-constrain the 
+            cache */
+        crab_outof_cached_sector( doubly, false );                
+        
+        for (   second_sweep = base_second_index; 
+                second_sweep < INDIRECTION_REFERENCES; 
+                second_sweep++) {
+            /* Get data sector referenced if it's not silly */
+            singly = crab_into_cached_sector(single_indirection_sector
+                                                false, 
+                                                false);
+            cached_single_indirection_sector = 
+                (struct indirection_block *) 
+                    get_cache_sector_base_addr(singly);
+        
+            data_sector = 
+                cached_single_indirection_sector->sector[second_sweep];
+            
+            if (data_sector == SILLY_OLD_DISK_SECTOR ) {
+                /* No more! */
+                break;
+            } else {                    
+            /*  Replace data reference with a silly reference. 
+                Not strictly necessary for creation cleanup, but 
+                it is necessary if we're just cleaning up a failed
+                extension.
+
+                Note that this isn't preserving the linear contiguous 
+                structure of the disk_inode index, so we'd better have a
+                file lock (on this file) as we do this */
+
+                &cached_single_indirection_sector->sector[second_sweep]= 
+                    SILLY_OLD_DISK_SECTOR;
+            }
+
+            /*  Want to avoid pinning several cache sectors in sequence,
+                has the potential for deadlock if we over-constrain the 
+                cache */
+            crab_outof_cached_sector( singly, false );                
+
+            /* Remove data sector from the free-map */
+            free_map_release(data_sector, 1);                    
+        }
+
+        /* Remove single indirection reference from the free-map */
+        free_map_release(single_indirection_sector, 1);
+    }
+
+    /*  Free double indirection reference from free-map if original file
+        size was zero. */
+    if (base_first_index == 0 && base_second_index == 0)
+        free_map_release(doubly_indirect, 1);
 }
 
 /*! Reads an inode from SECTOR
@@ -144,7 +501,9 @@ struct inode * inode_open(block_sector_t sector) {
     inode->sector = sector;
     inode->open_cnt = 1;
     inode->deny_write_cnt = 0;
-    inode->removed = false;        
+    inode->removed = false;     
+    lock_init(&inode->extension_lock);    
+    lock_init(&inode->dwc_lock);
     lock_release(&open_inodes_lock);
     return inode;
 }
@@ -182,7 +541,8 @@ void inode_close(struct inode *inode) {
             block_sector_t start;
             off_t length; 
 
-            cache_sector_id src = crab_into_cached_sector(inode->sector, true);        
+            cache_sector_id src = crab_into_cached_sector(inode->sector, true, 
+                    false);        
             
             struct inode_disk *data = 
                 (struct inode_disk *) get_cache_sector_base_addr(src);             
@@ -252,7 +612,7 @@ off_t inode_read_at(struct inode *inode, void *buffer_, off_t size, off_t offset
         }
         */
 
-        cache_sector_id src = crab_into_cached_sector(sector_idx, true);            
+        cache_sector_id src = crab_into_cached_sector(sector_idx, true, false);            
         cache_read(src, (void *) (buffer + bytes_read), sector_ofs, chunk_size);
         crab_outof_cached_sector(src, true);
       
@@ -324,7 +684,7 @@ off_t inode_write_at(struct inode *inode, const void *buffer_, off_t size, off_t
         }
         */
 
-        cache_sector_id dst = crab_into_cached_sector(sector_idx, false);          
+        cache_sector_id dst = crab_into_cached_sector(sector_idx, false, false);          
         cache_write(dst, (void *) (buffer + bytes_written), sector_ofs, chunk_size);
         crab_outof_cached_sector(dst, false);
     
@@ -342,22 +702,28 @@ off_t inode_write_at(struct inode *inode, const void *buffer_, off_t size, off_t
 /*! Disables writes to INODE.
     May be called at most once per inode opener. */
 void inode_deny_write (struct inode *inode) {
-    inode->deny_write_cnt++;
+    lock_acquire(&inode->dwc_lock);
+    inode->deny_write_cnt++;    
     ASSERT(inode->deny_write_cnt <= inode->open_cnt);
+    lock_release(&inode->dwc_lock);
 }
 
 /*! Re-enables writes to INODE.
     Must be called once by each inode opener who has called
     inode_deny_write() on the inode, before closing the inode. */
 void inode_allow_write (struct inode *inode) {
+    lock_acquire(&inode->dwc_lock);
     ASSERT(inode->deny_write_cnt > 0);
     ASSERT(inode->deny_write_cnt <= inode->open_cnt);
     inode->deny_write_cnt--;
+    lock_release(&inode->dwc_lock);
 }
 
-/*! Returns the length, in bytes, of INODE's data. */
+/*! Returns the length, in bytes, of INODE's data */
 off_t inode_length(const struct inode *inode) {
-    cache_sector_id src = crab_into_cached_sector(inode->sector, true);    
+    ASSERT (inode != NULL);
+
+    cache_sector_id src = crab_into_cached_sector(inode->sector, true, false);    
     
     struct inode_disk *data = 
         (struct inode_disk *) get_cache_sector_base_addr(src);            

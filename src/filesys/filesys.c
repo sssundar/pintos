@@ -147,7 +147,7 @@ void read_ahead_func(void *aux UNUSED) {
 		// Read in the next sector from disk.
 		lock_release(&monitor_ra);
 		crab_outof_cached_sector(
-				crab_into_cached_sector(rasect->sect_n, true), true);
+				crab_into_cached_sector(rasect->sect_n, true), true, false);
 		lock_acquire(&monitor_ra);
 		// printf("---> I just saw block_sector_t: %u \n", rasect->sect_n);
 

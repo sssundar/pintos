@@ -46,7 +46,116 @@ TODO
 >> A2: What is the maximum size of a file supported by your inode
 >> structure?  Show your work.
 
-TODO
+Well, consider a single file that takes up the entire disk (no directory), 
+as an edge case. 
+
+The inode metadata in the first sector (2^9 bytes) takes up 12 bytes.
+That leaves 500 bytes in the sector, or 125 block_sector_t values
+on a 4-byte integer/address architecture like ours.
+
+In this set, we can have n_d, n_is and n_id as the number of direct,
+indirect (singly) and indirect (doubly) sector references. Direct references
+are the numbers of sectors of data, indirect references are the numbers of
+sectors which contain numbers of sectors of data as their data, and so on.
+
+This makes it really easy to know which direct, singly indirect, or doubly 
+indirect sector reference to look at, if you know the position you want in
+your file. 
+
+It's worth noting that:
+  Indirect references point to sectors without headers. They can
+  hold 128 (2^7) metadata entries or direct sector numbers.
+
+  and
+
+  The file would be arranged linearly in this structure, and we'd fill out
+  the sector references compactly so jumping from offset -> reference in the
+  index structure remains simple.
+
+This works out to;
+
+Metadata: 
+  one sector, an inode_disk
+  n_is sectors as singly indirect references (n_is sectors worth of bytes)
+  n_id sectors as doubly indirect references
+  n_id * 128 sectors as singly indirect references
+
+Data
+  n_d sectors 
+  n_is * 128 sectors
+  n_id * 128 * 128 sectors
+
+with the constraint that n_d + n_is + n_id = 125.
+
+This, collectively, takes up:
+  [1 + n_is + n_id*129 + n_d + n_is*128 + n_id*128*128 ] * 512 bytes
+
+  which is
+  [1 + n_d + (2^7 + 1)* n_is + (1 + 2^7 + 2^14) * n_id ] * 2^9 bytes
+
+  Keep in mind that 8 Mb = 8 * 2^20 bytes. 
+
+  If there are integers n_d, n_is, and n_id >= 0 such that
+    n_d + n_is + n_id = 125.
+  and
+    [1 + n_d + (2^7 + 1)* n_is + (1 + 2^7 + 2^14) * n_id ] * 2^9 >= 8 * 2^20
+
+  Then we can have a single file that can cover the entire file system. 
+
+Now, the question is, how do our choices of these integers affect efficiency
+of traversal for different kinds of files, and metadata-vs-data usage?
+
+If we make n_d small, we're almost always fetching multiple sectors from disk
+for our traversals, so small files suffer losses unnecessarily. If we make n_d
+large, then file sizes might be capped, unless we allow further indirection.
+
+Right now we have three constraints: 
+  - 8 Mb-file capable file system requirement (including metadata)
+  - three levels of indirection 
+  - size of a block sector
+
+These have yielded two linear equations in three unknowns.
+
+We need a final constraint, one of efficiency, and that will yield a
+solution we can run with. 
+
+Let's arbitrarily force at least the first 32kB of a file to be directly or 
+singly accessible, just so most text files, directory structure, and small
+program sectors are about three sector-reads away.
+
+That means    (n_d + n_is * 2^7) * 2^9 bytes >= 2^15 bytes
+or, we have three equations, and we're trying to find integer solutions.
+
+n_d + n_is*2^7 >= 2^6
+n_d + n_is + n_id = 125.
+[1 + n_d + (2^7 + 1)* n_is + (1 + 2^7 + 2^14) * n_id ] * 2^9 >= 8 * 2^20
+
+This clarifies things immensely. The added constraint is irrelevant,
+we immediately see that: 2^9 * 2^14 = 2^23 = 8 * 2^20, so even a single
+doubly indirect reference is enough to cover the filesystem.
+
+This isn't a question of being able to reference that much space, it's a
+question of how to do so quickly. 
+
+Using n_id = 1 means n_id + n_is = 124. Say we split evenly. Then
+n_d = 62 abd n_is = 64, so, after reading the base inode,
+  one sector read away:   ~32kbytes
+  two sector reads away:  ~4Mb
+  three sector reads away: 8 Mb
+
+That seems pretty freaking reasonable to me. 32kB is enough for small programs,
+4Mb is enough for something like Pintos, I bet, and 8 Mb is enough for 
+normal sized data files like music or photos. 
+
+Ok, so let's use n_d = 62, n_is = 62, and n_id = 1. That allows one file to
+address n_d + n_is*2^7 + n_id*2^14 sectors of data, or 12,483,584 bytes, 
+taking up a total of 1 + 62 + 1 + 128 sectors of metadata, or 93,304 bytes 
+of metadata. That's 0.08% metadata for a 12.5Mb maximum file size!
+
+I'm sure there are optimal solutions depending on use case. This seems good
+enough for any file I'd use (other than say, a video), to be honest. I imagine
+that in reality people have inode headers that say what the breakdown is,
+varying by file size, to optimize for different ranges of sizes.
 
 ---- SYNCHRONIZATION ----
 
