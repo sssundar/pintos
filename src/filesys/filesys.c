@@ -9,6 +9,7 @@
 #include "filesys/filesys.h"
 #include "threads/thread.h"
 #include "threads/malloc.h"
+#include "lib/user/syscall.h"
 
 struct lock monitor_ra;			   /*!< Used to wake up read-ahead. */
 struct condition cond_ra;          /*!< Used to wake up read-ahead. */
@@ -159,19 +160,26 @@ void read_ahead_func(void *aux UNUSED) {
 
 }
 
-/* Split path into the parent directory and file name. 
- * Return the sector of the parent directory and store
- * file name in filename. */
-int split_path_func(const char *path, char *filename){
-  const char *pslash = strrchr(path, '/');
-  if (pslash == NULL){
-      strlcpy (filename, path, 14);
-      return thread_current ()->cwd;
-  }
-  else{
-      char partial_path[14];
-      strlcpy (partial_path, path, pslash - path);
-      strlcpy (filename, pslash, 14);
-      return partial_path[0];
-    }
+/*! Split path into the parent directory and file name.
+    Return the sector of the parent directory and store
+    file name in filename. */
+int split_path_func(const char *path UNUSED, char *filename UNUSED) {
+	/*
+	char *pslash = strrchr(path, '/');
+
+	// If we didn't find anything then the path is a filename. Copy whole path.
+	if (pslash == NULL) {
+	  strlcpy (filename, path, READDIR_MAX_LEN);
+	  return thread_current()->cwd;
+	}
+
+	// Otherwise extract the filename at the end of the path.
+	else {
+	  char partial_path[14];
+	  strlcpy (partial_path, path, pslash - path);
+	  strlcpy (filename, pslash, 14);
+	  return partial_path[0];
+	}
+	*/
+	return -1; // TODO
 }

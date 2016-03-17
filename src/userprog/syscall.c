@@ -552,7 +552,7 @@ pid_t exec (const char *cmd_line) {
 	}
 	progname[i] = '\0';
 
-	struct semaphore *fsema = file_match_sema(cmd_line);
+	// struct semaphore *fsema = file_match_sema(cmd_line);
 
 	if (progname != NULL)
 	    palloc_free_page((void *) progname);
@@ -572,40 +572,44 @@ bool uptr_is_valid (const void *uptr) {
 			pagedir_get_page(thread_current()->pagedir, uptr) != NULL;
 }
 
-/* Changes the current working directory of the process to dir, 
- * which may be relative or absolute. Returns true if successful, 
- * false on failure. */
-bool chdir (const char *dir){
-	if (!uptr_is_valid(dir)){
+/*! Changes the current working directory of the process to dir,
+    which may be relative or absolute. Returns true if successful,
+    false on failure. */
+bool chdir (const char *dir UNUSED) {
+	/*
+	if (!uptr_is_valid(dir)) {
 		return false;
 	}
 	struct file *f = filesys_open(dir);
 	
-	if(f == NULL){
+	if(f == NULL) {
 		return false;
 	}
 	
 	thread_current()->cwd = inode_get_inumber(f->inode);
 	file_close(f);
 	return true;
+	*/
+	return false;// TODO
 }
 
-/* Creates the directory named dir, which may be relative or absolute. 
- * Returns true if successful, false on failure. Fails if dir already 
- * exists or if any directory name in dir, besides the last, does
- * not already exist. That is, mkdir("/a/b/c") succeeds only if /a/b 
- * already exists and /a/b/c does not.*/
-bool mkdir(const char* dir){
+/*! Creates the directory named dir, which may be relative or absolute.
+    Returns true if successful, false on failure. Fails if dir already
+    exists or if any directory name in dir, besides the last, does
+    not already exist. That is, mkdir("/a/b/c") succeeds only if /a/b
+    already exists and /a/b/c does not. */
+bool mkdir(const char* dir UNUSED) {
+	/*
 	lock_acquire(&sys_lock);
 
 	unsigned int inode_sector = 0;
 	struct file *f = NULL;
 	struct file *p = NULL;
-	// Basic filename is limited by 14 characters.
-	char filename[14];
+
+	char filename[READDIR_MAX_LEN];
 	int parent_sector = split_path_func(dir, filename);
 
-	if(!uptr_is_valid(dir)){
+	if(!uptr_is_valid(dir)) {
 		return false;
 	}
 
@@ -630,6 +634,8 @@ bool mkdir(const char* dir){
 	file_close(p);
 	lock_release(&sys_lock);
 	return true;
+	*/
+	return false;// TODO
 }
 
 /* Reads a directory entry from file descriptor fd, 
@@ -637,12 +643,14 @@ bool mkdir(const char* dir){
  * null-terminated file name in name, which must have room for 
  * READDIR_MAX_LEN + 1 bytes, and returns true. If no entries are 
  * left in the directory, returns false.*/
-bool readdir(int fd, char* name){
-	if(!uptr_is_valid(name)){
+bool readdir(int fd UNUSED, char* name UNUSED) {
+
+	/*
+	if(!uptr_is_valid(name)) {
 		return false;
 	}
 	struct file *f = get_file(fd);
-	if(f == NULL || !file_isdir(f)){
+	if(f == NULL || !file_isdir(f)) {
 		return false;
 	}
 	
@@ -653,24 +661,32 @@ bool readdir(int fd, char* name){
 	
 	strlcpy (name, f, READDIR_MAX_LEN + 1);
 	return true;
+	*/
+	return false;// TODO
 }
 
 /* Returns true if fd represents a directory, false if it 
  * represents an ordinary file.*/
-bool isdir(int fd){
-  struct file *f = get_file(fd);
-  if (f == NULL){
-    return false;
-  }
-  return file_isdir(f);
+bool isdir(int fd UNUSED) {
+	/*
+	struct file *f = get_file(fd);
+	if (f == NULL){
+	return false;
+	}
+	return file_isdir(f);
+	*/
+	return false;// TODO
 }
 
 /* Returns the inode number of the inode associated with fd, 
  * which may represent an ordinary file or a directory.*/
-int inumber(int fd){
-  struct file *f = get_file(fd);
-  if(f == NULL){
+int inumber(int fd UNUSED) {
+	/*
+	struct file *f = get_file(fd);
+	if(f == NULL){
 	  return false;
-  }
-  return inode_get_inumber(f->inode);
+	}
+	return inode_get_inumber(f->inode);
+	*/
+	return -1;// TODO
 }
