@@ -95,26 +95,22 @@ bool inode_create(block_sector_t sector, off_t length,
         	disk_inode->parent_dir = BOGUS_SECTOR;
         }
         if (free_map_allocate(sectors, &disk_inode->start)) {
-            block_write(fs_device, sector, disk_inode);
+
+            cache_sector_id dst = crab_into_cached_sector(sector, false);
+            cache_write(dst, disk_inode, 0, BLOCK_SECTOR_SIZE);
+            crab_outof_cached_sector(dst, false);
+            
             if (sectors > 0) {
                 static char zeros[BLOCK_SECTOR_SIZE];
                 size_t i;
-                
-                printf ("\n sector %d : allocated another sector.\n", sector);
-                for (i = 0; i < sectors; i++) 
-                    block_write(fs_device, disk_inode->start + i, zeros);
+                            
+                for (i = 0; i < sectors; i++) {
+                    cache_sector_id dst = crab_into_cached_sector(disk_inode->start + i, false);
+                    cache_write(dst, &zeros, 0, BLOCK_SECTOR_SIZE);
+                    crab_outof_cached_sector(dst, false);                    
+                }                
             }
             
-            // ==TODO== REMOVE
-            void *buffer = calloc(1, sizeof *disk_inode);                    
-            block_read(fs_device, sector, buffer);
-            if ( ((struct inode_disk *) buffer)->is_dir ) {
-                printf("\n sector %d, YAAAY!\n", sector);
-            } else {
-                printf("\n sector %d, OH NOOOOO!\n", sector);
-            }
-            free(buffer);
-
             success = true; 
         }
         free(disk_inode);
@@ -127,22 +123,17 @@ bool inode_create(block_sector_t sector, off_t length,
     Returns a null pointer if memory allocation fails. */
 struct inode * inode_open(block_sector_t sector) {
     struct list_elem *e;
-    struct inode *inode;
-
-    printf("Opening inode for sector %d\n", sector);
+    struct inode *inode;    
 
     /* Check whether this inode is already open. */
     for (e = list_begin(&open_inodes); e != list_end(&open_inodes);
          e = list_next(e)) {
         inode = list_entry(e, struct inode, elem);
         if (inode->sector == sector) {
-            inode_reopen(inode);
-            printf("Found inode sector %d in open inodes.\n", sector);
+            inode_reopen(inode);            
             return inode; 
         }
-    }
-
-    printf("Didn't find inode sector %d in open inodes.\n", sector);
+    }    
 
     /* Allocate memory. */
     inode = malloc(sizeof *inode);
@@ -448,7 +439,8 @@ void inode_find_matching_idx_and_sector(struct inode *directory,
 		if (strcmp(name, "..") == 0)
 			rtn = thread_current()->cwd.inode->parent_dir;
 		else
-			rtn = thread_current()->cwd.inode->sector;
+			rtn = thread_current()->cwd.inode->sector;        
+
 		*the_sector = rtn;
 		*the_index = -1;
 		return;
@@ -468,16 +460,16 @@ void inode_find_matching_idx_and_sector(struct inode *directory,
 			NOT_REACHED();
 		}
 		// Return this sector number if the filename matches.
-		if(strcmp(curr_inode->filename, name) == 0) {
-			inode_close(curr_inode);
+		if(strcmp(curr_inode->filename, name) == 0) {            		
 			*the_sector = curr_inode->sector;
 			*the_index = i;
+            inode_close(curr_inode);
 			return;
 		}
 		inode_close(curr_inode);
 	}
 
-done:
+done:    
 	*the_sector = BOGUS_SECTOR;
 	*the_index = -1;
 	return;

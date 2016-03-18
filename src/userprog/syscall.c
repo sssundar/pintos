@@ -280,10 +280,8 @@ int filesize(int fd){
 	file are closed independently in separate calls to close and they do not
     share a file position.
 */
-int open(const char *file){
+int open(const char *file){	
 
-	printf("Got to sys_open\n");
-	
 	struct file *f;
 	struct fd_element *fd_elem;
 
@@ -489,9 +487,7 @@ unsigned tell(int fd){
     not open it: opening the new file is a separate operation which would
     require a open system call. Makes non-directory files.
  */
-bool create (const char *file, unsigned initial_size) {
-	
-	printf("Got to sys_create\n");
+bool create (const char *file, unsigned initial_size) {	
 
 	bool success = false;
 	lock_acquire(&sys_lock);

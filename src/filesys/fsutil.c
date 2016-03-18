@@ -109,7 +109,7 @@ void fsutil_extract(char **argv UNUSED) {
 
             /* Create destination file. */
             if (!filesys_create(file_name, size, false, BOGUS_SECTOR))
-                PANIC("%s: create failed", file_name);
+                PANIC("%s: create failed", file_name);            
             dst = filesys_open(file_name);
             if (dst == NULL)
                 PANIC("%s: open failed", file_name);

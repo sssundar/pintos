@@ -99,12 +99,13 @@ bool dir_lookup(const struct dir *dir, const char *name, struct inode **inode) {
 
     ASSERT(dir != NULL);
     ASSERT(name != NULL);
-
+    
     block_sector_t sect = inode_find_matching_dir_entry(dir->inode, name);
-    if (sect == BOGUS_SECTOR) {
+    if (sect == BOGUS_SECTOR) {        
     	*inode = NULL;
     	return false;
     }
+    
     *inode = inode_open(sect);
     if (*inode == NULL)
     	 return false;
