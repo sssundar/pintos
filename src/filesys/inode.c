@@ -2,6 +2,7 @@
 #include <list.h>
 #include <debug.h>
 #include <round.h>
+#include <stdio.h>
 #include <string.h>
 #include <stdio.h>
 #include "filesys/filesys.h"
@@ -97,10 +98,22 @@ bool inode_create(block_sector_t sector, off_t length,
             if (sectors > 0) {
                 static char zeros[BLOCK_SECTOR_SIZE];
                 size_t i;
-              
+                
+                printf ("\n sector %d : allocated another sector.\n", sector);
                 for (i = 0; i < sectors; i++) 
                     block_write(fs_device, disk_inode->start + i, zeros);
             }
+            
+            // ==TODO== REMOVE
+            void *buffer = calloc(1, sizeof *disk_inode);                    
+            block_read(fs_device, sector, buffer);
+            if ( ((struct inode_disk *) buffer)->is_dir ) {
+                printf("\n sector %d, YAAAY!\n", sector);
+            } else {
+                printf("\n sector %d, OH NOOOOO!\n", sector);
+            }
+            free(buffer);
+
             success = true; 
         }
 
@@ -116,15 +129,20 @@ struct inode * inode_open(block_sector_t sector) {
     struct list_elem *e;
     struct inode *inode;
 
+    printf("Opening inode for sector %d\n", sector);
+
     /* Check whether this inode is already open. */
     for (e = list_begin(&open_inodes); e != list_end(&open_inodes);
          e = list_next(e)) {
         inode = list_entry(e, struct inode, elem);
         if (inode->sector == sector) {
             inode_reopen(inode);
+            printf("Found inode sector %d in open inodes.\n", sector);
             return inode; 
         }
     }
+
+    printf("Didn't find inode sector %d in open inodes.\n", sector);
 
     /* Allocate memory. */
     inode = malloc(sizeof *inode);
