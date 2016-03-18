@@ -73,7 +73,7 @@ void filesys_done(void) {
 bool filesys_create(const char *name, off_t initial_size,
 		bool is_directory, block_sector_t parent) {
     block_sector_t inode_sector = 0;
-    struct dir *dir = dir_open_root();
+    struct dir *dir = dir_open_root(); // TODO fix
     bool success = (dir != NULL &&
                     free_map_allocate(1, &inode_sector) &&
                     inode_create(inode_sector,

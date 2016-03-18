@@ -431,7 +431,7 @@ void inode_find_matching_idx_and_sector(struct inode *directory,
 			rtn = thread_current()->cwd.inode->sector;
 		*the_sector = rtn;
 		*the_index = -1;
-		goto done;
+		return;
 	}
 
 	int i;
@@ -452,7 +452,7 @@ void inode_find_matching_idx_and_sector(struct inode *directory,
 			inode_close(curr_inode);
 			*the_sector = curr_inode->sector;
 			*the_index = i;
-			goto done;
+			return;
 		}
 		inode_close(curr_inode);
 	}
