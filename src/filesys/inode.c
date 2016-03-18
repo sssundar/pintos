@@ -30,25 +30,18 @@ static bool inode_extend(   bool create_double_indirection,
 
 /*! On-disk inode.
     Must be exactly BLOCK_SECTOR_SIZE bytes long. */
-struct inode_disk {
-    block_sector_t start;               /*!< First data sector. */
+struct inode_disk {    
     off_t length;                       /*!< File size in bytes. */
     unsigned magic;                     /*!< Magic number. */
 
     /* Branching out to data, or INDIRECTION_BRANCH references */
-    block_sector_t ignore[124];         /* Unused */
+    block_sector_t ignore[125];         /* Unused */
     block_sector_t doubly_indirect;     /* 8 Mb reference */
 };
 
 /* An indirection sector referencing data or further indirection sectors */
 struct indirection_block {
     block_sector_t sector[128];        
-}
-
-/*! Returns the number of sectors to allocate for an inode SIZE
-    bytes long. */
-static inline size_t bytes_to_sectors(off_t size) {
-    return DIV_ROUND_UP(size, BLOCK_SECTOR_SIZE);
 }
 
 /*! In-memory inode. */
@@ -58,7 +51,7 @@ struct inode {
     int open_cnt;                       /*!< Number of openers. */
     bool removed;                       /*!< True if deleted, false otherwise.*/
     int deny_write_cnt;                 /*!< 0: writes ok, >0: deny writes. */    
-    struct lock dwc_lock;               /*! Deny Write Count Lock */
+    struct lock ismd_lock;               /*! Inode Struct Metadata Lock */
     struct lock extension_lock;         /*! Extension lock */
 };
 
@@ -69,18 +62,23 @@ struct inode {
 static block_sector_t byte_to_sector(const struct inode *inode, off_t pos) {
     ASSERT(inode != NULL);
 
-    block_sector_t result; 
+    block_sector_t result, doubly_indirect; 
+
+    int first, second;     
+    get_indirection_indices(&first, &second, &first, &second, pos, pos);
     
     cache_sector_id src = crab_into_cached_sector(inode->sector, true, false);    
     
     struct inode_disk *data = 
         (struct inode_disk *) get_cache_sector_base_addr(src);            
     
-    if (pos < data->length)
-        result = data->start + pos / BLOCK_SECTOR_SIZE;
-    else 
+    if (pos >= data->length)             
         result = -1;
-    
+    else
+        result = 0;
+
+    doubly_indirect = data->doubly_indirect;
+
     crab_outof_cached_sector(src, true);        
 
     return result;
@@ -97,26 +95,36 @@ void inode_init(void) {
     lock_init(&open_inodes_lock);
 }
 
-/*
-Takes a current length (0) and a final length (length) and 
+/*! Takes a current length (0) and a final length (length) and 
 
-Returns (base_first_index >= 0, base_second_index >= 0)
-Returns (final_first_index >= 0, final_second_index >= 0)
+    Returns (base_first_index >= 0, base_second_index >= 0)
+    Returns (final_first_index >= 0, final_second_index >= 0)
 
-As the base and final double/single indirection references we must start
-allocating at, and end up at, allocated and referenced to new data sectors, 
-to meet the length requirement. (0,0,1,2) would mean start at the beginning, and 
-fill the entire 0th double indirection referenced sector with 
-single indirection references to data sectors, and fill the 0th,1st,2nd 
-data sector references out the second double indirection referenced
-sector.
- 
-*/
+    As the base and final double/single indirection references we must start
+    allocating at, and end up at, allocated and referenced to new data sectors, 
+    to meet the length requirement. (0,0,1,2) would mean start at the beginning, and 
+    fill the entire 0th double indirection referenced sector with 
+    single indirection references to data sectors, and fill the 0th,1st,2nd 
+    data sector references out the second double indirection referenced
+    sector. */
 static void 
 get_indirection_indices(    int* base_first_index, int* base_second_index, 
                             int *final_first_index, int* final_second_index, 
                             off_t current_length, off_t final_length) {
-
+    /* We have a single double indirection block */
+    /*  Each double indirection block entry points to a single indirection
+        block. Each single indirection block points to 128 sectors, or
+        2**16 bytes, or 0..65535. Therefore, int-dividing the current length
+        by 65536, we see that the quotient is the index into the double
+        indirection array, at the current length */
+    *base_first_index = current_length >> 16;
+    /*  The remainder of this division, itself divided by 512, is the index
+        into the single indirection block. */
+    *base_second_index = (current_length - (*base_first_index << 16)) >> 9;
+    
+    /* We can easily get the final indices the same way */
+    *final_first_index = final_length >> 16;
+    *final_second_index = (final_length - (*final_first_index << 16)) >> 9;
 }
 
 
@@ -143,16 +151,21 @@ static bool inode_extend(   bool create_double_indirection,
                             block_sector_t* doubly_indirect_, 
                             off_t current_length, 
                             off_t future_length) {
+
     struct indirection_block *emptiness = NULL;    
 
     uint32_t base_first_index, base_second_index, first_index, second_index;         
     cache_sector_id data, singly, doubly;
     uint32_t first_sweep, second_sweep;
     bool double_indirection_flag, first_sweep_flag, second_sweep_flag;
-    uint32_t second_sweep_limit;                        
+    bool new_single_indirection_block_flag;
+    uint32_t second_sweep_start, second_sweep_limit;                        
     block_sector_t single_indirection_sector, data_sector;            
     struct indirection_block *cached_single_indirection_sector;
     struct indirection_block *cached_double_indirection_sector;
+
+    if (future_length == 0)
+        return true;
 
     emptiness = calloc(1, sizeof(*emptiness));
 
@@ -180,6 +193,8 @@ static bool inode_extend(   bool create_double_indirection,
             free(emptiness);
             return false;
         }
+    } else {
+        ASSERT(*doubly_indirect_ != SILLY_OLD_DISK_SECTOR);
     }
 
     block_sector_t doubly_indirect = *doubly_indirect_;
@@ -217,15 +232,20 @@ static bool inode_extend(   bool create_double_indirection,
         cached_double_indirection_sector = 
             (struct indirection_block *) 
                 get_cache_sector_base_addr(doubly);
-    
-        first_sweep_flag = free_map_allocate(1, 
-                                &single_indirection_sector);
         
-        if (first_sweep_flag)
-            cached_double_indirection_sector->sector[first_sweep] = 
-                single_indirection_sector;
-        else 
-            single_indirection_sector = SILLY_OLD_DISK_SECTOR;
+        single_indirection_sector = 
+            cached_double_indirection_sector->sector[first_sweep];
+
+        first_sweep_flag = true;
+        new_single_indirection_block_flag = false;
+        if (single_indirection_sector == SILLY_OLD_DISK_SECTOR) {
+            new_single_indirection_block_flag = true;
+            first_sweep_flag = free_map_allocate(1, 
+                                    &single_indirection_sector);            
+            if (first_sweep_flag)                
+                cached_double_indirection_sector->sector[first_sweep] = 
+                    single_indirection_sector;            
+        } 
 
         /*  Want to avoid pinning several cache sectors in sequence,
             has the potential for deadlock if we over-constrain the 
@@ -250,22 +270,32 @@ static bool inode_extend(   bool create_double_indirection,
             (struct indirection_block *) 
                 get_cache_sector_base_addr(singly);
 
-        //==TODO== only if this is being created from scratch.. 
-        memcpy( (void *) cached_single_indirection_sector, 
-                (void *) emptiness, 
-                (size_t) BLOCK_SECTOR_SIZE );     
+        if (new_single_indirection_block_flag) {
+            memcpy( (void *) cached_single_indirection_sector, 
+                    (void *) emptiness, 
+                    (size_t) BLOCK_SECTOR_SIZE );   
+        }  
 
         crab_outof_cached_sector(singly, false);                                                    
 
         /* Set up to get and clear second_sweep_limit data sectors */
-        if (first_sweep == first_index-1)
+        if (first_sweep == first_index && first_index != base_first_index) {
+            /*  Extension crosses single indirection block boundaries,
+                and we're not on the first block */
+            second_sweep_start = 0;
             second_sweep_limit = second_index+1;
-        else
+        } else if (first_sweep == first_index) {
+            /*  Extension occurs in one single indirection block, */
+            second_sweep_start = base_second_index;
+            second_sweep_limit = second_index+1;
+        } else if (first_sweep == base_first_index) {
+            /*  Extension occurs over multiple single indirection blocks, 
+                and we're at the first. */
+            second_sweep_start = base_second_index;
             second_sweep_limit = INDIRECTION_REFERENCES; 
-        // TODO THIS CODE IS WRONG - base_second index only initially, on
-        // the first sweep base, and second_sweep_limit only at the 
-        // last-first sweep. Shit.
-        for (   second_sweep = base_second_index; 
+        }
+
+        for (   second_sweep = second_sweep_start; 
                 second_sweep < second_sweep_limit; 
                 second_sweep++) {
             singly = crab_into_cached_sector(single_indirection_sector, 
@@ -308,9 +338,11 @@ static bool inode_extend(   bool create_double_indirection,
                                     base_second_index, 
                                     doubly_indirect);
         *doubly_indirect_ = SILLY_OLD_DISK_SECTOR;
+        free(emptiness);
         return false;
     }
 
+    free(emptiness);
     return true;
 }
 
@@ -352,7 +384,12 @@ bool inode_create(block_sector_t sector, off_t length) {
             memcpy( get_cache_sector_base_addr(di),                        
                     (void *) disk_inode, 
                     (size_t) BLOCK_SECTOR_SIZE );     
+
             crab_outof_cached_sector(di, false);
+
+            if (length > 0) {
+                ASSERT(disk_inode->doubly_indirect != SILLY_OLD_DISK_SECTOR);
+            }
 
             success = true;         
         }
@@ -377,7 +414,7 @@ void cleanup_failed_extension(  uint32_t base_first_index,
                                 uint32_t base_second_index, 
                                 block_sector_t doubly_indirect) {
     cache_sector_id singly, doubly;
-    uint32_t first_sweep, second_sweep;    
+    uint32_t first_sweep, second_sweep, second_sweep_start;    
     block_sector_t single_indirection_sector, data_sector;            
     struct indirection_block *cached_single_indirection_sector;
     struct indirection_block *cached_double_indirection_sector;
@@ -418,8 +455,12 @@ void cleanup_failed_extension(  uint32_t base_first_index,
             has the potential for deadlock if we over-constrain the 
             cache */
         crab_outof_cached_sector( doubly, false );                
-        
-        for (   second_sweep = base_second_index; 
+        if (first_sweep == base_first_index)
+            second_sweep_start = base_second_index;
+        else 
+            second_sweep_start = 0;
+
+        for (   second_sweep = second_sweep_start; 
                 second_sweep < INDIRECTION_REFERENCES; 
                 second_sweep++) {
             /* Get data sector referenced if it's not silly */
@@ -503,7 +544,7 @@ struct inode * inode_open(block_sector_t sector) {
     inode->deny_write_cnt = 0;
     inode->removed = false;     
     lock_init(&inode->extension_lock);    
-    lock_init(&inode->dwc_lock);
+    lock_init(&inode->ismd_lock);
     lock_release(&open_inodes_lock);
     return inode;
 }
@@ -528,33 +569,45 @@ void inode_close(struct inode *inode) {
     if (inode == NULL)
         return;
 
-    /* Release resources if this was the last opener. */
-    if (--inode->open_cnt == 0) {
-        /* Remove from inode list and release lock. */
+    int open_count;
+    lock_acquire(&inode->ismd_lock);
+    open_count = --inode->open_cnt;
+    lock_release(&inode->ismd_lock);
+    
+    /* Release resources if this was the last opener. */    
+    if (open_count == 0) {
+        /* Remove from inode list. Remember that if directory
+            removals are thread-safe then when filesys_close is called
+            no one else can access this file so open_cnt can only decrease.
+            Therefore:            
+            once we've made open_cnt thread_safe with ismd_lock, no
+            outstanding readers or writers for this file at this point.
+            Therefore we can just remove it from the inodes list, 
+            and free all its sectors on disk, with no issues.
+            */    
         lock_acquire(&open_inodes_lock);
-        list_remove(&inode->elem);
+        list_remove(&inode->elem);        
         lock_release(&open_inodes_lock);
         
         /* Deallocate blocks if removed. */
         if (inode->removed) {
 
-            block_sector_t start;
-            off_t length; 
+            block_sector_t doubly_indirect;            
 
             cache_sector_id src = crab_into_cached_sector(inode->sector, true, 
                     false);        
             
             struct inode_disk *data = 
-                (struct inode_disk *) get_cache_sector_base_addr(src);             
+                (struct inode_disk *) get_cache_sector_base_addr(src);    
 
-            start = data->start;
-            length = data->length;
+            doubly_indirect = data->doubly_indirect;
 
             crab_outof_cached_sector(src, true);        
             
+            /* Re-appropriated cleanup function, ignore the name */  
+            cleanup_failed_extension(0, 0, doubly_indirect); 
+
             free_map_release(inode->sector, 1);
-            free_map_release(start,
-                             bytes_to_sectors(length)); 
 
         }
 
@@ -563,7 +616,7 @@ void inode_close(struct inode *inode) {
 }    
 
 /*! Marks INODE to be deleted when it is closed by the last caller who
-    has it open. */
+    has it open. Don't need to synchronize. */
 void inode_remove(struct inode *inode) {
     ASSERT(inode != NULL);
     inode->removed = true;
@@ -702,21 +755,21 @@ off_t inode_write_at(struct inode *inode, const void *buffer_, off_t size, off_t
 /*! Disables writes to INODE.
     May be called at most once per inode opener. */
 void inode_deny_write (struct inode *inode) {
-    lock_acquire(&inode->dwc_lock);
+    lock_acquire(&inode->ismd_lock);
     inode->deny_write_cnt++;    
     ASSERT(inode->deny_write_cnt <= inode->open_cnt);
-    lock_release(&inode->dwc_lock);
+    lock_release(&inode->ismd_lock);
 }
 
 /*! Re-enables writes to INODE.
     Must be called once by each inode opener who has called
     inode_deny_write() on the inode, before closing the inode. */
 void inode_allow_write (struct inode *inode) {
-    lock_acquire(&inode->dwc_lock);
+    lock_acquire(&inode->ismd_lock);
     ASSERT(inode->deny_write_cnt > 0);
     ASSERT(inode->deny_write_cnt <= inode->open_cnt);
     inode->deny_write_cnt--;
-    lock_release(&inode->dwc_lock);
+    lock_release(&inode->ismd_lock);
 }
 
 /*! Returns the length, in bytes, of INODE's data */
