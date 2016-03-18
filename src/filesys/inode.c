@@ -3,6 +3,7 @@
 #include <debug.h>
 #include <round.h>
 #include <string.h>
+#include <stdio.h>
 #include "filesys/filesys.h"
 #include "filesys/free-map.h"
 #include "filesys/cache.h"
@@ -102,6 +103,7 @@ bool inode_create(block_sector_t sector, off_t length,
             }
             success = true; 
         }
+
         free(disk_inode);
     }
     return success;
@@ -457,7 +459,6 @@ void inode_find_matching_idx_and_sector(struct inode *directory,
 		inode_close(curr_inode);
 	}
 
-done:
 	*the_sector = BOGUS_SECTOR;
 	*the_index = -1;
 	return;
