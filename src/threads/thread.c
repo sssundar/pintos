@@ -12,6 +12,7 @@
 #include "threads/synch.h"
 #include "threads/vaddr.h"
 #include "threads/malloc.h"
+#include "filesys/filesys.h"
 
 #include "list.h"
 #include "userprog/syscall.h"
@@ -64,6 +65,9 @@ static long long idle_ticks;    /*!< # of timer ticks spent idle. */
 static long long kernel_ticks;  /*!< # of timer ticks in kernel threads. */
 static long long user_ticks;    /*!< # of timer ticks in user programs. */
 
+/*! Private pointer to the initial thread. */
+static struct thread *the_init_thread;
+
 /* Scheduling. */
 #define TIME_SLICE 4            /*!< # of timer ticks to give each thread. */
 static unsigned thread_ticks;   /*!< # of timer ticks since last yield. */
@@ -79,7 +83,7 @@ static void idle(void *aux UNUSED);
 static struct thread *running_thread(void);
 static struct thread *next_thread_to_run(void);
 static void init_thread(struct thread *t, const char *name, int priority,
-		uint8_t flag_child, struct list *parents_child_list);
+		uint8_t flag_child, struct dir *cwd, struct list *parents_child_list);
 static bool is_thread(struct thread *) UNUSED;
 static void *alloc_frame(struct thread *, size_t size);
 static void schedule(void);
@@ -111,11 +115,27 @@ void thread_init(void) {
 
     /* Set up a thread structure for the running thread. */
     initial_thread = running_thread();    
-    init_thread(initial_thread, "main", PRI_DEFAULT, 0, NULL);        
+
+    init_thread(initial_thread, "main", PRI_DEFAULT, 0, NULL, NULL);
     initial_thread->status = THREAD_RUNNING;    
     initial_thread->tid = allocate_tid();
+    the_init_thread = initial_thread;
 
     timer_initd = false;
+}
+
+/*! Sets the initial thread's current working directory. Cannot be called
+    before the file system has been initialized. */
+void thread_set_initial_thread_cwd(void) {
+	ASSERT(the_init_thread != NULL);
+	ASSERT(the_init_thread->cwd.inode == NULL);
+	ASSERT(the_init_thread->cwd.pos == -1);
+
+    /* Get the root directory's inode pointer and set the init thread's cwd. */
+    struct inode* root_dir_inode = inode_open(ROOT_DIR_SECTOR);
+    ASSERT(root_dir_inode->is_dir);
+    the_init_thread->cwd.inode = root_dir_inode;
+    the_init_thread->cwd.pos = 0;
 }
 
 /*! Starts preemptive thread scheduling by enabling interrupts.
@@ -192,7 +212,11 @@ tid_t thread_create(const char *name, int priority, thread_func *function,
         return TID_ERROR;
 
     /* Initialize thread. */
-    init_thread(t, name, priority, flag_child, parents_child_list);
+    struct dir parents_cwd;
+    parents_cwd.inode = parent == NULL ? NULL : parent->cwd.inode;
+    parents_cwd.pos = parent == NULL ? -1 : parent->cwd.pos;
+    init_thread(t, name, priority, flag_child,
+    		&parents_cwd, parents_child_list);
     t->parent = parent;
     tid = t->tid = allocate_tid();
 
@@ -465,7 +489,8 @@ static bool is_thread(struct thread *t) {
 
 /*! Does basic initialization of T as a blocked thread named NAME. */
 static void init_thread(struct thread *t, const char *name, int priority,
-		uint8_t flag_child, struct list *parents_child_list UNUSED) {
+		uint8_t flag_child, struct dir *cwd,
+		struct list *parents_child_list UNUSED) {
     enum intr_level old_level;
 
     ASSERT(t != NULL);
@@ -478,6 +503,8 @@ static void init_thread(struct thread *t, const char *name, int priority,
     t->stack = (uint8_t *) t + PGSIZE;
     t->priority = priority;
     t->magic = THREAD_MAGIC;
+	t->cwd.inode = cwd != NULL ? cwd->inode : NULL;
+	t->cwd.pos = cwd != NULL ? cwd->pos : -1;
     list_init(&(t->files));
     //t->max_fd = 3; // This is the first available fd after debug, which is 2
     old_level = intr_disable();

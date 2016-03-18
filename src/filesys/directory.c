@@ -5,24 +5,15 @@
 #include "filesys/filesys.h"
 #include "filesys/inode.h"
 #include "threads/malloc.h"
-
-/*! A directory. */
-struct dir {
-    struct inode *inode;                /*!< Backing store. */
-    off_t pos;                          /*!< Current position. */
-};
-
-/*! A single directory entry. */
-struct dir_entry {
-    block_sector_t inode_sector;        /*!< Sector number of header. */
-    char name[NAME_MAX + 1];            /*!< Null terminated file name. */
-    bool in_use;                        /*!< In use or free? */
-};
+#include "threads/thread.h"
 
 /*! Creates a directory with space for ENTRY_CNT entries in the
     given SECTOR.  Returns true if successful, false on failure. */
-bool dir_create(block_sector_t sector, size_t entry_cnt) {
-    return inode_create(sector, entry_cnt * sizeof(struct dir_entry));
+bool dir_create(block_sector_t sector, size_t entry_cnt,
+		const char *name, block_sector_t parent) {
+	ASSERT(entry_cnt > 0);
+    return inode_create(sector, entry_cnt * sizeof(struct dir_entry),
+    		true, name, parent);
 }
 
 /*! Opens and returns the directory for the given INODE, of which
@@ -202,3 +193,97 @@ bool dir_readdir(struct dir *dir, char name[NAME_MAX + 1]) {
     return false;
 }
 
+/*! Return the sector in which the given relative- or absolute-named file
+    lives. Returns NULL if can't find the directory. */
+struct inode *dir_get_inode_from_path(const char *path) {
+	char *last_slash = strrchr(path, '/');
+
+	// For paths of the form "..", ".", or "filename" just return the
+	// the corresponding inode.
+	if (last_slash == NULL) {
+		block_sector_t files_sect = inode_find_matching_dir_entry(
+				thread_current()->cwd.inode, path);
+		if (files_sect == BOGUS_SECTOR)
+			return NULL;
+		struct inode *rtn = inode_open(files_sect);
+		if (rtn == NULL) {
+			PANIC("Memory allocation failed in inode_open");
+			NOT_REACHED();
+		}
+		return rtn;
+	}
+
+	// Now if the filename starts with a forward slash then assume it's an
+	// absolute path, otherwise it's a relative one. If it's an absolute path
+	// then the starting directory for our search for the inode is
+	// the root directory. Otherwise it's the current working directory.
+	char *path_ptr = (char *) path;
+	block_sector_t curr_dir_sector;
+	if (path[0] == '/')
+		curr_dir_sector = ROOT_DIR_SECTOR;
+	else
+		curr_dir_sector = thread_current()->cwd.inode->sector;
+
+	// Iterate over each directory in the path.
+	struct inode *tmpinode = NULL;
+	while (path_ptr < last_slash) {
+		if (tmpinode != NULL)
+			inode_close(tmpinode);
+
+		// Find the current directory name from the path.
+		char curr_dir_name[NAME_MAX + 1];
+		char *first_slash = strchr(path_ptr, '/');
+		strlcpy(curr_dir_name, path_ptr, first_slash - path_ptr + 1);
+
+		// Get the directory's sector from disk or the cache.
+		tmpinode = inode_open(curr_dir_sector);
+		if (tmpinode == NULL) {
+			PANIC ("Couldn't alloc memory when opening inode.");
+			NOT_REACHED();
+		}
+		ASSERT(tmpinode->is_dir);
+
+		// Iterate over the sectors in the directory's entries list, looking
+		// for one with a matching name.
+		if (strcmp(curr_dir_name, "..") == 0) {
+			curr_dir_sector = tmpinode->parent_dir;
+		}
+		else if (strcmp(curr_dir_name, ".") == 0) {
+			// curr_dir_sector says the same.
+		}
+		else {
+			block_sector_t tmp_dir_sector =
+					inode_find_matching_dir_entry(tmpinode, curr_dir_name);
+			// If we couldn't find the requested file then return NULL.
+			if (tmp_dir_sector == BOGUS_SECTOR) {
+				inode_close(tmpinode);
+				return NULL;
+			}
+			curr_dir_sector = tmp_dir_sector;
+		}
+
+		path_ptr = first_slash + 1;
+	}
+
+	// If the path_ptr is past the end of the string then there was a slash
+	// at the end of the string (and we were therefore given a directory and
+	// can just return the sector we already have).
+	if (path_ptr >= strlen(path) + path)
+		return tmpinode;
+
+	// Otherwise we need to get the sector by using the end of the path
+	// and plugging it into find_matching again.
+	char name_at_end[NAME_MAX + 1];
+	strlcpy(name_at_end, path_ptr, (path + strlen(path)) - path_ptr + 1);
+	block_sector_t fsect =
+			inode_find_matching_dir_entry(tmpinode, name_at_end);
+	inode_close(tmpinode);
+	if (fsect == BOGUS_SECTOR)
+		return NULL;
+	struct inode *rtn = inode_open(fsect);
+	if (rtn == NULL) {
+		PANIC ("Couldn't alloc memory when opening inode.");
+		NOT_REACHED();
+	}
+	return rtn;
+}

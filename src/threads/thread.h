@@ -10,6 +10,8 @@
 #include <list.h>
 #include <stdint.h>
 #include "threads/synch.h"
+#include "filesys/off_t.h"
+#include "filesys/inode.h"
 
 /*! States in a thread's life cycle. */
 enum thread_status {
@@ -157,7 +159,6 @@ struct thread {
     /*! Active high flag for voluntary exit, relies on no sig_term or
          sig_kill */
     uint8_t voluntarily_exited;
-    /**@{*/
 
     /*! All the files that this thread has open. */
     struct list files;
@@ -165,12 +166,13 @@ struct thread {
     /*! The filename and file descriptor of the file used to load
         this thread. */
     struct fd_element tfile;
-
     /**@}*/
 #endif
+    /*! Owned by thread.c. */
+    /**@{*/
 
-	/* Current working directory cwd */
-	unsigned int cwd;
+	/* Current working directory. */
+	struct dir cwd;
 
     /*! Owned by thread.c. */
     /**@{*/
@@ -218,6 +220,8 @@ int thread_get_nice(void);
 void thread_set_nice(int);
 int thread_get_recent_cpu(void);
 int thread_get_load_avg(void);
+
+void thread_set_initial_thread_cwd(void);
 
 #endif /* threads/thread.h */
 

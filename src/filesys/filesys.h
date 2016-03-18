@@ -7,8 +7,9 @@
 #include "filesys/cache.h"
 
 /*! Sectors of system file inodes. @{ */
-#define FREE_MAP_SECTOR 0       /*!< Free map file inode sector. */
-#define ROOT_DIR_SECTOR 1       /*!< Root directory file inode sector. */
+#define FREE_MAP_SECTOR 0        /*!< Free map file inode sector. */
+#define ROOT_DIR_SECTOR 1        /*!< Root directory file inode sector. */
+#define BOGUS_SECTOR 0xFFFFFFFF  /*!< Non-present sector. */
 /*! @} */
 
 /*! Each element in a list of sectors to read-ahead. */
@@ -22,10 +23,10 @@ struct block *fs_device;
 
 void filesys_init(bool format);
 void filesys_done(void);
-bool filesys_create(const char *name, off_t initial_size);
+bool filesys_create(const char *name, off_t initial_size,
+		bool is_directory, block_sector_t parent);
 struct file *filesys_open(const char *name);
 bool filesys_remove(const char *name);
-int split_path_func(const char *path, char *filename);
 
 #endif /* filesys/filesys.h */
 

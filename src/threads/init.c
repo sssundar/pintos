@@ -118,21 +118,31 @@ int main(void) {
     timer_init();
     kbd_init();
     input_init();
+
 #ifdef USERPROG
     exception_init();
     sc_init();
 #endif
 
     /* Start thread scheduler and enable interrupts. */
+
+    printf("--> Before thread_start...\n");
+
     thread_start();
+
+    printf("--> AFter thread_start...\n");
+
     serial_init_queue();
     timer_calibrate();
+
+    printf("--> After thread scheduler  init...\n");
 
 #ifdef FILESYS
     /* Initialize file system. */
     ide_init();
     locate_block_devices();
     filesys_init(format_filesys);
+    thread_set_initial_thread_cwd();
 #endif
 
     printf("Boot complete.\n");

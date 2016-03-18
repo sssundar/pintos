@@ -1,23 +1,25 @@
+#include "lib/stddef.h"
+#include "lib/kernel/stdio.h"
 #include "lib/user/syscall.h"
-#include "userprog/syscall.h"
 #include "lib/stdio.h"
 #include "lib/syscall-nr.h"
+#include "lib/string.h"
+#include "devices/shutdown.h"
+#include "devices/input.h"
+#include "userprog/pagedir.h"
+#include "userprog/syscall.h"
+#include "userprog/process.h"
+#include "threads/palloc.h"
+#include "threads/malloc.h"
 #include "threads/interrupt.h"
 #include "threads/thread.h"
-#include "userprog/pagedir.h"
 #include "threads/vaddr.h"
 #include "threads/synch.h"
-#include "lib/kernel/stdio.h"
 #include "filesys/file.h"
 #include "filesys/filesys.h"
 #include "filesys/directory.h"
 #include "filesys/inode.h"
-#include "devices/shutdown.h"
-#include "threads/malloc.h"
-#include "devices/input.h"
-#include "userprog/process.h"
-#include "lib/string.h"
-#include "threads/palloc.h"
+#include "filesys/free-map.h"
 
 //----------------------------- Global variables ------------------------------
 
@@ -33,7 +35,7 @@ int get_user (const uint8_t *uaddr);
 bool put_user (uint8_t *udst, uint8_t byte);
 bool get_user_quadbyte (const uint8_t *uaddr, int *arg);
 bool uptr_is_valid (const void *uptr);
-//void func(struct thread *t, void *matches);
+static char *find_last_slash(const char *path);
 
 //---------------------------- Function definitions ---------------------------
 
@@ -99,15 +101,9 @@ static void sc_handler(struct intr_frame *f) {
 
 	// Don't need to run these through uptr_is_valid b/c they're generated
 	// in the kernel.
-	// int *esp = f->esp;
 	int sc_n, sc_n1, sc_n2, sc_n3;
-	// sc_n = *esp;
-	// sc_n1 = *(esp + 1);
-	// sc_n2 = *(esp + 2);
-	// sc_n3 = *(esp + 3);
 
     if (!get_user_quadbyte ((const uint8_t *) f->esp, &sc_n)) {
-    	//thread_current()->voluntarily_exited = 0 is implicit
     	exit(-1);
     }
 
@@ -488,7 +484,7 @@ unsigned tell(int fd){
 /*! Creates a new file called file initially initial_size bytes in size.
     Returns true if successful, false otherwise. Creating a new file does
     not open it: opening the new file is a separate operation which would
-    require a open system call.
+    require a open system call. Makes non-directory files.
  */
 bool create (const char *file, unsigned initial_size) {
 
@@ -500,7 +496,7 @@ bool create (const char *file, unsigned initial_size) {
 		exit(-1);
 	}
 
-	success = filesys_create(file, initial_size);
+	success = filesys_create(file, initial_size, false, BOGUS_SECTOR);
 	lock_release(&sys_lock);
 	return success;
 }
@@ -575,22 +571,36 @@ bool uptr_is_valid (const void *uptr) {
 /*! Changes the current working directory of the process to dir,
     which may be relative or absolute. Returns true if successful,
     false on failure. */
-bool chdir (const char *dir UNUSED) {
-	/*
+bool chdir (const char *dir) {
 	if (!uptr_is_valid(dir)) {
 		return false;
 	}
-	struct file *f = filesys_open(dir);
-	
-	if(f == NULL) {
+
+	struct inode *dir_inode = dir_get_inode_from_path(dir);
+	if (dir_inode == NULL)
 		return false;
-	}
 	
-	thread_current()->cwd = inode_get_inumber(f->inode);
-	file_close(f);
+	// Free the old inode in the cwd of the process, add in the new one.
+	if (thread_current()->cwd.inode != NULL) {
+		inode_close(thread_current()->cwd.inode);
+	}
+	thread_current()->cwd.inode = dir_inode;
+	thread_current()->cwd.pos = 0;
+
 	return true;
-	*/
-	return false;// TODO
+}
+
+/*! Gets the last slash that isn't the very last char. */
+static char *find_last_slash(const char *path) {
+	int i;
+	int len = strlen(path);
+	if (len <= 1)
+		return NULL;
+	for (i = len - 2; i >= 0; i--) {
+		if (path[i] == '/')
+			return (char *) (path + i);
+	}
+	return NULL;
 }
 
 /*! Creates the directory named dir, which may be relative or absolute.
@@ -598,44 +608,59 @@ bool chdir (const char *dir UNUSED) {
     exists or if any directory name in dir, besides the last, does
     not already exist. That is, mkdir("/a/b/c") succeeds only if /a/b
     already exists and /a/b/c does not. */
-bool mkdir(const char* dir UNUSED) {
-	/*
-	lock_acquire(&sys_lock);
-
-	unsigned int inode_sector = 0;
-	struct file *f = NULL;
-	struct file *p = NULL;
-
-	char filename[READDIR_MAX_LEN];
-	int parent_sector = split_path_func(dir, filename);
-
-	if(!uptr_is_valid(dir)) {
+bool mkdir(const char* dir) {
+	if (!uptr_is_valid(dir)) {
 		return false;
 	}
 
-	f = file_open(inode_open(inode_sector));
-	if (f == NULL){
-		return false;
+	// Get the filename at the end of the path and make sure it's not a
+	// reserved name like "." or ".."
+	char name_at_end[NAME_MAX + 1];
+	char *prefix_dir = (char *) malloc (sizeof(char) * strlen(dir));
+	bool no_prefix_dir = false;
+	char *last_slash = find_last_slash(dir);
+	if (last_slash == NULL) {
+		no_prefix_dir = true;
+		strlcpy(name_at_end, dir, NAME_MAX);
 	}
-	p = file_open(inode_open(parent_sector));
-	if (p == NULL){
+	else {
+		strlcpy(name_at_end, last_slash + 1, (dir + strlen(dir)) - last_slash);
+		strlcpy(prefix_dir, dir, last_slash - dir + 1);
+	}
+	if (strcmp(name_at_end, ".") == 0 || strcmp(name_at_end, "..") == 0) {
 		return false;
 	}
 
-	if (!file_isdir(p)){
-      file_close (p);
-	  return false;
-    }
+	// If there IS a prefix directory...
+	struct inode *dir_inode = thread_current()->cwd.inode;
+	if (!no_prefix_dir) {
+		// ...make sure the directory exists!
+		dir_inode = dir_get_inode_from_path(prefix_dir);
+		if (dir_inode == NULL) {
+			inode_close(dir_inode);
+			return false;
+		}
+	}
+	free (prefix_dir);
 
-	dir_add(dir, ".", inode_sector);
-	dir_add(filename, "..", parent_sector);
-    
-	file_close(f);
-	file_close(p);
-	lock_release(&sys_lock);
-	return true;
-	*/
-	return false;// TODO
+	// Now make sure the proposed directory filename doesn't exist.
+	block_sector_t sct = inode_find_matching_dir_entry(dir_inode, name_at_end);
+	if (sct != BOGUS_SECTOR) {
+		inode_close(dir_inode);
+		return false;
+	}
+
+	// Good, it doesn't exist. Make it!
+	block_sector_t sect_allocd;
+	if(!free_map_allocate(1, &sect_allocd)) { // TODO fix for unlimited files
+		PANIC("Could not find free sector for directory!");
+		NOT_REACHED();
+	}
+
+	// TODO Finish this function.
+
+	return false;
+
 }
 
 /* Reads a directory entry from file descriptor fd, 

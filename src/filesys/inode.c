@@ -7,6 +7,7 @@
 #include "filesys/free-map.h"
 #include "filesys/cache.h"
 #include "threads/malloc.h"
+#include "threads/thread.h"
 
 /*! Identifies an inode. */
 #define INODE_MAGIC 0x494e4f44
@@ -53,13 +54,20 @@ void inode_init(void) {
 /*! Initializes an inode with LENGTH bytes of data and
     writes the new inode to sector SECTOR on the file system
     device.
+
+    If the file we're creating is a directory then LENGTH must be
+    sizeof(block_sector_t) * ENTRY_CNT, since each directory entry
+    is stored as a sector ID.
+
     Returns true if successful.
     Returns false if memory or disk allocation fails. */
-bool inode_create(block_sector_t sector, off_t length) {
+bool inode_create(block_sector_t sector, off_t length,
+		bool is_directory, const char *filename, block_sector_t parent) {
     struct inode_disk *disk_inode = NULL;
     bool success = false;
 
     ASSERT(length >= 0);
+    ASSERT(filename != NULL);
 
     /* If this assertion fails, the inode structure is not exactly
        one sector in size, and you should fix that. */
@@ -70,6 +78,19 @@ bool inode_create(block_sector_t sector, off_t length) {
         size_t sectors = bytes_to_sectors(length);
         disk_inode->length = length;
         disk_inode->magic = INODE_MAGIC;
+        strlcpy(disk_inode->filename, filename, NAME_MAX + 1);
+        if (is_directory) {
+        	disk_inode->is_dir = true;
+        	int i;
+        	for (i = 0; i < MAX_DIR_ENTRIES; i++) {
+        		disk_inode->dir_contents[i] = BOGUS_SECTOR;
+        	}
+        	disk_inode->parent_dir = parent;
+        }
+        else {
+        	disk_inode->is_dir = false;
+        	disk_inode->parent_dir = BOGUS_SECTOR;
+        }
         if (free_map_allocate(sectors, &disk_inode->start)) {
             block_write(fs_device, sector, disk_inode);
             if (sectors > 0) {
@@ -114,8 +135,29 @@ struct inode * inode_open(block_sector_t sector) {
     inode->open_cnt = 1;
     inode->deny_write_cnt = 0;
     inode->removed = false;
-    // ==TODO== REMOVE
-    // block_read(fs_device, inode->sector, &inode->data);
+
+    /* Read the inode from disk to see if it's a directory. If it is then
+       copy the directory's entries. */
+    void *tmp_buf = malloc ((size_t) BLOCK_SECTOR_SIZE);
+    if (tmp_buf == NULL) {
+    	PANIC("Couldn't malloc enough room for tmp buf.");
+    	NOT_REACHED();
+    }
+    // Fetch the node from the cache (or disk if necessary)
+    cache_sector_id src = crab_into_cached_sector(inode->sector, true);
+	cache_read(src, tmp_buf, 0, BLOCK_SECTOR_SIZE);
+	crab_outof_cached_sector(src, true);
+    // block_read(fs_device, inode->sector, tmp_buf);
+    struct inode_disk *tmp_inode = (struct inode_disk *) tmp_buf;
+    inode->is_dir = tmp_inode->is_dir;
+    if (inode->is_dir) {
+		int i;
+		for(i = 0; i < MAX_DIR_ENTRIES; i++) {
+			inode->dir_contents[i] = tmp_inode->dir_contents[i];
+		}
+    }
+    free (tmp_buf);
+
     return inode;
 }
 
@@ -336,4 +378,88 @@ off_t inode_length(const struct inode *inode) {
 
     return l;
 }
+
+/*! Gets the directory entry in the given inode with the given NAME. */
+block_sector_t inode_find_matching_dir_entry(
+		struct inode *directory, const char *name) {
+	ASSERT(directory->is_dir);
+
+	// If the name is just "." or ".." return the appropriate sector numbers.
+	if (strcmp(name, "..") == 0 || strcmp(name, ".") == 0) {
+		if (thread_current()->cwd.inode == NULL) {
+			PANIC("Null cwd inode.");
+			NOT_REACHED();
+		}
+		block_sector_t rtn;
+		if (strcmp(name, "..") == 0)
+			rtn = thread_current()->cwd.inode->parent_dir;
+		else
+			rtn = thread_current()->cwd.inode->sector;
+		return rtn;
+	}
+
+	int i;
+	// Iterate over this directory's directory entries.
+	for (i = 0; i < MAX_DIR_ENTRIES; i++) {
+
+		block_sector_t curr_sect_num = directory->dir_contents[i];
+		if (curr_sect_num == BOGUS_SECTOR) {
+			continue;
+		}
+		struct inode *curr_inode = inode_open(curr_sect_num);
+		if (curr_inode == NULL) {
+			PANIC("Memory alloc problem in inode_open");
+			NOT_REACHED();
+		}
+		// Return this sector number if the filename matches.
+		if(strcmp(curr_inode->filename, name) == 0) {
+			inode_close(curr_inode);
+			return curr_inode->sector;
+		}
+		inode_close(curr_inode);
+	}
+
+	return BOGUS_SECTOR;
+}
+
+// TODO maybe get rid of this and use given function instead...
+/*! Get an inode pointer from a sector ID. Must be freed. */
+struct inode_disk *inode_get_inode_from_sector(block_sector_t sect) {
+	void *tmp_buf = malloc ((size_t) BLOCK_SECTOR_SIZE);
+	if (tmp_buf == NULL) {
+		PANIC("Couldn't malloc enough room for tmp buf.");
+		NOT_REACHED();
+	}
+	cache_sector_id src = crab_into_cached_sector(sect, true);
+	cache_read(src, tmp_buf, 0, BLOCK_SECTOR_SIZE);
+	crab_outof_cached_sector(src, true);
+	struct inode_disk *tmp_inode = (struct inode_disk *) tmp_buf;
+	return tmp_inode;
+}
+
+// TODO Might not need this if using given function...
+/*! Copies the contents of the given inode_disk into a new inode. It's the
+    caller's responsiblity to free both structs eventually. */
+struct inode * inode_disk_to_regular(struct inode_disk * dsk_version,
+		block_sector_t sector) {
+	void *tmp_buf = malloc ((size_t) BLOCK_SECTOR_SIZE);
+	if (tmp_buf == NULL) {
+		PANIC("Couldn't malloc enough room for tmp buf.");
+		NOT_REACHED();
+	}
+	struct inode *tmp_inode = (struct inode *) tmp_buf;
+	tmp_inode->deny_write_cnt = 1;
+	strlcpy(tmp_inode->filename, dsk_version->filename, NAME_MAX + 1);
+	tmp_inode->open_cnt = -1;
+	tmp_inode->parent_dir = dsk_version->parent_dir;
+	tmp_inode->removed = false;
+	tmp_inode->sector = sector;
+	tmp_inode->is_dir = dsk_version->is_dir;
+	int i;
+	for (i = 0; i < MAX_DIR_ENTRIES; i++) {
+		tmp_inode->dir_contents[i] = dsk_version->dir_contents[i];
+	}
+	return tmp_inode;
+}
+
 

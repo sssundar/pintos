@@ -70,12 +70,17 @@ void filesys_done(void) {
 /*! Creates a file named NAME with the given INITIAL_SIZE.  Returns true if
     successful, false otherwise.  Fails if a file named NAME already exists,
     or if internal memory allocation fails. */
-bool filesys_create(const char *name, off_t initial_size) {
+bool filesys_create(const char *name, off_t initial_size,
+		bool is_directory, block_sector_t parent) {
     block_sector_t inode_sector = 0;
     struct dir *dir = dir_open_root();
     bool success = (dir != NULL &&
                     free_map_allocate(1, &inode_sector) &&
-                    inode_create(inode_sector, initial_size) &&
+                    inode_create(inode_sector,
+                    		initial_size,
+                    		is_directory,
+							name,
+							is_directory ? parent : BOGUS_SECTOR) &&
                     dir_add(dir, name, inode_sector));
     if (!success && inode_sector != 0) 
         free_map_release(inode_sector, 1);
@@ -113,7 +118,7 @@ bool filesys_remove(const char *name) {
 static void do_format(void) {
     printf("Formatting file system...");
     free_map_create();
-    if (!dir_create(ROOT_DIR_SECTOR, 16))
+    if (!dir_create(ROOT_DIR_SECTOR, 16, "", BOGUS_SECTOR))
         PANIC("root directory creation failed");
     free_map_close();
     printf("done.\n");
@@ -158,28 +163,4 @@ void read_ahead_func(void *aux UNUSED) {
 		lock_release(&monitor_ra);
 	} while (true);
 
-}
-
-/*! Split path into the parent directory and file name.
-    Return the sector of the parent directory and store
-    file name in filename. */
-int split_path_func(const char *path UNUSED, char *filename UNUSED) {
-	/*
-	char *pslash = strrchr(path, '/');
-
-	// If we didn't find anything then the path is a filename. Copy whole path.
-	if (pslash == NULL) {
-	  strlcpy (filename, path, READDIR_MAX_LEN);
-	  return thread_current()->cwd;
-	}
-
-	// Otherwise extract the filename at the end of the path.
-	else {
-	  char partial_path[14];
-	  strlcpy (partial_path, path, pslash - path);
-	  strlcpy (filename, pslash, 14);
-	  return partial_path[0];
-	}
-	*/
-	return -1; // TODO
 }
