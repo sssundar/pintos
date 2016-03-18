@@ -202,7 +202,7 @@ void cache_read(cache_sector_id src, void *dst, int offset, size_t bytes) {
     }
 
 	// If the next sector isn't already in the read ahead queue and isn't
-	// already in the cache thne put it in the read ahead cache.
+	// already in the cache then put it in the read ahead cache.
     rasect = (struct ra_sect_elem *) malloc (sizeof(struct ra_sect_elem));
     if (rasect == NULL) {
     	PANIC("No space for a new ra_sect_elem.");
@@ -278,7 +278,7 @@ bool is_disk_sector_in_cache (cache_sector_id c, block_sector_t t) {
     The requested sector on disk, t, must already exist on the free-space map 
     of the disk. 
 
-    ==TODO== What about file extension? deletion? write-behind? read-ahead?
+    ==TODO== What about file extension? deletion?
     ==TODO== What if the sector doesn't exist in the free-space map? Should
         that be the responsibility of the inode function caller?
     */

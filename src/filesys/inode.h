@@ -67,6 +67,9 @@ off_t inode_length(const struct inode *);
 
 block_sector_t inode_find_matching_dir_entry(
 		struct inode *tmp_inode, const char *curr_dir_name);
+int inode_get_first_open_directory_slot(struct inode *the_inode);
+void inode_find_matching_idx_and_sector(struct inode *directory,
+		const char *name, block_sector_t *the_sector, int *the_index);
 
 // TODO remove below?
 struct inode_disk *inode_get_inode_from_sector(block_sector_t sect);

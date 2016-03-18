@@ -150,6 +150,7 @@ struct inode * inode_open(block_sector_t sector) {
     // block_read(fs_device, inode->sector, tmp_buf);
     struct inode_disk *tmp_inode = (struct inode_disk *) tmp_buf;
     inode->is_dir = tmp_inode->is_dir;
+    strlcpy(inode->filename, tmp_inode->filename, NAME_MAX + 1);
     if (inode->is_dir) {
 		int i;
 		for(i = 0; i < MAX_DIR_ENTRIES; i++) {
@@ -197,6 +198,8 @@ void inode_close(struct inode *inode) {
             struct inode_disk *data = 
                 (struct inode_disk *) get_cache_sector_base_addr(src);             
 
+
+
             start = data->start;
             length = data->length;
 
@@ -206,6 +209,23 @@ void inode_close(struct inode *inode) {
             free_map_release(start,
                              bytes_to_sectors(length)); 
 
+        }
+        else {
+        	cache_sector_id src = crab_into_cached_sector(inode->sector, true);
+			struct inode_disk *data =
+				(struct inode_disk *) get_cache_sector_base_addr(src);
+
+			// Add in the potentially changed things from the given inode
+			// to the disk inode.
+			strlcpy(data->filename, inode->filename, NAME_MAX + 1);
+			data->is_dir = inode->is_dir;
+			data->parent_dir = inode->parent_dir;
+			int i;
+			for (i = 0; i < MAX_DIR_ENTRIES; i++) {
+				data->dir_contents[i] = inode->dir_contents[i];
+			}
+			cache_write(src, (void *) data, 0, BLOCK_SECTOR_SIZE);
+			crab_outof_cached_sector(src, true);
         }
 
         free(inode); 
@@ -379,9 +399,23 @@ off_t inode_length(const struct inode *inode) {
     return l;
 }
 
-/*! Gets the directory entry in the given inode with the given NAME. */
-block_sector_t inode_find_matching_dir_entry(
-		struct inode *directory, const char *name) {
+/*! Returns the index of the first open entry in the list of directory
+    entries for the given directory DIR. Returns -1 if not found.
+ */
+int inode_get_first_open_directory_slot(struct inode *dir) {
+	ASSERT(dir != NULL);
+	ASSERT(dir->is_dir);
+
+	int i;
+	for(i = 0; i < MAX_DIR_ENTRIES; i++) {
+		if (dir->dir_contents[i] == BOGUS_SECTOR)
+			return i;
+	}
+	return -1;
+}
+
+void inode_find_matching_idx_and_sector(struct inode *directory,
+		const char *name, block_sector_t *the_sector, int *the_index) {
 	ASSERT(directory->is_dir);
 
 	// If the name is just "." or ".." return the appropriate sector numbers.
@@ -395,7 +429,9 @@ block_sector_t inode_find_matching_dir_entry(
 			rtn = thread_current()->cwd.inode->parent_dir;
 		else
 			rtn = thread_current()->cwd.inode->sector;
-		return rtn;
+		*the_sector = rtn;
+		*the_index = -1;
+		goto done;
 	}
 
 	int i;
@@ -414,12 +450,26 @@ block_sector_t inode_find_matching_dir_entry(
 		// Return this sector number if the filename matches.
 		if(strcmp(curr_inode->filename, name) == 0) {
 			inode_close(curr_inode);
-			return curr_inode->sector;
+			*the_sector = curr_inode->sector;
+			*the_index = i;
+			goto done;
 		}
 		inode_close(curr_inode);
 	}
 
-	return BOGUS_SECTOR;
+done:
+	*the_sector = BOGUS_SECTOR;
+	*the_index = -1;
+	return;
+}
+
+/*! Gets the directory entry in the given inode with the given NAME. */
+block_sector_t inode_find_matching_dir_entry(
+		struct inode *directory, const char *name) {
+	int idx;
+	block_sector_t sect;
+	inode_find_matching_idx_and_sector(directory, name, &sect, &idx);
+	return sect;
 }
 
 // TODO maybe get rid of this and use given function instead...
@@ -461,5 +511,4 @@ struct inode * inode_disk_to_regular(struct inode_disk * dsk_version,
 	}
 	return tmp_inode;
 }
-
 
