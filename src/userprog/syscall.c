@@ -281,6 +281,9 @@ int filesize(int fd){
     share a file position.
 */
 int open(const char *file){
+
+	printf("Got to sys_open\n");
+	
 	struct file *f;
 	struct fd_element *fd_elem;
 
@@ -487,6 +490,8 @@ unsigned tell(int fd){
     require a open system call. Makes non-directory files.
  */
 bool create (const char *file, unsigned initial_size) {
+	
+	printf("Got to sys_create\n");
 
 	bool success = false;
 	lock_acquire(&sys_lock);
