@@ -31,12 +31,21 @@ test_main (void)
 
       /* Create file. */
       snprintf (file_name, sizeof file_name, "file%d", i);
+
+      printf("~~> creating file w/ name \"%s\"\n", file_name);
+
       if (!create (file_name, 0))
         break;
       CHECK ((fd = open (file_name)) > 1, "open \"%s\"", file_name);
       snprintf (contents, sizeof contents, "contents %d\n", i);
-      if (write (fd, contents, strlen (contents)) != (int) strlen (contents)) 
+
+      // TODO remove below
+      printf("~~> write should return %d. fd = %d\n", strlen (contents), fd);
+      int actually;
+
+      if ((actually = write (fd, contents, strlen (contents))) != (int) strlen (contents))
         {
+    	  printf("~~> actually wrote %d\n", actually);
           CHECK (remove (file_name), "remove \"%s\"", file_name);
           close (fd);
           break;

@@ -262,6 +262,7 @@ int open(const char *file) {
 		exit(-1);
 	}
 
+	printf("--> in OPEN, thread is \"%s\"\n", thread_current()->name);
 	//printf("--> calling filesys_open\n");
 
 	f = filesys_open(file);
@@ -283,6 +284,8 @@ int open(const char *file) {
     else {
     	fd_elem->fd = max_fd++;
     }
+
+    printf("--> in OPEN, about to add to list of thread's file.\n");
 
 	fd_elem->file = f;
 	fd_elem->directory = NULL; // This is set the first time we use it.
@@ -310,6 +313,9 @@ int write(int fd, const void *buffer, unsigned size) {
 
 	// If this fd matches with an executing process's fd...
 	if (process_fd_matches(fd)) {
+
+		printf("--> matched exec'ing process.\n");
+
 		return 0;
 	}
 
@@ -319,6 +325,9 @@ int write(int fd, const void *buffer, unsigned size) {
 		lock_release(&sys_lock);
 		return size;
 	}
+
+	printf("--> in WRITE, getting matching fd element\n");
+	printf("--> in WRITE, thread is \"%s\"\n", thread_current()->name);
 
 	struct fd_element *fde = thread_get_matching_fd_elem(fd);
 	if (fde != NULL) {

@@ -662,6 +662,8 @@ struct fd_element *thread_get_matching_fd_elem(int fd) {
 		f = list_entry(l, struct fd_element, f_elem);
 		if (f->fd == fd)
 			return f;
+
+		printf("  --> curr fd = %d\n", f->fd);
 	}
 	return NULL;
 }
