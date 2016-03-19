@@ -275,7 +275,7 @@ struct inode *dir_get_inode_from_path(const char *path,
 		return rtn;
 	}
 
-	//printf("--> path = \"%s\"\n", path);
+	//printf("  --> path = \"%s\"\n", path);
 
 	// For paths of the form "..", ".", or "filename" just return the
 	// the corresponding inode.
@@ -296,7 +296,7 @@ struct inode *dir_get_inode_from_path(const char *path,
 		*parent = thread_current()->cwd.inode;
 		strlcpy(filename, path, NAME_MAX + 1);
 
-		//printf("--> leaving with filename=  \"%s\", parent = %p, parent name = \"%s\"\n",
+		//printf("  --> leaving with filename=  \"%s\", parent = %p, parent name = \"%s\"\n",
 		//					filename, *parent, (*parent)->filename);
 
 		return rtn;
@@ -377,7 +377,9 @@ struct inode *dir_get_inode_from_path(const char *path,
 	//printf(" --> fsect: %u\n", fsect);
 
 	ASSERT(tmpinode != NULL);
-	*parent = inode_open(tmpinode->sector);
+	inode_close(tmpinode);
+	*parent = inode_open(curr_dir_sector);
+
 
 	//printf("--> leaving with filename=  \"%s\", parent = %p, parent name = \"%s\"\n",
 	//					filename, *parent, (*parent)->filename);

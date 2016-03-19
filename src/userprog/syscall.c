@@ -174,7 +174,7 @@ static void sc_handler(struct intr_frame *f) {
     devices/shutdown.h). This should be seldom used, because you lose some
     information about possible deadlock situations, etc.
  */
-void halt (void) {
+void halt(void) {
 	shutdown_power_off();
 }
 
@@ -243,7 +243,7 @@ void exit(int status) {
 }
 
 /*! Returns the size, in bytes, of the file open as fd. */
-int filesize(int fd){
+int filesize(int fd) {
 	struct file *f;
 	struct fd_element *r;
 	struct list_elem *l;
@@ -279,25 +279,20 @@ int filesize(int fd){
 	file are closed independently in separate calls to close and they do not
     share a file position.
 */
-int open(const char *file){	
+int open(const char *file) {
 
 	struct file *f;
 	struct fd_element *fd_elem;
 
 	lock_acquire(&sys_lock);
 
-	if (!uptr_is_valid(file)) {
+	if (file == NULL || !uptr_is_valid(file)) {
 		lock_release(&sys_lock);
 		exit(-1);
 	}
 
-	if (!file) {
-		lock_release(&sys_lock);
-		return -1;
-	}
-
 	f = filesys_open(file);
-	if (!f) {
+	if (f == NULL) {
 		lock_release(&sys_lock);
 		return -1;
 	}
@@ -487,7 +482,7 @@ unsigned tell(int fd){
     not open it: opening the new file is a separate operation which would
     require a open system call. Makes non-directory files.
  */
-bool create (const char *file, unsigned initial_size) {	
+bool create(const char *file, unsigned initial_size) {
 
 	bool success = false;
 	lock_acquire(&sys_lock);
@@ -497,7 +492,21 @@ bool create (const char *file, unsigned initial_size) {
 		exit(-1);
 	}
 
-	success = filesys_create(file, initial_size, false, BOGUS_SECTOR);
+	char filename[NAME_MAX + 1];
+	struct inode *parent_inode;
+	struct inode *dir_inode =
+			dir_get_inode_from_path(file, &parent_inode, filename);
+
+	//printf("--> (CREATE) filename is \"%s\"\n", filename);
+	//printf("--> (CREATE) parent = %p, parent sector is %u\n", parent_inode, parent_inode->sector);
+
+	// Make sure file doesn't already exist.
+	if (dir_inode != NULL) {
+		lock_release(&sys_lock);
+		return false;
+	}
+
+	success = filesys_create(file, initial_size, false, parent_inode->sector);
 	lock_release(&sys_lock);
 	return success;
 }

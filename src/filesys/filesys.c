@@ -87,11 +87,14 @@ bool filesys_create(const char *path, off_t initial_size,
     block_sector_t inode_sector = 0;
     char filename[NAME_MAX + 1];
 	struct inode *parent_inode;
-	dir_get_inode_from_path(path, &parent_inode, filename);
+	struct inode *inode =
+			dir_get_inode_from_path(path, &parent_inode, filename);
 	if (parent_inode == NULL) {
 		PANIC("Couldn't find prefix directory!");
 		NOT_REACHED();
 	}
+	if (inode != NULL)
+		return false;
 
 	//printf("--> IN FILESYS_CREATE thread current name=%s\n", thread_current()->name);
 	//printf("--> IN FILESYS_CREATE thread current cwd sector=%u\n", thread_current()->cwd.inode->sector);
@@ -120,8 +123,9 @@ bool filesys_create(const char *path, off_t initial_size,
 struct file * filesys_open(const char *path) {
 
 	//printf("--> path is \"%s\"\n", path);
-	//printf("--> thread current name=%s\n", thread_current()->name);
-	//printf("--> thread current cwd sector=%u\n", thread_current()->cwd.inode->sector);
+	//printf("--> thread_curr name = %s\n", thread_current()->name);
+	//printf("--> thread_curr cwd sector = %u\n", thread_current()->cwd.inode->sector);
+	//printf("--> thread_curr cwd name = \"%s\"\n", thread_current()->cwd.inode->filename);
 
     char filename[NAME_MAX + 1];
 	struct inode *parent_inode;
@@ -131,8 +135,7 @@ struct file * filesys_open(const char *path) {
 		return NULL;
 	}
 
-	//printf("--> name_at_end is \"%s\"\n", name_at_end);
-	//printf("--> prefix is \"%s\"\n", prefix_dir);
+	//printf("--> filename is \"%s\"\n", filename);
 	//printf("--> inode sector=%u, inode parent is %u\n", dir_inode->sector, dir_inode->parent_dir);
 
 	struct dir dir_static;
