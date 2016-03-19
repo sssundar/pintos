@@ -7,7 +7,7 @@
 
 struct bitmap;
 
-#define (BLOCK_SECTOR_SIZE/4)
+#define INDIRECTION_REFERENCES ( BLOCK_SECTOR_SIZE/sizeof(block_sector_t) )
 
 void inode_init(void);
 bool inode_create(block_sector_t, off_t);

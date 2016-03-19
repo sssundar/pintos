@@ -71,7 +71,10 @@ void filesys_done(void) {
     or if internal memory allocation fails. */
 bool filesys_create(const char *name, off_t initial_size) {
     block_sector_t inode_sector = 0;
-    struct dir *dir = dir_open_root();
+    
+    printf ("SDEBUG: filesys_create, filename: %s\n", name);
+
+    struct dir *dir = dir_open_root();    
     bool success = (dir != NULL &&
                     free_map_allocate(1, &inode_sector) &&
                     inode_create(inode_sector, initial_size) &&
@@ -79,6 +82,11 @@ bool filesys_create(const char *name, off_t initial_size) {
     if (!success && inode_sector != 0) 
         free_map_release(inode_sector, 1);
     dir_close(dir);
+
+    if (success) 
+        printf ("SDEBUG: filesys_create, created filename: %s at sector %u\n", name, inode_sector);    
+    else 
+        printf ("SDEBUG: filesys_create, didn't create filename: %s\n at sector %u\n", name, inode_sector);
 
     return success;
 }
@@ -147,7 +155,8 @@ void read_ahead_func(void *aux UNUSED) {
 		// Read in the next sector from disk.
 		lock_release(&monitor_ra);
 		crab_outof_cached_sector(
-				crab_into_cached_sector(rasect->sect_n, true), true, false);
+				crab_into_cached_sector(rasect->sect_n, true, false), 
+                    true);
 		lock_acquire(&monitor_ra);
 		// printf("---> I just saw block_sector_t: %u \n", rasect->sect_n);
 

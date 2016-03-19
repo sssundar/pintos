@@ -313,11 +313,7 @@ int open(const char *file){
     bytes actually written, which may be less than size if some bytes could
     not be written.
 
-    Writing past end-of-file would normally extend the file, but file growth
-    is not implemented by the basic file system. The expected behavior is to
-    write as many bytes as possible up to end-of-file and return the actual
-    number written, or 0 if no bytes could be written at all. Fd 1 writes to
-    the console.
+    Writing past end-of-file extends the file. Fd 1 writes to the console.
  */
 int write(int fd, const void *buffer, unsigned size) {
 	struct file *f;
