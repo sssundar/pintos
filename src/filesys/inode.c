@@ -199,7 +199,7 @@ static bool inode_extend(   bool create_double_indirection,
     struct indirection_block *emptiness = NULL;        
 
     uint32_t base_first_index, base_second_index, first_index, second_index;         
-    volatile cache_sector_id singly, doubly;
+    volatile cache_sector_id data, singly, doubly;
     uint32_t first_sweep, second_sweep;
     bool double_indirection_flag;
 
@@ -428,8 +428,8 @@ static bool inode_extend(   bool create_double_indirection,
             /* Now, cache and clear the data sector */
             if (new_data_block_flag) {        
                 // printf("SDEBUG: in inode_extend, about to initialize a new data block at sector %u\n", data_sector);  
-                crab_outof_cached_sector(crab_into_cached_sector(data_sector, 
-                        false, true), false); 
+                data = crab_into_cached_sector(data_sector, false, true);
+                crab_outof_cached_sector(data, false);                    
             }
 
             if (    (first_sweep == first_index) && 
@@ -467,7 +467,7 @@ static bool inode_extend(   bool create_double_indirection,
     /* future_length is as far as we got */    
 
     // printf("SDEBUG: in inode_extend, about to return having changed length from %u to %u bytes\n", 
-        // current_length, *future_length);
+    //     current_length, *future_length);
 
     free(emptiness);
     return true;
@@ -509,10 +509,8 @@ bool inode_create(block_sector_t sector, off_t length) {
             /* Write the disk_inode to disk, too! */
             
             cache_sector_id di = crab_into_cached_sector(sector, false, true);
-            
-            memcpy( get_cache_sector_base_addr(di),                        
-                    (void *) disk_inode, 
-                    (size_t) BLOCK_SECTOR_SIZE );     
+
+            cache_write(di, (void *) disk_inode, 0, BLOCK_SECTOR_SIZE);             
 
             // printf("SDEBUG: in inode_create, di block post-extension is %u, and length is %u\n", 
             //     ((struct inode_disk *) get_cache_sector_base_addr(di))->doubly_indirect, 
@@ -578,7 +576,7 @@ static void cleanup_failed_extension(  uint32_t base_first_index,
                 get_cache_sector_base_addr(doubly);
         
         single_indirection_sector = 
-            cached_double_indirection_sector->sector[first_sweep];
+            cached_double_indirection_sector->sector[first_sweep];        
 
         if (single_indirection_sector == SILLY_OLD_DISK_SECTOR ) {
             /* No more! */
@@ -593,9 +591,11 @@ static void cleanup_failed_extension(  uint32_t base_first_index,
             Note that this isn't preserving the linear contiguous 
             structure of the disk_inode index, so we'd better have a 
             file lock (on this file) as we do this */
-            if (first_si_flag && cleanup_first_single_indirection_on_error)        
+            if (first_si_flag && cleanup_first_single_indirection_on_error) {
                 cached_double_indirection_sector->sector[first_sweep] = 
-                    SILLY_OLD_DISK_SECTOR;                
+                    SILLY_OLD_DISK_SECTOR;                                
+            }
+
         }
 
         /*  Want to avoid pinning several cache sectors in sequence,
@@ -619,10 +619,10 @@ static void cleanup_failed_extension(  uint32_t base_first_index,
                     get_cache_sector_base_addr(singly);
         
             data_sector = 
-                cached_single_indirection_sector->sector[second_sweep];
+                cached_single_indirection_sector->sector[second_sweep];            
             
             if (data_sector == SILLY_OLD_DISK_SECTOR ) {
-                /* No more! */
+                /* No more! */                
                 crab_outof_cached_sector( singly, false );                
                 break;
             } else {                    
@@ -636,12 +636,12 @@ static void cleanup_failed_extension(  uint32_t base_first_index,
                 file lock (on this file) as we do this */
 
                 cached_single_indirection_sector->sector[second_sweep]= 
-                    SILLY_OLD_DISK_SECTOR;
+                    SILLY_OLD_DISK_SECTOR;                
             }
 
             /*  Want to avoid pinning several cache sectors in sequence,
                 has the potential for deadlock if we over-constrain the 
-                cache */
+                cache */            
             crab_outof_cached_sector( singly, false );                
 
             /* Remove data sector from the free-map */
@@ -679,7 +679,7 @@ void inode_tree_destroy(block_sector_t inode_sector) {
         (struct inode_disk *) get_cache_sector_base_addr(src);    
 
     block_sector_t doubly_indirect = data->doubly_indirect;
-
+        
     crab_outof_cached_sector(src, true);        
 
     /* Re-appropriated cleanup function, ignore the name */  
@@ -819,7 +819,7 @@ off_t inode_read_at(struct inode *inode, void *buffer_, off_t size, off_t offset
             break;        
         
         cache_sector_id src = crab_into_cached_sector(sector_idx, true, false);            
-        cache_read(src, (void *) (buffer + bytes_read), sector_ofs, chunk_size);
+        cache_read(src, (void *) (buffer + bytes_read), sector_ofs, chunk_size);        
         crab_outof_cached_sector(src, true);
       
         /* Advance. */
@@ -873,7 +873,7 @@ off_t inode_write_at(struct inode *inode, const void *buffer_, off_t size, off_t
 
             src = crab_into_cached_sector(inode->sector, true, false);            
             data = (struct inode_disk *) get_cache_sector_base_addr(src);                        
-            doubly_indirect = data->doubly_indirect;            
+            doubly_indirect = data->doubly_indirect;                        
             crab_outof_cached_sector(src, true);            
 
 
@@ -888,10 +888,10 @@ off_t inode_write_at(struct inode *inode, const void *buffer_, off_t size, off_t
                             &extension_limit,
                             true);
 
-                src = crab_into_cached_sector(inode->sector, true, false);            
+                src = crab_into_cached_sector(inode->sector, false, false);            
                 data = (struct inode_disk *) get_cache_sector_base_addr(src);                        
-                data->doubly_indirect = doubly_indirect;            
-                crab_outof_cached_sector(src, true);            
+                data->doubly_indirect = doubly_indirect;                            
+                crab_outof_cached_sector(src, false);            
 
             } else {
 
@@ -975,8 +975,8 @@ off_t inode_length(const struct inode *inode) {
     struct inode_disk *data = 
         (struct inode_disk *) get_cache_sector_base_addr(src);            
     
-    off_t l = data->length;    
-    
+    off_t l = data->length;        
+
     crab_outof_cached_sector(src, true);        
 
     return l;
@@ -985,12 +985,12 @@ off_t inode_length(const struct inode *inode) {
 static void inode_set_length(const struct inode *inode, off_t updated_length) {
     ASSERT (inode != NULL);
 
-    cache_sector_id src = crab_into_cached_sector(inode->sector, true, false);    
+    cache_sector_id src = crab_into_cached_sector(inode->sector, false, false);    
     
     struct inode_disk *data = 
         (struct inode_disk *) get_cache_sector_base_addr(src);            
     
     data->length = updated_length;
     
-    crab_outof_cached_sector(src, true);            
+    crab_outof_cached_sector(src, false);            
 }

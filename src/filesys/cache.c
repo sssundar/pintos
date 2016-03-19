@@ -507,7 +507,7 @@ cache_sector_id crab_into_cached_sector(block_sector_t t, bool readnotwrite,
 
             (meta_walker+target)->cache_sector_evicters_ignore = false;
             (meta_walker+target)->cache_sector_accessed = false;
-            (meta_walker+target)->cache_sector_dirty = false;
+            (meta_walker+target)->cache_sector_dirty = extending;
             (meta_walker+target)->old_disk_sector = SILLY_OLD_DISK_SECTOR;
 
             /* IRRELEVANT: Read = True, Write = False */
