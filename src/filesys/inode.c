@@ -72,9 +72,12 @@ static block_sector_t byte_to_sector(const struct inode *inode, off_t pos) {
     
     get_indirection_indices(&first, &second, &first, &second, pos+1, pos+1);
     
+    // printf ("SDEBUG: in byte_to_sector, indirection indices are %u, %u\n", first, second);
+
     src = crab_into_cached_sector(inode->sector, true, false); 
     data = (struct inode_disk *) get_cache_sector_base_addr(src);            
     result = data->doubly_indirect;   
+    // printf ("SDEBUG: in byte_to_sector, di reference is %u\n", result);
     crab_outof_cached_sector(src, true);        
     ASSERT(result != SILLY_OLD_DISK_SECTOR);
 
@@ -82,12 +85,14 @@ static block_sector_t byte_to_sector(const struct inode *inode, off_t pos) {
     src = crab_into_cached_sector(result, true, false); 
     reference = (struct indirection_block *) get_cache_sector_base_addr(src);            
     result = reference->sector[first];
+    // printf ("SDEBUG: in byte_to_sector, si reference is %u\n", result);
     crab_outof_cached_sector(src, true);        
     ASSERT(result != SILLY_OLD_DISK_SECTOR);
 
     src = crab_into_cached_sector(result, true, false); 
     reference = (struct indirection_block *) get_cache_sector_base_addr(src);            
     result = reference->sector[second];
+    // printf ("SDEBUG: in byte_to_sector, ds reference is %u\n", result);
     crab_outof_cached_sector(src, true);        
     ASSERT(result != SILLY_OLD_DISK_SECTOR);
 
@@ -215,6 +220,7 @@ static bool inode_extend(   bool create_double_indirection,
 
     /* This function can ONLY be used for extension */
     if (*future_length == 0) {    
+        // printf("SDEBUG: in inode_extend got to zero length failure.\n");
         *doubly_indirect_ = SILLY_OLD_DISK_SECTOR;
         return true;    
     }
@@ -228,8 +234,10 @@ static bool inode_extend(   bool create_double_indirection,
                 (int) ((unsigned char) 0xFF),
                 BLOCK_SECTOR_SIZE);
     } else {
+        // printf("SDEBUG: in inode_extend got to emptiness alloc failure.\n");
         *future_length = current_length;
         if (create_double_indirection) {
+            *future_length = 0;
             *doubly_indirect_ = SILLY_OLD_DISK_SECTOR;
         }
         return false;
@@ -257,6 +265,7 @@ static bool inode_extend(   bool create_double_indirection,
             free_map_allocate(1, doubly_indirect_);                    
         if (!double_indirection_flag) {
             free(emptiness);   
+            // printf("SDEBUG: in inode_extend got to di block alloc failure.\n");
             *doubly_indirect_ = SILLY_OLD_DISK_SECTOR;
             *future_length = 0;         
             return false;
@@ -336,10 +345,10 @@ static bool inode_extend(   bool create_double_indirection,
         to a single indirection sectors that we need to cache, clear,
         then flesh out with cleared data sector references */
         
-        /* Cache the single indirection sector */                
+        /* Cache the single indirection sector */                        
         singly = crab_into_cached_sector(single_indirection_sector, 
                                             false, 
-                                            true);
+                                            new_single_indirection_block_flag);
 
         cached_single_indirection_sector = 
             (struct indirection_block *) 
@@ -402,6 +411,7 @@ static bool inode_extend(   bool create_double_indirection,
                     free_map_allocate(
                         1, 
                         &data_sector );
+                // printf("SDEBUG: in inode_extend, just allocated a new data sector at sector %u\n", data_sector);  
                 if (second_sweep_flag)       
                     cached_single_indirection_sector->sector[second_sweep] = 
                         data_sector;
@@ -416,13 +426,14 @@ static bool inode_extend(   bool create_double_indirection,
             }
 
             /* Now, cache and clear the data sector */
-            if (new_data_block_flag) {                
+            if (new_data_block_flag) {        
+                // printf("SDEBUG: in inode_extend, about to initialize a new data block at sector %u\n", data_sector);  
                 crab_outof_cached_sector(crab_into_cached_sector(data_sector, 
                         false, true), false); 
             }
 
             if (    (first_sweep == first_index) && 
-                    (second_sweep == second_index) ) {
+                    (second_sweep == second_index) ) {                
                 /* Last sector possibly not fully utilized */
                 *future_length = target_length;            
             } else if (first_second_sweep_flag) {
@@ -547,10 +558,10 @@ static void cleanup_failed_extension(  uint32_t base_first_index,
     bool first_ds_flag = true;
 
     // printf("SDEBUG: in cleanup_failed_extension, at di_block %u, with flags cdi %s, csi %s, cds %s, at indices %u, %u\n", 
-            // *doubly_indirect_, cleanup_double_indirection_on_error ? "true" : "false" , 
-            // cleanup_first_single_indirection_on_error  ? "true" : "false" , 
-            // cleanup_first_data_sector_on_error  ? "true" : "false" , 
-            // base_first_index, base_second_index);
+    //         *doubly_indirect_, cleanup_double_indirection_on_error ? "true" : "false" , 
+    //         cleanup_first_single_indirection_on_error  ? "true" : "false" , 
+    //         cleanup_first_data_sector_on_error  ? "true" : "false" , 
+    //         base_first_index, base_second_index);
 
     doubly_indirect = *doubly_indirect_;
 
@@ -836,21 +847,25 @@ off_t inode_write_at(struct inode *inode, const void *buffer_, off_t size, off_t
         return 0;
     }    
 
+    // printf("SDEBUG: in inode_write_at, attempting to write to inode->sector %u with offset and size, %d, %d\n", inode->sector, offset, size);
+
     block_sector_t doubly_indirect;
     struct inode_disk *data;
     cache_sector_id src;
     
     volatile off_t length = inode_length(inode);
-    ASSERT(length >= 0);
+    ASSERT(length >= 0);    
 
     off_t extension_limit = offset + size;            
     if (extension_limit > length) {
         
+        // printf("SDEBUG: first read of length of inode->sector %u file is %d when considering extension\n", inode->sector, length);
         // printf ("SDEBUG: in inode_write_at, potential extension considered.\n");        
 
         lock_acquire(&inode->extension_lock);        
         length = inode_length(inode);
         ASSERT(length >= 0);
+        // printf("SDEBUG: second read of length of inode->sector %u file is %d when considering extension\n", inode->sector, length);
 
         if (extension_limit > length) {
 
@@ -863,6 +878,9 @@ off_t inode_write_at(struct inode *inode, const void *buffer_, off_t size, off_t
 
 
             if (length == 0) {                
+
+                // PANIC("SDEBUG: why are we here?\n");
+
                 ASSERT(doubly_indirect == SILLY_OLD_DISK_SECTOR);
                 inode_extend(true, 
                             &doubly_indirect, 
@@ -876,18 +894,23 @@ off_t inode_write_at(struct inode *inode, const void *buffer_, off_t size, off_t
                 crab_outof_cached_sector(src, true);            
 
             } else {
+
+                // printf("SDEBUG: length of inode->sector %u file is %d just prior to extension\n", inode->sector, length);
                 ASSERT(doubly_indirect != SILLY_OLD_DISK_SECTOR);
                 inode_extend(false, 
                             &doubly_indirect, 
                             length,
                             &extension_limit,
                             true);                
+                // printf("SDEBUG: length of inode->sector %u file is %d just after extension\n", inode->sector, length);
+                // printf("SDEBUG: intended length of inode->sector %u file is %d just after extension\n", inode->sector, extension_limit);
             }
             
-            inode_set_length(inode, extension_limit);
-            
-            length = extension_limit;
+            inode_set_length(inode, extension_limit);   
+            length = inode_length(inode);
+            // printf("SDEBUG: in inode_write_at, changed length of file to %d\n", length);            
         }
+
         lock_release(&inode->extension_lock);
     }    
 

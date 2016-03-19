@@ -173,6 +173,8 @@ void cache_read(cache_sector_id src, void *dst, int offset, size_t bytes) {
                         (uint32_t) offset), 
             bytes);
 
+    mark_cache_sector_as_accessed(src);
+
     /* Add the next sector to the read-ahead queue. */
     lock_acquire(&monitor_ra);
     if (list_size(&ra_sectors) >= NUM_DISK_SECTORS_CACHED) {
@@ -243,6 +245,9 @@ void cache_write(cache_sector_id dst, void *src, int offset, int bytes) {
                         (uint32_t) offset), 
             src,
             bytes);
+
+    mark_cache_sector_as_dirty(dst);
+    mark_cache_sector_as_accessed(dst);
 }
 
 /* Gets the kernel virtual address of the base of the cache sector specified */
@@ -467,7 +472,10 @@ cache_sector_id crab_into_cached_sector(block_sector_t t, bool readnotwrite,
 
             if (!free_sector_allocated) {
                 /* Proceed with Eviction */
-                evict_cached_sector(target);
+                // if (get_cache_metadata(target)->old_disk_sector == 1) {
+                //     printf("SDEBUG: cache eviction: evicting root dir file with length %d prior to eviction\n", *((off_t *) get_cache_sector_base_addr(target)));
+                // }
+                evict_cached_sector(target);                
             } 
 
             /* Bring in the relevant data from disk if necessary */        
@@ -476,8 +484,11 @@ cache_sector_id crab_into_cached_sector(block_sector_t t, bool readnotwrite,
                     letting the new owner see it. They think it's un-
                     allocated. */
                 clear_sector(target);
-            } else {
+            } else {                            
                 pull_sector_from_disk_to_cache(t, target);
+                // if (t == 1) {
+                //     printf("SDEBUG: cache replacement: cached root dir file with length %d after caching\n", *((off_t *) get_cache_sector_base_addr(target)));
+                // }                
             }            
 
             /*    
@@ -705,6 +716,10 @@ void evict_cached_sector (cache_sector_id c) {
         (supplemental_filesystem_cache_table + c)->old_disk_sector != 
         SILLY_OLD_DISK_SECTOR
         );
+    
+    // if ((supplemental_filesystem_cache_table + c)->old_disk_sector == 1) {
+    //     printf("SDEBUG: root is being evicted, is it dirty? %s\n", (supplemental_filesystem_cache_table + c)->cache_sector_dirty ? "yes" : "no");
+    // }
 
     if ((supplemental_filesystem_cache_table + c)->cache_sector_dirty) {
         push_sector_from_cache_to_disk(
