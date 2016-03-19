@@ -259,22 +259,46 @@ bool dir_readdir(struct dir *dir, char name[NAME_MAX + 1]) {
 
 /*! Return the sector in which the given relative- or absolute-named file
     lives. Returns NULL if can't find the directory. User must close the
-    inode returned. */
-struct inode *dir_get_inode_from_path(const char *path) {
+    inode returned. Stores the parent directory's inode pointer into PARENT
+    and stores the filename into FILENAME. */
+struct inode *dir_get_inode_from_path(const char *path,
+		struct inode **parent, char *filename) {
 	char *last_slash = strrchr(path, '/');
+
+	// If we end with slash like "/a/b/c/" then recurse without trailing slash
+	if (last_slash == path + strlen(path) - 1) {
+		char *path_copy = (char *) malloc (sizeof (char) * strlen(path));
+		strlcpy(path_copy, path, strlen(path));
+		struct inode *rtn =
+				dir_get_inode_from_path(path_copy, parent, filename);
+		free (path_copy);
+		return rtn;
+	}
+
+	//printf("--> path = \"%s\"\n", path);
 
 	// For paths of the form "..", ".", or "filename" just return the
 	// the corresponding inode.
 	if (last_slash == NULL) {
 		block_sector_t files_sect = inode_find_matching_dir_entry(
 				thread_current()->cwd.inode, path);
-		if (files_sect == BOGUS_SECTOR)
-			return NULL;
-		struct inode *rtn = inode_open(files_sect);
-		if (rtn == NULL) {
-			PANIC("Memory allocation failed in inode_open");
-			NOT_REACHED();
+
+		//printf("  --> matching sector = %u\n", files_sect);
+
+		struct inode *rtn = NULL;
+		if (files_sect != BOGUS_SECTOR) {
+			rtn = inode_open(files_sect);
+			if (rtn == NULL) {
+				PANIC("Memory allocation failed in inode_open");
+				NOT_REACHED();
+			}
 		}
+		*parent = thread_current()->cwd.inode;
+		strlcpy(filename, path, NAME_MAX + 1);
+
+		//printf("--> leaving with filename=  \"%s\", parent = %p, parent name = \"%s\"\n",
+		//					filename, *parent, (*parent)->filename);
+
 		return rtn;
 	}
 
@@ -289,16 +313,23 @@ struct inode *dir_get_inode_from_path(const char *path) {
 	else
 		curr_dir_sector = thread_current()->cwd.inode->sector;
 
+	//printf(" --> curr_dir_sector (before loop): %u\n", curr_dir_sector);
+
 	// Iterate over each directory in the path.
 	struct inode *tmpinode = NULL;
 	while (path_ptr < last_slash) {
 		if (tmpinode != NULL)
 			inode_close(tmpinode);
 
+		//printf(" --> path_ptr (top of loop): \"%s\"\n", path_ptr);
+
 		// Find the current directory name from the path.
 		char curr_dir_name[NAME_MAX + 1];
 		char *first_slash = strchr(path_ptr, '/');
 		strlcpy(curr_dir_name, path_ptr, first_slash - path_ptr + 1);
+
+		//printf(" --> curr_dir_name: \"%s\"\n", curr_dir_name);
+
 
 		// Get the directory's sector from disk or the cache.
 		tmpinode = inode_open(curr_dir_sector);
@@ -321,28 +352,36 @@ struct inode *dir_get_inode_from_path(const char *path) {
 					inode_find_matching_dir_entry(tmpinode, curr_dir_name);
 			// If we couldn't find the requested file then return NULL.
 			if (tmp_dir_sector == BOGUS_SECTOR) {
-				inode_close(tmpinode);
+				*parent = NULL;
+				strlcpy(filename, "", 1);
 				return NULL;
 			}
 			curr_dir_sector = tmp_dir_sector;
 		}
 
+		//printf(" --> curr_dir_sector (end loop): %u\n", curr_dir_sector);
+
 		path_ptr = first_slash + 1;
 	}
 
-	// If the path_ptr is past the end of the string then there was a slash
-	// at the end of the string (and we were therefore given a directory and
-	// can just return the sector we already have).
-	if (path_ptr >= strlen(path) + path)
-		return tmpinode;
+	//printf("--> path_ptr (after loop): \"%s\"\n", path_ptr);
 
-	// Otherwise we need to get the sector by using the end of the path
+	// Otherwise we need to get the inode by using the end of the path
 	// and plugging it into find_matching again.
 	char name_at_end[NAME_MAX + 1];
 	strlcpy(name_at_end, path_ptr, (path + strlen(path)) - path_ptr + 1);
+	strlcpy(filename, name_at_end, NAME_MAX + 1);
 	block_sector_t fsect =
 			inode_find_matching_dir_entry(tmpinode, name_at_end);
-	inode_close(tmpinode);
+
+	//printf(" --> fsect: %u\n", fsect);
+
+	ASSERT(tmpinode != NULL);
+	*parent = inode_open(tmpinode->sector);
+
+	//printf("--> leaving with filename=  \"%s\", parent = %p, parent name = \"%s\"\n",
+	//					filename, *parent, (*parent)->filename);
+
 	if (fsect == BOGUS_SECTOR)
 		return NULL;
 	struct inode *rtn = inode_open(fsect);

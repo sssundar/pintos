@@ -577,7 +577,10 @@ bool chdir (const char *dir) {
 		return false;
 	}
 
-	struct inode *dir_inode = dir_get_inode_from_path(dir);
+	char filename[NAME_MAX + 1];
+	struct inode *parent_inode;
+	struct inode *dir_inode =
+			dir_get_inode_from_path(dir, &parent_inode, filename);
 	if (dir_inode == NULL)
 		return false;
 	
@@ -601,50 +604,31 @@ bool mkdir(const char* dir) {
 		return false;
 	}
 
-	// Get the filename at the end of the path and make sure it's not a
-	// reserved name like "." or ".."
-	char name_at_end[NAME_MAX + 1];
-	char *prefix_dir = (char *) malloc (sizeof(char) * strlen(dir));
-	bool no_prefix_dir = false;
-	char *last_slash = find_last_slash(dir);
-	if (last_slash == NULL) {
-		no_prefix_dir = true;
-		strlcpy(name_at_end, dir, NAME_MAX);
-	}
-	else {
-		strlcpy(name_at_end, last_slash + 1, (dir + strlen(dir)) - last_slash);
-		strlcpy(prefix_dir, dir, last_slash - dir + 1);
-	}
-	if (strcmp(name_at_end, ".") == 0 || strcmp(name_at_end, "..") == 0) {
-		return false;
-	}
+	//printf("--> in mkdir, making dir \"%s\"\n", dir);
 
-	// If there IS a prefix directory...
-	struct inode *dir_inode = thread_current()->cwd.inode;
-	if (!no_prefix_dir) {
-		// ...make sure the directory exists!
-		dir_inode = dir_get_inode_from_path(prefix_dir);
-		if (dir_inode == NULL) {
-			inode_close(dir_inode);
-			return false;
-		}
-	}
-	free (prefix_dir);
+	char filename[NAME_MAX + 1];
+	struct inode *parent_inode;
+	struct inode *dir_inode =
+			dir_get_inode_from_path(dir, &parent_inode, filename);
 
-	// Now make sure the proposed directory filename doesn't exist.
-	block_sector_t sct = inode_find_matching_dir_entry(dir_inode, name_at_end);
-	if (sct != BOGUS_SECTOR) {
+	// Make sure the directory DOESN'T exist but that the parent one DOES.
+	if (dir_inode != NULL || parent_inode == NULL) {
 		inode_close(dir_inode);
+		inode_close(parent_inode);
 		return false;
 	}
+
+	//printf("--> leaving with filename = \"%s\", parent = %p, parent name = \"%s\"\n",
+	//			filename, parent_inode, parent_inode->filename);
 
 	// Good, it doesn't exist. Make it! Recall that the filesys_create call
 	// makes the file AND adds it to its parent directory.
-	if(!filesys_create(dir, 0, true, dir_inode->sector)) {
+	if(!filesys_create(dir, 0, true, parent_inode->sector)) {
 		PANIC("Could not create the desired directory.");
 		NOT_REACHED();
 	}
 
+	inode_close(dir_inode);
 	return true;
 }
 

@@ -68,62 +68,48 @@ void filesys_done(void) {
     free_map_close();
 }
 
+static int get_filename_length(const char *path) {
+	char *last_slash = strrchr(path, '/');
+	if (last_slash == NULL)
+		return strlen(path);
+	return strlen(last_slash + 1);
+}
+
 /*! Creates a file named NAME with the given INITIAL_SIZE.  Returns true if
     successful, false otherwise.  Fails if a file named NAME already exists,
     or if internal memory allocation fails. */
 bool filesys_create(const char *path, off_t initial_size,
 		bool is_directory, block_sector_t parent) {
+
+	if (get_filename_length(path) > NAME_MAX)
+		return false;
+
     block_sector_t inode_sector = 0;
-
-    // TODO JUST ADDED
-    // Get the filename at the end of the path and make sure it's not a
-	// reserved name like "." or ".."
-	char name_at_end[NAME_MAX + 1];
-	char *prefix_dir = (char *) malloc (sizeof(char) * strlen(path));
-	bool no_prefix_dir = false;
-	char *last_slash = find_last_slash(path);
-	if (last_slash == NULL) {
-		no_prefix_dir = true;
-		strlcpy(name_at_end, path, NAME_MAX);
+    char filename[NAME_MAX + 1];
+	struct inode *parent_inode;
+	dir_get_inode_from_path(path, &parent_inode, filename);
+	if (parent_inode == NULL) {
+		PANIC("Couldn't find prefix directory!");
+		NOT_REACHED();
 	}
-	else {
-		strlcpy(name_at_end, last_slash + 1,
-				(path + strlen(path)) - last_slash);
-		strlcpy(prefix_dir, path, last_slash - path + 1);
-	}
-
-	// If there IS a prefix directory...
-	struct inode *dir_inode = thread_current()->cwd.inode;
-	if (!no_prefix_dir) {
-		dir_inode = dir_get_inode_from_path(prefix_dir);
-		if (dir_inode == NULL) {
-			PANIC("Couldn't find predfix directory!");
-			NOT_REACHED();
-		}
-	}
-	free (prefix_dir);
-	// TODO END JUST ADDED
 
 	//printf("--> IN FILESYS_CREATE thread current name=%s\n", thread_current()->name);
 	//printf("--> IN FILESYS_CREATE thread current cwd sector=%u\n", thread_current()->cwd.inode->sector);
 
-
-    struct dir *dir = dir_open(dir_inode);
-    bool success = (dir != NULL &&
-                    free_map_allocate(1, &inode_sector) &&
+	struct dir dir_static;
+	dir_static.inode = parent_inode == NULL ?
+			thread_current()->cwd.inode : parent_inode;
+	dir_static.pos = 0;
+    bool success = (dir_static.inode != NULL &&
+    				free_map_allocate(1, &inode_sector) &&
                     inode_create(inode_sector,
                     		initial_size,
                     		is_directory,
-							name_at_end,
+							filename,
 							is_directory ? parent : BOGUS_SECTOR) &&
-                    dir_add(dir, name_at_end, inode_sector));
-    if (!success && inode_sector != 0) 
+                    dir_add(&dir_static, filename, inode_sector));
+    if (!success && inode_sector != 0)
         free_map_release(inode_sector, 1);
-
-    // Only close the directory if WE opened one. That is, don't close an
-    // inode that belongs to the current thread's CWD!
-    if (!no_prefix_dir)
-    	dir_close(dir);
 
     return success;
 }
@@ -137,54 +123,25 @@ struct file * filesys_open(const char *path) {
 	//printf("--> thread current name=%s\n", thread_current()->name);
 	//printf("--> thread current cwd sector=%u\n", thread_current()->cwd.inode->sector);
 
-
-	// TODO JUST ADDED
-    // Get the filename at the end of the path and make sure it's not a
-	// reserved name like "." or ".."
-	char name_at_end[NAME_MAX + 1];
-	char *prefix_dir = (char *) calloc (1, sizeof(char) * strlen(path));
-	bool no_prefix_dir = false;
-	char *last_slash = find_last_slash(path);
-	if (last_slash == NULL) {
-		no_prefix_dir = true;
-		strlcpy(name_at_end, path, NAME_MAX);
-	}
-	else {
-		strlcpy(name_at_end, last_slash + 1,
-				(path + strlen(path)) - last_slash);
-		strlcpy(prefix_dir, path, last_slash - path + 1);
-	}
-
-	// If there IS a prefix directory...
-	struct inode *dir_inode = thread_current()->cwd.inode;
-	if (!no_prefix_dir) {
-		dir_inode = dir_get_inode_from_path(prefix_dir);
-		if (dir_inode == NULL) {
-			PANIC("Couldn't find predfix directory!");
-			NOT_REACHED();
-		}
+    char filename[NAME_MAX + 1];
+	struct inode *parent_inode;
+	struct inode *dir_inode =
+			dir_get_inode_from_path(path, &parent_inode, filename);
+	if (dir_inode == NULL) {
+		return NULL;
 	}
 
 	//printf("--> name_at_end is \"%s\"\n", name_at_end);
 	//printf("--> prefix is \"%s\"\n", prefix_dir);
 	//printf("--> inode sector=%u, inode parent is %u\n", dir_inode->sector, dir_inode->parent_dir);
 
-	free (prefix_dir);
-	// TODO END JUST ADDED
-
-
-
-    struct dir *dir = dir_open(dir_inode);
+	struct dir dir_static;
+	dir_static.inode = parent_inode == NULL ?
+			thread_current()->cwd.inode : parent_inode;
+	dir_static.pos = 0;
     struct inode *inode = NULL;
-
-    if (dir != NULL) {        
-        dir_lookup(dir, name_at_end, &inode);
-    }
-
-    // Only close the directory if WE opened one. That is, don't close an
-    // inode that belongs to the current thread's CWD!
-    if (!no_prefix_dir)
-    	dir_close(dir);
+    if (dir_static.inode != NULL)
+    	dir_lookup(&dir_static, filename, &inode);
 
     return file_open(inode);
 }
@@ -193,6 +150,9 @@ struct file * filesys_open(const char *path) {
     Fails if no file named NAME exists, or if an internal memory allocation
     fails. */
 bool filesys_remove(const char *name) {
+
+	// TODO this needs to be updated.
+
     struct dir *dir = dir_open_root();
     bool success = dir != NULL && dir_remove(dir, name);
     dir_close(dir);
