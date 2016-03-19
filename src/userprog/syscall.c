@@ -90,7 +90,6 @@ bool get_user_quadbyte (const uint8_t *uaddr, int *arg) {
     return false;
 }
 
-
 void sc_init(void) {
     intr_register_int(0x30, 3, INTR_ON, sc_handler, "syscall");
     lock_init(&sys_lock);
@@ -106,9 +105,9 @@ static void sc_handler(struct intr_frame *f) {
     	exit(-1);
     }
 
-    if ( 	!get_user_quadbyte ((const uint8_t *) (f->esp+4), &sc_n1) 	|| 
-    		!get_user_quadbyte ((const uint8_t *) (f->esp+8), &sc_n2) 	|| 
-    		!get_user_quadbyte ((const uint8_t *) (f->esp+12), &sc_n3) ) {    		    	
+    if (!get_user_quadbyte ((const uint8_t *) (f->esp+4), &sc_n1)
+    		|| !get_user_quadbyte ((const uint8_t *) (f->esp+8), &sc_n2)
+			|| !get_user_quadbyte ((const uint8_t *) (f->esp+12), &sc_n3)) {
     	exit(-1);
     }
 
@@ -166,8 +165,6 @@ static void sc_handler(struct intr_frame *f) {
 	else if (sc_n == SYS_INUMBER) {
 		f->eax = inumber((pid_t) sc_n1);
 	}
-
-
 }
 
 /*! Terminates Pintos by calling shutdown_power_off() (declared in
@@ -203,13 +200,10 @@ void exit(int status) {
     enum intr_level old_level;    
 
     /*  Am I a process? Yes, and I'm calling this, exiting normally, not being
-        terminated. */
+        terminated. I can be both a child and a parent. I might be a parent
+        process. Orphan any children.
 
-    /*  I can be both a child and a parent */
-    
-    /*  I might be a parent process. Orphan any children. */
-
-    /*  I'm clearly not in my children's sema-block lists, so just sema_up
+        I'm clearly not in my children's sema-block lists, so just sema_up
         their may_i_dies and disabling interrupts and unflagging their
         am_child, and unlinking my child list. This call CAN be interrupted
         by something trying to terminate the parent, hence this is critical
@@ -245,21 +239,15 @@ void exit(int status) {
 /*! Returns the size, in bytes, of the file open as fd. */
 int filesize(int fd) {
 	struct file *f;
-	struct fd_element *r;
-	struct list_elem *l;
-
 	lock_acquire(&sys_lock);
 
-	for (l = list_begin(&thread_current()->files);
-			l != list_end(&thread_current()->files);
-			l = list_next(l)) {
-		r = list_entry(l, struct fd_element, f_elem);
-		if (r->fd == fd) {
-			f = r->file;
-			lock_release(&sys_lock);
-			return file_length(f);
-		}
+	struct fd_element *fde = thread_get_matching_fd_elem(fd);
+	if (fde != NULL) {
+		f = fde->file;
+		lock_release(&sys_lock);
+		return file_length(f);
 	}
+
 	lock_release(&sys_lock);
 	return -1;
 }
@@ -331,9 +319,6 @@ int open(const char *file) {
  */
 int write(int fd, const void *buffer, unsigned size) {
 	struct file *f;
-	struct fd_element *r;
-	struct list_elem *l;
-
 	if (!uptr_is_valid(buffer)) {
 		exit(-1);
 	}	
@@ -350,20 +335,15 @@ int write(int fd, const void *buffer, unsigned size) {
 		return size;
 	}
 
-	for (l = list_begin(&(thread_current()->files));
-		 l != list_end(&(thread_current()->files));
-		 l = list_next(l)){
-		r = list_entry(l, struct fd_element, f_elem);
-		if (r->fd == fd){
-			f = r->file;
-			if (!f){
-				lock_release(&sys_lock);
-				return -1;
-			}
+	struct fd_element *fde = thread_get_matching_fd_elem(fd);
+	if (fde != NULL) {
+		f = fde->file;
+		if (f == NULL){
 			lock_release(&sys_lock);
-			//seek(fd, 0); // This is what overwrites the file.
-			return file_write(f, buffer, size);
+			return -1;
 		}
+		lock_release(&sys_lock);
+		return file_write(f, buffer, size);
 	}
 	lock_release(&sys_lock);
 	return 0;
@@ -375,13 +355,7 @@ int write(int fd, const void *buffer, unsigned size) {
     keyboard using input_getc().
 */
 int read(int fd, void *buffer, unsigned size){
-	unsigned int i;
-	struct file *f;
-	struct fd_element *r;
-	struct list_elem *l;
-
 	lock_acquire (&sys_lock);
-
 	if (!uptr_is_valid(buffer) || fd < 0) {
 		lock_release(&sys_lock);
 		exit(-1);
@@ -389,6 +363,7 @@ int read(int fd, void *buffer, unsigned size){
 
 	// Reading from stdin.
 	if (fd == STDIN_FILENO) {
+		unsigned int i;
 		for (i = 0; i != size; i++){
 			*(uint8_t *)(buffer + i) = input_getc();
 		}
@@ -397,16 +372,12 @@ int read(int fd, void *buffer, unsigned size){
 	}
 	// Reading from other kinds of files.
 	else {
-		for (l = list_begin(&thread_current()->files);
-				l != list_end(&thread_current()->files);
-				l = list_next(l)) {
-			r = list_entry(l, struct fd_element, f_elem);
-			if (r->fd == fd) {
-				f = r->file;
-				lock_release (&sys_lock);
-				//seek(r->fd, 0); // I.e., start reading from beginning of file.
-				return file_read(f, buffer, size);
-			}
+		struct fd_element *fde = thread_get_matching_fd_elem(fd);
+		if (fde != NULL) {
+			struct file *f;
+			f = fde->file;
+			lock_release (&sys_lock);
+			return file_read(f, buffer, size);
 		}
 	}
    	lock_release (&sys_lock);
@@ -414,43 +385,24 @@ int read(int fd, void *buffer, unsigned size){
 }
 
 void close(int fd) {
-	struct fd_element *r;
-	struct list_elem *l;
-	struct thread *t;
-
 	lock_acquire(&sys_lock);
-	t = thread_current();
-
-	for (l = list_begin(&t->files);
-			l != list_end(&t->files);
-			l = list_next(l)) {
-		r = list_entry(l, struct fd_element, f_elem);
-		if (r->fd == fd) {
-			file_close(r->file);
-			list_remove(&r->f_elem);
-			free(r);
-			break;
-		}
-    }
-
+	struct fd_element *fde = thread_get_matching_fd_elem(fd);
+	if (fde != NULL) {
+		file_close(fde->file);
+		list_remove(&fde->f_elem);
+		free(fde);
+	}
 	lock_release(&sys_lock);
 }
 
 void seek(int fd, unsigned position) {
-    struct file *f;
-    struct fd_element *r;
-    struct list_elem *l;
-
     lock_acquire(&sys_lock);
-    for (l = list_begin(&thread_current()->files);
-    		l != list_end(&thread_current()->files);
-    		l = list_next(l)) {
-    	r = list_entry(l, struct fd_element, f_elem);
-    	if (r->fd == fd){
-    		f = r->file;
-    		file_seek(f, position);
-    	}
-    }
+    struct fd_element *fde = thread_get_matching_fd_elem(fd);
+    if (fde != NULL) {
+    	struct file *f;
+		f = fde->file;
+		file_seek(f, position);
+	}
     lock_release(&sys_lock);
 }
 
@@ -458,20 +410,13 @@ void seek(int fd, unsigned position) {
     fd, expressed in bytes from the beginning of the file.
  */
 unsigned tell(int fd){
-	struct file *f;
-	struct fd_element *r;
-	struct list_elem *l;
-
 	lock_acquire(&sys_lock);
-	for (l = list_begin(&thread_current()->files);
-			l != list_end(&thread_current()->files);
-			l = list_next(l)){
-		r = list_entry(l, struct fd_element, f_elem);
-		if (r->fd == fd){
-			f = r->file;
-			lock_release(&sys_lock);
-			return file_tell(f);
-		}
+	struct fd_element *fde = thread_get_matching_fd_elem(fd);
+	if (fde != NULL) {
+		struct file *f;
+		f = fde->file;
+		lock_release(&sys_lock);
+		return file_tell(f);
 	}
 	lock_release(&sys_lock);
 	return -1;
