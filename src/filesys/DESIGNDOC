@@ -242,7 +242,7 @@ TODO
 >> file system operations?  If not, how do you prevent it?
 
 We don't allow deletion of directories that are open by one or more processes.
-The function filesys_remove calls a function in thread.c called 
+The function 'filesys_remove' calls a function in thread.c called 
 
     bool thread_is_dir_deletable(const char *path)
     
@@ -255,7 +255,14 @@ some process, or if the directory is not empty.
 >> B6: Explain why you chose to represent the current directory of a
 >> process the way you did.
 
-TODODODODDODODODODODODO need to change to inode sector, not pointer. dumbass.
+Thread structs contain a 'cwd_sect' field which holds the sector number
+of the current working directory of a process. Hamik initially implemented
+the CWD as a statically allocated dir struct, each of which contains an 
+inode struct pointer and a position, but he realized after reading this
+question that if changes were made to the directory underling a process's
+CWD then the process wouldn't see them! The inode struct pointer in a dir
+struct points to an in-memory inode which isn't updated. None of the tests
+caught this bug. 
 
                  BUFFER CACHE
                  ============
@@ -277,11 +284,34 @@ TODO
 
 >> C3: Describe your implementation of write-behind.
 
-TODO
+In the 'filesys_init' function we create a thread called "write-behind" which
+runs in the function
+
+    void write_behind_func(void *aux);
+    
+The timer from our thread project was buggy, so we implemented a crude timer
+instead. Every time 'thread_schedule_tail' runs we increment 'total_ticks' 
+and check if it divides into 'TICKS_UNTIL_WRITEBACK', which is currently
+set to 512 ticks. Each "tick" corresponds to a thread switch. Every 512
+ticks we up a semaphore called 'crude_time' which is extern'd in filesys.c
+and on which 'write_behind_func' waits. Which is wakes up it calls the
+function 'flush_cache_to_disk' to write all dirty cache sectors back to
+disk.
 
 >> C4: Describe your implementation of read-ahead.
 
-TODO
+In the 'filesys_init' function we create a thread called "write-behind" which
+runs in the function
+
+    void read_ahead_func(void *aux);
+    
+Every time we read in a new sector in cache.c's 'cache_read' we make sure the
+next sector isn't already in the read-ahead queue or already in the cache. If
+it isn't then we add it to the read-ahead queue, which is called 'ra_sectors'
+and is extern'd from filesys.c and signal a condition variable called
+'cond_ra'. 'read_ahead_func' was waiting on this condition variable, whose
+corresponding condition is the non-emptiness of the 'ra_sectors' queue. After
+it's signaled we dequeue a read-ahead sector and load it into the cache.
 
 ---- SYNCHRONIZATION ----
 
@@ -301,7 +331,13 @@ TODO
 >> C7: Describe a file workload likely to benefit from buffer caching,
 >> and workloads likely to benefit from read-ahead and write-behind.
 
-TODO
+When the "working group" of files open by all processes fits entirely into
+the cache then we won't have to access the disk at all until the write-behind
+thread runs for back-up. That scenario would benefit enormously from caching.
+
+If we have a file larger than the cache that is accessed linearly from start 
+to finish then read-ahead would help a lot. Write-back would help with data
+recovery and consistency under system crashes.
 
                SURVEY QUESTIONS
                ================
@@ -315,24 +351,32 @@ website.
 >> In your opinion, was this assignment, or any one of the three problems
 >> in it, too easy or too hard?  Did it take too long or too little time?
 
-TODO
+Took a week of continual effort to get things partially working. Cutting
+some things like read-ahead and write-behind would help with making the 
+project more tractable for a two-week finals-week time frame.
 
 >> Did you find that working on a particular part of the assignment gave
 >> you greater insight into some aspect of OS design?
 
-TODO
+Our familiarity with concurrency issues increases as does our appreciation
+for the ubiquity of edge cases handled by real operating systems. One
+set of experiences is more useful---though just as painful---as the other :-)
 
 >> Is there some particular fact or hint we should give students in
 >> future quarters to help them solve the problems?  Conversely, did you
 >> find any of our guidance to be misleading?
 
-TODO
+The write-up *did* say that RW locks were standard concepts, so we should
+have realized that was a cue to look them up elsewhere... but we didn't 
+and ended up spending about a day writing just the RW lock. Maybe explicitly
+write something like "see Wikipedia for a RW lock article?" 
 
 >> Do you have any suggestions for the TAs to more effectively assist
 >> students in future quarters?
 
-TODO
+Not really. We thought you handled this class super-well considering its size.
+Hell, why waste institute money on teaching assistants? You got this! :-D
 
 >> Any other comments?
 
-TODO
+None.
