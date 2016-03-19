@@ -194,7 +194,7 @@ struct inode *dir_get_inode_from_path(const char *path,
 		return rtn;
 	}
 
-	// If we end with slash like "/a/b/c/" then recurse without trailing slash
+	/* If we end with slash like "/a/b/c/" then recurse w/o trailing slash. */
 	if (last_slash == path + strlen(path) - 1) {
 		char *path_copy = (char *) malloc (sizeof (char) * strlen(path));
 		strlcpy(path_copy, path, strlen(path));
@@ -206,8 +206,8 @@ struct inode *dir_get_inode_from_path(const char *path,
 
 	//printf("  --> path = \"%s\"\n", path);
 
-	// For paths of the form "..", ".", "filename", or "/filename" just
-	// return the the corresponding inode.
+	/* For paths of the form "..", ".", "filename", or "/filename" just
+	   return the the corresponding inode. */
 	if (last_slash == NULL || last_slash == path) {
 		char trim_path[NAME_MAX + 1];
 		strlcpy(trim_path, path + (last_slash == path ? 1 : 0), NAME_MAX + 1);
@@ -234,20 +234,22 @@ struct inode *dir_get_inode_from_path(const char *path,
 		return rtn;
 	}
 
-	// Now if the filename starts with a forward slash then assume it's an
-	// absolute path, otherwise it's a relative one. If it's an absolute path
-	// then the starting directory for our search for the inode is
-	// the root directory. Otherwise it's the current working directory.
+	/* Now if the filename starts with a forward slash then assume it's an
+	   absolute path, otherwise it's a relative one. If it's an absolute path
+	   then the starting directory for our search for the inode is
+	   the root directory. Otherwise it's the current working directory. */
 	char *path_ptr = (char *) path;
 	block_sector_t curr_dir_sector;
-	if (path[0] == '/')
+	if (path[0] == '/') {
 		curr_dir_sector = ROOT_DIR_SECTOR;
+		path_ptr++;
+	}
 	else
 		curr_dir_sector = thread_current()->cwd.inode->sector;
 
 	//printf("  --> curr_dir_sector (before loop): %u\n", curr_dir_sector);
 
-	// Iterate over each directory in the path.
+	/* Iterate over each directory in the path. */
 	struct inode *tmpinode = NULL;
 	while (path_ptr < last_slash) {
 		if (tmpinode != NULL)
@@ -255,7 +257,7 @@ struct inode *dir_get_inode_from_path(const char *path,
 
 		//printf("    --> path_ptr (top of loop): \"%s\"\n", path_ptr);
 
-		// Find the current directory name from the path.
+		/* Find the current directory name from the path. */
 		char curr_dir_name[NAME_MAX + 1];
 		char *first_slash = strchr(path_ptr, '/');
 		strlcpy(curr_dir_name, path_ptr, first_slash - path_ptr + 1);
@@ -263,7 +265,7 @@ struct inode *dir_get_inode_from_path(const char *path,
 		//printf("    --> curr_dir_name: \"%s\"\n", curr_dir_name);
 
 
-		// Get the directory's sector from disk or the cache.
+		/* Get the directory's sector from disk or the cache. */
 		tmpinode = inode_open(curr_dir_sector);
 		if (tmpinode == NULL) {
 			PANIC ("Couldn't alloc memory when opening inode.");
@@ -274,8 +276,8 @@ struct inode *dir_get_inode_from_path(const char *path,
 		//printf("    --> info about tmpinode: sect=%u, fname=\"%s\", psect=%u\n",
 		//		tmpinode->sector, tmpinode->filename, tmpinode->parent_dir);
 
-		// Iterate over the sectors in the directory's entries list, looking
-		// for one with a matching name.
+		/* Iterate over the sectors in the directory's entries list, looking
+		   for one with a matching name. */
 		if (strcmp(curr_dir_name, "..") == 0) {
 			curr_dir_sector = tmpinode->parent_dir;
 		}
@@ -285,7 +287,7 @@ struct inode *dir_get_inode_from_path(const char *path,
 		else {
 			block_sector_t tmp_dir_sector =
 					inode_find_matching_dir_entry(tmpinode, curr_dir_name);
-			// If we couldn't find the requested file then return NULL.
+			/* If we couldn't find the requested file then return NULL. */
 			if (tmp_dir_sector == BOGUS_SECTOR) {
 				*parent = NULL;
 				strlcpy(filename, "", 1);
@@ -301,8 +303,8 @@ struct inode *dir_get_inode_from_path(const char *path,
 
 	//printf("  --> path_ptr (after loop): \"%s\"\n", path_ptr);
 
-	// Otherwise we need to get the inode by using the end of the path
-	// and plugging it into find_matching again.
+	/* Otherwise we need to get the inode by using the end of the path
+	   and plugging it into find_matching again. */
 	char name_at_end[NAME_MAX + 1];
 	strlcpy(name_at_end, path_ptr, (path + strlen(path)) - path_ptr + 1);
 	strlcpy(filename, name_at_end, NAME_MAX + 1);

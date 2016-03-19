@@ -554,6 +554,8 @@ bool mkdir(const char* dir) {
 	struct inode *dir_inode =
 			dir_get_inode_from_path(dir, &parent_inode, filename);
 
+	//printf("--> parent_inode = %p\n", parent_inode);
+
 	// Make sure the directory DOESN'T exist but that the parent one DOES.
 	if (dir_inode != NULL || parent_inode == NULL) {
 		inode_close(dir_inode);
