@@ -100,8 +100,11 @@ bool filesys_create(const char *path, off_t initial_size,
 	//printf("--> IN FILESYS_CREATE thread current cwd sector=%u\n", thread_current()->cwd.inode->sector);
 
 	struct dir dir_static;
-	dir_static.inode = parent_inode == NULL ?
-			thread_current()->cwd.inode : parent_inode;
+	struct inode *tinode = NULL;
+	if (parent_inode == NULL) {
+		tinode = inode_open(thread_current()->cwd_sect);
+	}
+	dir_static.inode = parent_inode == NULL ? tinode : parent_inode;
 	dir_static.pos = 0;
     bool success = (dir_static.inode != NULL &&
     				free_map_allocate(1, &inode_sector) &&
@@ -111,6 +114,10 @@ bool filesys_create(const char *path, off_t initial_size,
 							filename,
 							is_directory ? parent : BOGUS_SECTOR) &&
                     dir_add(&dir_static, filename, inode_sector));
+
+    if (tinode != NULL)
+    	inode_close(tinode);
+
     if (!success && inode_sector != 0)
         free_map_release(inode_sector, 1);
 

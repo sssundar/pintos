@@ -24,13 +24,15 @@ Dave Luo <dluo@caltech.edu>
 >> If you have any preliminary comments on your submission, notes for the
 >> TAs, or extra credit, please give them here.
 
-TODO
+TODO TODO TODO describe unimplemented features
 
 >> Please cite any offline or online sources you consulted while
 >> preparing your submission, other than the Pintos documentation, course
 >> text, lecture notes, and course instructors.
 
-TODO
+None. I heard from Ajay and the twins that there was a good Wikipedia article
+on read/write locks. Apparently their R/W lock is about forty lines. Ours is 
+hilariously bloated compared to that. Guess we should have looked at Wikipedia!
 
              INDEXED AND EXTENSIBLE FILES
              ============================
@@ -46,7 +48,20 @@ TODO
 >> A2: What is the maximum size of a file supported by your inode
 >> structure?  Show your work.
 
-TODO
+The last 4 bytes in our inode_disk struct point to a double indirect block.
+That is, they encode the sector number of a block where each of the 512 / 4 = 
+128 entries points to a single indirect block where each of ITS 128 entries 
+is a direct mapped data block. That is, each single indirect pointer has 
+scope over 128 * 512 = 64 KiB of data. There are 128 single indirect
+pointers, so we get 128 * 64 KiB = 8 MiB of storage possible from one 
+inode_disk.
+
+By using exactly one double indirect block, zero single direct blocks,
+and zero direct mapped blocks in the inode_disk struct, we get a maximum
+file size of 8MiB as desired but keep the design as simple as possible.
+No configuration involving some metadata and zero double indirect blocks 
+can realize 8MiB file sizes, so our implementation is the simplest possible
+one giving at least the required file size.
 
 ---- SYNCHRONIZATION ----
 
@@ -71,7 +86,56 @@ TODO
 >> processes writing to a file cannot prevent another process forever
 >> from reading the file.
 
-TODO
+We provide fair file access by using a custom read/write lock. Here are
+its enumerated type and struct:
+
+    /*! A read-write lock's mode. */
+    enum rwmode { UNLOCKED, RLOCKED, WLOCKED, IOLOCKED };
+
+    struct rwlock {                    
+        enum rwmode mode;              
+        uint32_t  num_waiting_readers;
+        uint32_t num_waiting_writers;
+        uint32_t num_waiting_ioers;    // Number of waiting evicters/flushers.
+        uint32_t num_current_readers;
+        struct lock lock;
+        struct condition rcond;        // Condition variable for readers.
+        struct condition wcond;        // Condition variable for writers.
+        struct condition iocond;       // Condition var for evicters/flushers.
+    };
+
+We provide an initialization function and a pair of acquisition and release
+functions, each of which takes two booleans. The first bool is true if a 
+reader is trying to acquire or release the RW lock and false if it's a
+writer. The second bool is true if an evicter or flusher is trying to
+acquire or release the lock. It would be more appropriate to call this a
+R/W/IO lock since it also protects dirty sectors in the cache. It would
+probably have been better to separate the r/w lock, since it's a general
+concept with existing implementations that we could in theory plug into
+our codebase in the future, from the io lock. It would probably have also
+been better to have rolled the two bools into an enum, but we're too 
+time-limited to refactor the RW lock.
+
+In any case the actual fairness is implemented like this. If the RW lock
+is UNLOCKED then grant the lock to whomever asks for it by changing
+to the corresponding mode. None of the num_waiting_* variables are
+incremented because the asker gets instant access---it doesn't have to 
+wait. If the lock is RLOCKED then grant access to readers instantly
+and don't increment anything for the same reason, unless there are waiting
+writers. In that case queue the reader behind the writers by incrementing the
+number of waiting readers and waiting until a writer signals this reader. If 
+it's RLOCKED but a writer asks for the lock then queue it behind the readers
+by incremeneting the number of waiting writers and waiting for the *last* of
+the non-waiting readers to signal it to go ahead. 
+
+Now if the mode is WLOCKED and a reader asks for it then the reader must
+wait until a writer signals him. Likewise if a writer asks for a WLOCKED
+RW lock, since in our implementation any number of readers can simultaneously
+use a sector but only one writer can. The IOLOCKED mode works analogously,
+as does lock release intead of lock acquisition. The code is generously
+commented if you want to take a look. Once again we acknowledge that there
+is a much better way to do RW locking, but we discovered it late enough
+that it didn't make sense to refactor. 
 
 ---- RATIONALE ----
 
@@ -81,7 +145,7 @@ TODO
 >> structure, and what advantages and disadvantages does your
 >> structure have, compared to a multilevel index?
 
-TODO
+We answered this question in A2 :-).
 
                 SUBDIRECTORIES
                 ==============
@@ -92,14 +156,76 @@ TODO
 >> `struct' member, global or static variable, `typedef', or
 >> enumeration.  Identify the purpose of each in 25 words or less.
 
-TODO
+TODO update this paragraph if this changes:
+
+When Hamik was implementing subdirectories he wanted to keep the design
+as simple as possible so debugging would be easier and so we'd have
+subdirectories working even if file extension didn't work. He knew that
+we had only one double indirect block referenced from the inode_disk struct 
+and that there was a lot of empty space under the meta data and above
+the pointer. He decided to use 100 * 4 contiguous bytes in the middle of
+the struct for direct mapped block pointers---that is, of sector numbers.
+This region is the 100-element dir_contents array below. We also store
+the inode's filename---i.e., the part at the end of any path pointing to
+the file---and a bool which is true if the inode is for a directory, false
+otherwise. We kept the 14 character limit for filenames. Each inode_disk 
+also keeps its parent directory's sector number. 
+
+    /*! Temporary restriction on # of files possible in one directory entry
+        so we can work on extensible files in parallel with subdirectories. */
+    #define MAX_DIR_ENTRIES 100
+    
+    /*! Sentinel value for entries in directory contents array. See below. */
+    #define BOGUS_SECTOR 0xFFFFFFFF
+    
+    /*! On-disk inode. Must be exactly BLOCK_SECTOR_SIZE bytes long. */
+    struct inode_disk {
+        block_sector_t start;               /*!< First data sector. */
+        off_t length;                       /*!< File size in bytes. */
+        bool is_dir;                        /*!< True if is a directory. */
+        char filename[NAME_MAX + 1];
+    
+        /*! Sector of parent dir. Only set to not BOGUS_SECTOR for dirs. */
+        block_sector_t parent_dir;
+    
+        /*! Entries in this dir. Set to BOGUS_SECTOR if they are unused. */
+        block_sector_t dir_contents[MAX_DIR_ENTRIES];
+    
+        unsigned magic;                     /*!< Magic number. */
+        uint32_t unused[20];                /*!< Not used. */
+    };
 
 ---- ALGORITHMS ----
 
->> B2: Describe your code for traversing a user-specified path.  How
+>> B2: Describe your code for traversing a user-specified path. How
 >> do traversals of absolute and relative paths differ?
 
-TODO
+The 'filename', 'parent_dir', and 'dir_contents' fields are the crucial 
+elements in our path traversal algorithm. Consider an absolute path like
+"/a/b/c". We detect that it's an absolute path by checking if the first
+character is '/'; if it is then we start off a 'curr_dir_sector' variable
+at 1, the sector number of the root directory's inode. Next we loop over
+each '/'-delimited directory in the path, updating 'curr_dir_sector' at
+each iteration. For instance, for the example absolute path we examine the
+file 'a' in the first iteration under the 'current_dir_sect' 1. We open
+the inode---using the cache---and examine each of the 100 inodes referenced 
+in its 'dir_contents' array, skipping those that are set to the sentinel
+value BOGUS_SECTOR. If the directory entry's inode has a 'filename' which
+matches "a" then we update 'curr_dir_sector' to that inode's sector number
+and continue. If we're examining a path like "/a/../b" then we'll have to
+work with the file ".." in the second iteration; instead of examining the
+directory contents of "a" for ".." we just get the sector number of the
+parent of "a".
+
+When we are finished with the path and leave the loop we store the enclosing
+directory's inode in the 'parent' out-parameter, store the filename minus
+any path-prefex in the 'filename' out-parameter, and return the file's 
+inode. There some edge cases like "/directory_name/" to consider but we've 
+captured the gist of our implementation. This algorithm is encapsulated in
+the function with the header:
+
+    struct inode *dir_get_inode_from_path(
+            const char *path, struct inode **parent, char *filename);
 
 ---- SYNCHRONIZATION ----
 
@@ -115,14 +241,21 @@ TODO
 >> working directory?  If so, what happens to that process's future
 >> file system operations?  If not, how do you prevent it?
 
-TODO
+We don't allow deletion of directories that are open by one or more processes.
+The function filesys_remove calls a function in thread.c called 
+
+    bool thread_is_dir_deletable(const char *path)
+    
+which iterates over all files open by all processes and returns true if some 
+process has the given directory open, if it's the current working directory of
+some process, or if the directory is not empty.
 
 ---- RATIONALE ----
 
 >> B6: Explain why you chose to represent the current directory of a
 >> process the way you did.
 
-TODO
+TODODODODDODODODODODODO need to change to inode sector, not pointer. dumbass.
 
                  BUFFER CACHE
                  ============

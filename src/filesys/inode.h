@@ -10,8 +10,8 @@
 
 struct bitmap;
 
-// TODO temporary restriction on # of files possible in one directory entry
-// so we can work on inodes/extensible files in parallel w/ subdirectories.
+/*! TODO Temporary restriction on # of files possible in one directory entry
+    so we can work on extensible files in parallel with subdirectories. */
 #define MAX_DIR_ENTRIES 100
 
 /*! On-disk inode.
@@ -21,11 +21,11 @@ struct inode_disk {
     off_t length;                       /*!< File size in bytes. */
     bool is_dir;						/*!< True if is a directory. */
     char filename[NAME_MAX + 1];
+
     /*! Sector of parent directory. Only set to not BOGUS_SECTOR for dirs. */
     block_sector_t parent_dir;
 
-    /*! Entries in this directory. This are set to BOGUS_SECTOR if they are
-        unused. */
+    /*! Entries in this directory. Set to BOGUS_SECTOR if they are unused. */
     block_sector_t dir_contents[MAX_DIR_ENTRIES];
 
     unsigned magic;                     /*!< Magic number. */

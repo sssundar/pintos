@@ -211,8 +211,13 @@ struct inode *dir_get_inode_from_path(const char *path,
 	if (last_slash == NULL || last_slash == path) {
 		char trim_path[NAME_MAX + 1];
 		strlcpy(trim_path, path + (last_slash == path ? 1 : 0), NAME_MAX + 1);
-		*parent = last_slash == path ?
-				dir_open_root()->inode : thread_current()->cwd.inode;
+
+		struct inode *tinode = NULL;
+		if (last_slash != path) {
+			tinode = inode_open(thread_current()->cwd_sect);
+		}
+
+		*parent = last_slash == path ? dir_open_root()->inode : tinode;
 		block_sector_t files_sect = inode_find_matching_dir_entry(
 				*parent, trim_path);
 
@@ -245,7 +250,7 @@ struct inode *dir_get_inode_from_path(const char *path,
 		path_ptr++;
 	}
 	else
-		curr_dir_sector = thread_current()->cwd.inode->sector;
+		curr_dir_sector = thread_current()->cwd_sect;
 
 	//printf("  --> curr_dir_sector (before loop): %u\n", curr_dir_sector);
 

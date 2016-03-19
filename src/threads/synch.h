@@ -55,12 +55,12 @@ struct rwlock {
 	enum rwmode mode;
 	uint32_t  num_waiting_readers;
 	uint32_t num_waiting_writers;
-  uint32_t num_waiting_ioers;
+	uint32_t num_waiting_ioers;		// Number of waiting evicters/flushers.
 	uint32_t num_current_readers;
 	struct lock lock;
-	struct condition rcond;
-	struct condition wcond;
-  struct condition iocond;
+	struct condition rcond; 		// Condition variable for readers.
+	struct condition wcond; 		// Condition variable for writers.
+	struct condition iocond; 		// Condition variable for evicters/flushers
 };
 
 void rw_init(struct rwlock *);

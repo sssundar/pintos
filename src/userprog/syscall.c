@@ -544,11 +544,8 @@ bool chdir (const char *dir) {
 		return false;
 	
 	// Free the old inode in the cwd of the process, add in the new one.
-	if (thread_current()->cwd.inode != NULL) {
-		inode_close(thread_current()->cwd.inode);
-	}
-	thread_current()->cwd.inode = dir_inode;
-	thread_current()->cwd.pos = 0;
+	thread_current()->cwd_sect = dir_inode->sector;
+	inode_close(dir_inode);
 
 	return true;
 }

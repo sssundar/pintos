@@ -433,21 +433,27 @@ int inode_get_first_open_directory_slot(struct inode *dir) {
 	return -1;
 }
 
+/*! Gets the directory entry in the given inode DIRECTROY with the
+    given NAME. Also gets the index at which it occurs. */
 void inode_find_matching_idx_and_sector(struct inode *directory,
 		const char *name, block_sector_t *the_sector, int *the_index) {
 	ASSERT(directory->is_dir);
 
 	// If the name is just "." or ".." return the appropriate sector numbers.
 	if (strcmp(name, "..") == 0 || strcmp(name, ".") == 0) {
-		if (thread_current()->cwd.inode == NULL) {
+		if (thread_current()->cwd_sect == BOGUS_SECTOR) {
 			PANIC("Null cwd inode.");
 			NOT_REACHED();
 		}
 		block_sector_t rtn;
-		if (strcmp(name, "..") == 0)
-			rtn = thread_current()->cwd.inode->parent_dir;
-		else
-			rtn = thread_current()->cwd.inode->sector;        
+		if (strcmp(name, "..") == 0) {
+			//rtn = thread_current()->cwd.inode->parent_dir;
+			rtn = directory->parent_dir;
+		}
+		else {
+			//rtn = thread_current()->cwd.inode->sector;
+			rtn = directory->sector;
+		}
 
 		*the_sector = rtn;
 		*the_index = -1;

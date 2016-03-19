@@ -84,7 +84,8 @@ static void idle(void *aux UNUSED);
 static struct thread *running_thread(void);
 static struct thread *next_thread_to_run(void);
 static void init_thread(struct thread *t, const char *name, int priority,
-		uint8_t flag_child, struct dir *cwd, struct list *parents_child_list);
+		uint8_t flag_child, block_sector_t pcwd, //struct dir *cwd,
+		struct list *parents_child_list);
 static bool is_thread(struct thread *) UNUSED;
 static void *alloc_frame(struct thread *, size_t size);
 static void schedule(void);
@@ -117,7 +118,7 @@ void thread_init(void) {
     /* Set up a thread structure for the running thread. */
     initial_thread = running_thread();    
 
-    init_thread(initial_thread, "main", PRI_DEFAULT, 0, NULL, NULL);
+    init_thread(initial_thread, "main", PRI_DEFAULT, 0, BOGUS_SECTOR, NULL);
     initial_thread->status = THREAD_RUNNING;    
     initial_thread->tid = allocate_tid();
     the_init_thread = initial_thread;
@@ -128,19 +129,20 @@ void thread_init(void) {
 /*! Sets the initial thread's current working directory. Cannot be called
     before the file system has been initialized. */
 void thread_set_initial_thread_cwd(void) {
-	ASSERT(the_init_thread != NULL);
-	ASSERT(the_init_thread->cwd.inode == NULL);
-	ASSERT(the_init_thread->cwd.pos == -1);
+	//ASSERT(the_init_thread != NULL);
+	//ASSERT(the_init_thread->cwd.inode == NULL);
+	//ASSERT(the_init_thread->cwd.pos == -1);
 
 	//printf("--> SETTING INIT THREAD CWD... \n");
 	//printf("  --> name of init_thread = %s\n", the_init_thread->name);
 
-    /* Get the root directory's inode pointer and set the init thread's cwd. */
+    // Get the root directory's inode pointer and set the init thread's cwd.
     struct inode* root_dir_inode = inode_open(ROOT_DIR_SECTOR);
     ASSERT(root_dir_inode->is_dir);
     root_dir_inode->parent_dir = BOGUS_SECTOR; // No parent for init thread.
-    the_init_thread->cwd.inode = root_dir_inode;
-    the_init_thread->cwd.pos = 0;
+    the_init_thread->cwd_sect = root_dir_inode->sector;
+    //the_init_thread->cwd.inode = root_dir_inode;
+    //the_init_thread->cwd.pos = 0;
 
     //printf("  --> my sector is %u\n", the_init_thread->cwd.inode->sector);
 }
@@ -219,11 +221,15 @@ tid_t thread_create(const char *name, int priority, thread_func *function,
         return TID_ERROR;
 
     /* Initialize thread. */
+    /*
     struct dir parents_cwd;
     parents_cwd.inode = parent == NULL ? NULL : parent->cwd.inode;
     parents_cwd.pos = parent == NULL ? -1 : parent->cwd.pos;
+    */
     init_thread(t, name, priority, flag_child,
-    		&parents_cwd, parents_child_list);
+    		// &cwd,
+    		parent == NULL ? BOGUS_SECTOR : parent->cwd_sect,
+    		parents_child_list);
     t->parent = parent;
     tid = t->tid = allocate_tid();
 
@@ -496,7 +502,7 @@ static bool is_thread(struct thread *t) {
 
 /*! Does basic initialization of T as a blocked thread named NAME. */
 static void init_thread(struct thread *t, const char *name, int priority,
-		uint8_t flag_child, struct dir *cwd,
+		uint8_t flag_child, block_sector_t pcwd, //struct dir *cwd,
 		struct list *parents_child_list UNUSED) {
     enum intr_level old_level;
 
@@ -510,8 +516,9 @@ static void init_thread(struct thread *t, const char *name, int priority,
     t->stack = (uint8_t *) t + PGSIZE;
     t->priority = priority;
     t->magic = THREAD_MAGIC;
-	t->cwd.inode = cwd != NULL ? cwd->inode : NULL;
-	t->cwd.pos = cwd != NULL ? cwd->pos : -1;
+	//t->cwd.inode = cwd != NULL ? cwd->inode : NULL;
+	//t->cwd.pos = cwd != NULL ? cwd->pos : -1;
+    t->cwd_sect = pcwd;
     list_init(&(t->files));
     //t->max_fd = 3; // This is the first available fd after debug, which is 2
     old_level = intr_disable();
@@ -682,11 +689,11 @@ bool thread_is_dir_deletable(const char *path) {
 		return false;
 
 	//printf("--> IN THREAD filename is \"%s\"\n", filename);
-	//printf("--> IN THREAD inode sector=%u, inode parent is %u\n", dir_inode->sector, dir_inode->parent_dir);
+	//printf("--> IN THREAD inode sector=%u, inode parent is %u\n",
+	//			dir_inode->sector, dir_inode->parent_dir);
 
 	// Iterate over all threads, checking each one to see if the cwd is
-	// the given directory or if it has the directory in its open files
-	// list.
+	// the given directory or if it has the directory in its open files list.
 	struct list_elem *e;
 	for (e = list_begin(&all_list);
 			e != list_end(&all_list);
@@ -694,9 +701,8 @@ bool thread_is_dir_deletable(const char *path) {
 		struct thread *t = list_entry(e, struct thread, allelem);
 
 		// Check if CWD is the same as the given dir.
-		if (t->cwd.inode != NULL) {
-			ASSERT(t->cwd.inode->is_dir);
-			if (t->cwd.inode->sector == dir_inode->sector) {
+		if (t->cwd_sect != BOGUS_SECTOR) {
+			if (t->cwd_sect == dir_inode->sector) {
 				inode_close(dir_inode);
 				return true;
 			}

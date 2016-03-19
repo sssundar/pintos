@@ -173,7 +173,8 @@ struct thread {
     /**@{*/
 
 	/* Current working directory. */
-	struct dir cwd;
+    block_sector_t cwd_sect;
+	// struct dir cwd;
 
     /*! Owned by thread.c. */
     /**@{*/
