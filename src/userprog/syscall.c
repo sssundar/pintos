@@ -101,9 +101,8 @@ static void sc_handler(struct intr_frame *f) {
 	// in the kernel.
 	int sc_n, sc_n1, sc_n2, sc_n3;
 
-    if (!get_user_quadbyte ((const uint8_t *) f->esp, &sc_n)) {
+    if (!get_user_quadbyte ((const uint8_t *) f->esp, &sc_n))
     	exit(-1);
-    }
 
     if (!get_user_quadbyte ((const uint8_t *) (f->esp+4), &sc_n1)
     		|| !get_user_quadbyte ((const uint8_t *) (f->esp+8), &sc_n2)
@@ -111,60 +110,44 @@ static void sc_handler(struct intr_frame *f) {
     	exit(-1);
     }
 
-	if (sc_n == SYS_WRITE) {
+	if (sc_n == SYS_WRITE)
 		f->eax = write(sc_n1, (void *) sc_n2, sc_n3);
-	}
-	else if (sc_n == SYS_OPEN) {
+	else if (sc_n == SYS_OPEN)
 		f->eax = open((const char *) sc_n1);
-	}
-	else if (sc_n == SYS_CLOSE) {
+	else if (sc_n == SYS_CLOSE)
 		close(sc_n1);
-	}
-	else if (sc_n == SYS_SEEK) {
+	else if (sc_n == SYS_SEEK)
 		seek(sc_n1, sc_n2);
-	}
-	else if (sc_n == SYS_EXIT) {
+	else if (sc_n == SYS_EXIT)
 		exit(sc_n1);
-	}
-	else if (sc_n == SYS_HALT) {
+	else if (sc_n == SYS_HALT)
 		halt();
-	}
-	else if (sc_n == SYS_READ) {
+	else if (sc_n == SYS_READ)
 		f->eax = read(sc_n1, (void *) sc_n2, sc_n3);
-	}
-	else if (sc_n == SYS_FILESIZE) {
+	else if (sc_n == SYS_FILESIZE)
 		f->eax = filesize(sc_n1);
-	}
-	else if (sc_n == SYS_TELL){
+	else if (sc_n == SYS_TELL)
 		f->eax = tell(sc_n1);
-	}
-	else if (sc_n == SYS_CREATE) {
+	else if (sc_n == SYS_CREATE)
 		f->eax = create((const char *) sc_n1, (unsigned) sc_n2);
-	}
-	else if (sc_n == SYS_REMOVE) {
+	else if (sc_n == SYS_REMOVE)
 		f->eax = remove((const char *) sc_n1);
-	}
-	else if (sc_n == SYS_EXEC) {
+	else if (sc_n == SYS_EXEC)
 		f->eax = exec((const char *) sc_n1);
-	} 
-	else if (sc_n == SYS_WAIT) {
+	else if (sc_n == SYS_WAIT)
 		f->eax = wait((pid_t) sc_n1);
-	}
-	else if (sc_n == SYS_CHDIR) {
+	else if (sc_n == SYS_CHDIR)
 		f->eax = chdir((const char *) sc_n1);
-	}
-	else if (sc_n == SYS_MKDIR) {
+	else if (sc_n == SYS_MKDIR)
 		f->eax = mkdir((const char *) sc_n1);
-	}
-	else if (sc_n == SYS_READDIR) {
+	else if (sc_n == SYS_READDIR)
 		f->eax = readdir((pid_t) sc_n1, (char *) sc_n2);
-	}
-	else if (sc_n == SYS_ISDIR) {
+	else if (sc_n == SYS_ISDIR)
 		f->eax = isdir((pid_t) sc_n1);
-	}
-	else if (sc_n == SYS_INUMBER) {
+	else if (sc_n == SYS_INUMBER)
 		f->eax = inumber((pid_t) sc_n1);
-	}
+	else
+		PANIC("Unsupported syscall number.");
 }
 
 /*! Terminates Pintos by calling shutdown_power_off() (declared in
@@ -338,7 +321,7 @@ int write(int fd, const void *buffer, unsigned size) {
 	struct fd_element *fde = thread_get_matching_fd_elem(fd);
 	if (fde != NULL) {
 		f = fde->file;
-		if (f == NULL){
+		if (f == NULL || (f->inode != NULL && f->inode->is_dir)) {
 			lock_release(&sys_lock);
 			return -1;
 		}
