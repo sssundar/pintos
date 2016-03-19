@@ -13,20 +13,10 @@
 #include "filesys/off_t.h"
 #include "filesys/inode.h"
 
-/*! States in a thread's life cycle. */
-enum thread_status {
-    THREAD_RUNNING,     /*!< Running thread. */
-    THREAD_READY,       /*!< Not running but ready to run. */
-    THREAD_BLOCKED,     /*!< Waiting for an event to trigger. */
-    THREAD_DYING        /*!< About to be destroyed. */
-};
+// ------------------------------ Definitions ---------------------------------
 
-/*! Thread identifier type.
-    You can redefine this to whatever type you like. */
-typedef int tid_t;
+typedef int tid_t;						/*! Thread ID type. */
 #define TID_ERROR ((tid_t) -1)          /*!< Error value for tid_t. */
-
-/* Thread priorities. */
 #define PRI_MIN 0                       /*!< Lowest priority. */
 #define PRI_DEFAULT 31                  /*!< Default priority. */
 #define PRI_MAX 63                      /*!< Highest priority. */
@@ -34,6 +24,23 @@ typedef int tid_t;
 /*! Number of ticks until the cache is flushed to disk. Chosen to be roughly
     three times the length of a disk write. */
 #define TICKS_UNTIL_WRITEBACK 512
+
+// ---------------------------- Global variables ------------------------------
+
+/*! If false (default), use round-robin scheduler. If true, use multi-level
+    feedback queue scheduler. Controlled by kernel command-line option
+    "-o mlfqs". */
+extern bool thread_mlfqs;
+
+// ------------------------------ Structures ----------------------------------
+
+/*! States in a thread's life cycle. */
+enum thread_status {
+    THREAD_RUNNING,     				/*!< Running thread. */
+    THREAD_READY,       				/*!< Not running but ready to run. */
+    THREAD_BLOCKED,   				    /*!< Waiting for an event to trigger */
+    THREAD_DYING       				    /*!< About to be destroyed. */
+};
 
 /* File list struct. */
 struct fd_element{
@@ -108,84 +115,47 @@ struct fd_element{
 struct thread {
     /*! Owned by thread.c. */
     /**@{*/
-    tid_t tid;                       /*!< Thread identifier. */
-    enum thread_status status;       /*!< Thread state. */
-    char name[16];                   /*!< Name (for debugging purposes). */
-    uint8_t *stack;                  /*!< Saved stack pointer. */
-    int priority;                    /*!< Priority. */
-    struct list_elem allelem;        /*!< List element for all threads list. */
+    tid_t tid;                       	/*!< Thread identifier. */
+    enum thread_status status;       	/*!< Thread state. */
+    char name[16];                   	/*!< Name (for debugging purposes). */
+    uint8_t *stack;                  	/*!< Saved stack pointer. */
+    int priority;                    	/*!< Priority. */
+    struct list_elem allelem;        	/*!< Is used for all threads list. */
     /**@}*/
 
     /*! Shared between thread.c and synch.c. */
     /**@{*/
-    struct list_elem elem;           /*!< List element. */
+    struct list_elem elem;           	/*!< List element. */
     /**@}*/
 
 #ifdef USERPROG
     /*! Owned by userprog/process.c. */
     /**@{*/
-    uint32_t *pagedir;               /*!< Page directory. */
-
-    /*! Status passed by exit call. */
-    int status_on_exit;
-
-    /*! True if loaded successfully from disk. */
-    bool loaded;
-
-    /*! Block parent till I exit, if parent waits */
-    struct semaphore i_am_done;
-
-    /*! Allow parent to keep us blocked during an exit */
-    struct semaphore may_i_die;
-
-    /*! Lock for waiting for the child to load. */
-    struct semaphore load_child; 
-
-    /*! Parent thread. Needs to be set to NULL when parent exists. */
-    struct thread *parent;     					   
-
-    struct list_elem sibling_elem;
-
-    /*! Keep track of other children of my parent */
-    struct list sibling_list;
-
-    struct list_elem chld_elem; 
-
-    /*! Keep track of my children */
-    struct list child_list;
-
-    /*! Active high flag for whether I am a child */
-    uint8_t am_child;
-
-    /*! Active high flag for voluntary exit, relies on no sig_term or
-         sig_kill */
-    uint8_t voluntarily_exited;
-
-    /*! All the files that this thread has open. */
-    struct list files;
-
-    /*! The filename and file descriptor of the file used to load
-        this thread. */
-    struct fd_element tfile;
+    uint32_t *pagedir;               	/*!< Page directory. */
+    int status_on_exit;					/*!< Status passed by exit call. */
+    bool loaded;						/*!< True when loaded from disk. */
+    struct semaphore i_am_done;			/*!< Block parent until I exit. */
+    struct semaphore may_i_die; 		/*!< Allow parent to keep us blocked. */
+    struct semaphore load_child; 		/*!< Lock for child loading. */
+    struct thread *parent;     			/*!< Parent thread pointer. */
+    struct list_elem sibling_elem;		/*!< Need so this can be in lists. */
+    struct list sibling_list;			/*!< Children of my parent. */
+    struct list_elem chld_elem;  		/*!< Need so this can be in lists. */
+    struct list child_list;				/*!< List of children. */
+    uint8_t am_child;					/*!< Flag for whether I am a child. */
+    uint8_t voluntarily_exited; 		/*!< Flag for voluntary exit. */
+    struct list files;					/*!< Files open in this thread. */
+    struct fd_element tfile;			/*!< Process loaded from this file. */
     /**@}*/
 #endif
     /*! Owned by thread.c. */
     /**@{*/
-
-	/* Current working directory. */
-    block_sector_t cwd_sect;
-	// struct dir cwd;
-
-    /*! Owned by thread.c. */
-    /**@{*/
-    unsigned magic;                     /* Detects stack overflow. */
+    block_sector_t cwd_sect;			/*!< Current working directory. */
+    unsigned magic;                     /*!< Detects stack overflow. */
     /**@}*/
 };
 
-/*! If false (default), use round-robin scheduler.
-    If true, use multi-level feedback queue scheduler.
-    Controlled by kernel command-line option "-o mlfqs". */
-extern bool thread_mlfqs;
+// ------------------------------ Prototypes ----------------------------------
 
 void thread_init(void);
 void thread_start(void);
@@ -213,7 +183,6 @@ void thread_yield(void);
 typedef void thread_action_func(struct thread *t, void *aux);
 
 void thread_foreach(thread_action_func *, void *);
-void thread_foreach_danger_edition(thread_action_func *func, void *aux);
 
 int thread_get_priority(void);
 void thread_set_priority(int);

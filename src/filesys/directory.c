@@ -7,6 +7,8 @@
 #include "threads/malloc.h"
 #include "threads/thread.h"
 
+// -------------------------------- Bodies ------------------------------------
+
 /*! Creates a directory with space for ENTRY_CNT entries in the
     given SECTOR.  Returns true if successful, false on failure. */
 bool dir_create(block_sector_t sector, size_t entry_cnt,
@@ -86,8 +88,6 @@ bool dir_lookup(const struct dir *dir, const char *name, struct inode **inode) {
     Fails if NAME is invalid (i.e. too long) or a disk or memory
     error occurs. */
 bool dir_add(struct dir *dir, const char *name, block_sector_t inode_sector) {
-    // struct dir_entry e;
-    // off_t ofs;
     bool success = false;
 
     ASSERT(dir != NULL);
@@ -121,7 +121,6 @@ done:
 /*! Removes any entry for NAME in DIR.  Returns true if successful, false on
     failure, which occurs only if there is no file with the given NAME. */
 bool dir_remove(struct dir *dir, const char *name) {
-    // struct dir_entry e;
     struct inode *inode = NULL;
     bool success = false;
 
@@ -156,9 +155,6 @@ done:
     true if successful, false if the directory contains no more entries. */
 bool dir_readdir(struct dir *dir, char name[NAME_MAX + 1]) {
 	bool success = false;
-
-	//printf("  --> in dir_readdir. dir = \"%s\"\n", dir->inode->filename);
-	//printf("  --> pos is %d\n", dir->pos);
 
     while (dir->pos < MAX_DIR_ENTRIES && dir->pos >=0) {
     	if (dir->inode->dir_contents[dir->pos] == BOGUS_SECTOR) {
@@ -204,8 +200,6 @@ struct inode *dir_get_inode_from_path(const char *path,
 		return rtn;
 	}
 
-	//printf("  --> path = \"%s\"\n", path);
-
 	/* For paths of the form "..", ".", "filename", or "/filename" just
 	   return the the corresponding inode. */
 	if (last_slash == NULL || last_slash == path) {
@@ -221,8 +215,6 @@ struct inode *dir_get_inode_from_path(const char *path,
 		block_sector_t files_sect = inode_find_matching_dir_entry(
 				*parent, trim_path);
 
-		//printf("    --> matching sector = %u\n", files_sect);
-
 		struct inode *rtn = NULL;
 		if (files_sect != BOGUS_SECTOR) {
 			rtn = inode_open(files_sect);
@@ -232,9 +224,6 @@ struct inode *dir_get_inode_from_path(const char *path,
 			}
 		}
 		strlcpy(filename, trim_path, NAME_MAX + 1);
-
-		//printf("    --> leaving with filename=  \"%s\", psect = %u, parent name = \"%s\"\n",
-		//					filename, (*parent)->sector, (*parent)->filename);
 
 		return rtn;
 	}
@@ -252,23 +241,16 @@ struct inode *dir_get_inode_from_path(const char *path,
 	else
 		curr_dir_sector = thread_current()->cwd_sect;
 
-	//printf("  --> curr_dir_sector (before loop): %u\n", curr_dir_sector);
-
 	/* Iterate over each directory in the path. */
 	struct inode *tmpinode = NULL;
 	while (path_ptr < last_slash) {
 		if (tmpinode != NULL)
 			inode_close(tmpinode);
 
-		//printf("    --> path_ptr (top of loop): \"%s\"\n", path_ptr);
-
 		/* Find the current directory name from the path. */
 		char curr_dir_name[NAME_MAX + 1];
 		char *first_slash = strchr(path_ptr, '/');
 		strlcpy(curr_dir_name, path_ptr, first_slash - path_ptr + 1);
-
-		//printf("    --> curr_dir_name: \"%s\"\n", curr_dir_name);
-
 
 		/* Get the directory's sector from disk or the cache. */
 		tmpinode = inode_open(curr_dir_sector);
@@ -277,9 +259,6 @@ struct inode *dir_get_inode_from_path(const char *path,
 			NOT_REACHED();
 		}
 		ASSERT(tmpinode->is_dir);
-
-		//printf("    --> info about tmpinode: sect=%u, fname=\"%s\", psect=%u\n",
-		//		tmpinode->sector, tmpinode->filename, tmpinode->parent_dir);
 
 		/* Iterate over the sectors in the directory's entries list, looking
 		   for one with a matching name. */
@@ -292,6 +271,7 @@ struct inode *dir_get_inode_from_path(const char *path,
 		else {
 			block_sector_t tmp_dir_sector =
 					inode_find_matching_dir_entry(tmpinode, curr_dir_name);
+
 			/* If we couldn't find the requested file then return NULL. */
 			if (tmp_dir_sector == BOGUS_SECTOR) {
 				*parent = NULL;
@@ -300,14 +280,8 @@ struct inode *dir_get_inode_from_path(const char *path,
 			}
 			curr_dir_sector = tmp_dir_sector;
 		}
-
-		//printf("    --> curr_dir_sector (end loop): %u\n", curr_dir_sector);
-
 		path_ptr = first_slash + 1;
 	}
-
-	//printf("  --> path_ptr (after loop): \"%s\"\n", path_ptr);
-
 	/* Otherwise we need to get the inode by using the end of the path
 	   and plugging it into find_matching again. */
 	char name_at_end[NAME_MAX + 1];
@@ -320,11 +294,6 @@ struct inode *dir_get_inode_from_path(const char *path,
 	block_sector_t fsect = BOGUS_SECTOR;
 	if (*parent != NULL)
 		fsect = inode_find_matching_dir_entry(*parent, name_at_end);
-
-	//printf("  --> fsect: %u\n", fsect);
-
-	//printf("  --> leaving with filename=  \"%s\", parent = %p, parent name = \"%s\"\n",
-	//					filename, *parent, (*parent)->filename);
 
 	inode_close(tmpinode);
 	if (fsect == BOGUS_SECTOR)

@@ -1,9 +1,10 @@
-#include "threads/thread.h"
 #include <debug.h>
 #include <stddef.h>
 #include <random.h>
 #include <stdio.h>
 #include <string.h>
+#include "list.h"
+#include "threads/thread.h"
 #include "threads/flags.h"
 #include "threads/interrupt.h"
 #include "threads/intr-stubs.h"
@@ -14,45 +15,57 @@
 #include "threads/malloc.h"
 #include "filesys/file.h"
 #include "filesys/filesys.h"
-
-#include "list.h"
 #include "userprog/syscall.h"
+
 #ifdef USERPROG
 #include "userprog/process.h"
 #endif
 
-/*! Random value for struct thread's `magic' member.
-    Used to detect stack overflow.  See the big comment at the top
-    of thread.h for details. */
+// ------------------------------ Definitions ---------------------------------
+
+#define TIME_SLICE 4                 /*!< # of timer ticks for each thread. */
+
+/*! Random value for struct thread's `magic' member. Used to detect stack
+    overflow.  See the big comment at the top of thread.h for details. */
 #define THREAD_MAGIC 0xcd6abf4b
 
-/*! List of processes in THREAD_READY state, that is, processes
-    that are ready to run but not actually running. */
-static struct list ready_list;
+// ---------------------------- Global variables ------------------------------
+
+extern struct list executing_files;  /*!< List of all executing files. */
+extern struct lock eflock;           /*!< Extern'd lock from process.c */
+extern struct semaphore crude_time;  /*!< Wakes up write-behind in filesys.c */
+extern long long total_ticks;        /*!< # ticks. Used as crude timer. */
+
+bool timer_initd;                    /*!< True if crude timer is init'd. */
+int max_fd = 3;						 /*!< Maximum file-desc assigned so far. */
+
+static struct thread *idle_thread;   /*!< Idle thread. */
+static struct lock tid_lock;		 /*!< Lock used by allocate_tid(). */
+static long long idle_ticks;         /*!< # timer ticks spent idle. */
+static long long kernel_ticks;       /*!< # timer ticks in kernel threads. */
+static long long user_ticks;         /*!< # timer ticks in user programs. */
+static unsigned thread_ticks;   /*!< # of timer ticks since last yield. */
+
+/*! Private pointer to the initial thread. */
+static volatile struct thread *the_init_thread;
+
+/*!< Is init, the thread running init.c:main(). */
+static struct thread *initial_thread;
 
 /*! List of all processes.  Processes are added to this list
     when they are first scheduled and removed when they exit. */
 static struct list all_list;
 
-/*! Idle thread. */
-static struct thread *idle_thread;
+/*! List of processes in THREAD_READY state, that is, processes
+    that are ready to run but not actually running. */
+static struct list ready_list;
 
-/*! Initial thread, the thread running init.c:main(). */
-static struct thread *initial_thread;
+/*! If false (default), use round-robin scheduler.
+    If true, use multi-level feedback queue scheduler.
+    Controlled by kernel command-line option "-o mlfqs". */
+bool thread_mlfqs;
 
-/*! Lock used by allocate_tid(). */
-static struct lock tid_lock;
-
-extern struct list executing_files;
-
-extern struct lock eflock;
-
-bool timer_initd;
-extern struct semaphore crude_time;
-extern long long total_ticks;  /*!< # of total ticks. Used as crude timer. */
-
-/*! Maximum file descriptor assigned so far. */
-int max_fd = 3;
+// ------------------------------ Structures ----------------------------------
 
 /*! Stack frame for kernel_thread(). */
 struct kernel_thread_frame {
@@ -61,36 +74,22 @@ struct kernel_thread_frame {
     void *aux;                  /*!< Auxiliary data for function. */
 };
 
-/* Statistics. */
-static long long idle_ticks;    /*!< # of timer ticks spent idle. */
-static long long kernel_ticks;  /*!< # of timer ticks in kernel threads. */
-static long long user_ticks;    /*!< # of timer ticks in user programs. */
-
-/*! Private pointer to the initial thread. */
-static volatile struct thread *the_init_thread;
-
-/* Scheduling. */
-#define TIME_SLICE 4            /*!< # of timer ticks to give each thread. */
-static unsigned thread_ticks;   /*!< # of timer ticks since last yield. */
-
-/*! If false (default), use round-robin scheduler.
-    If true, use multi-level feedback queue scheduler.
-    Controlled by kernel command-line option "-o mlfqs". */
-bool thread_mlfqs;
+// ------------------------------ Prototypes ----------------------------------
 
 static void kernel_thread(thread_func *, void *aux);
-
 static void idle(void *aux UNUSED);
 static struct thread *running_thread(void);
 static struct thread *next_thread_to_run(void);
-static void init_thread(struct thread *t, const char *name, int priority,
-		uint8_t flag_child, block_sector_t pcwd, //struct dir *cwd,
-		struct list *parents_child_list);
 static bool is_thread(struct thread *) UNUSED;
 static void *alloc_frame(struct thread *, size_t size);
 static void schedule(void);
-void thread_schedule_tail(struct thread *prev);
 static tid_t allocate_tid(void);
+static void init_thread(struct thread *t, const char *name, int priority,
+		uint8_t flag_child, block_sector_t pcwd,
+		struct list *parents_child_list);
+void thread_schedule_tail(struct thread *prev);
+
+// -------------------------------- Bodies ------------------------------------
 
 /*! Initializes the threading system by transforming the code
     that's currently running into a thread.  This can't work in
@@ -129,22 +128,12 @@ void thread_init(void) {
 /*! Sets the initial thread's current working directory. Cannot be called
     before the file system has been initialized. */
 void thread_set_initial_thread_cwd(void) {
-	//ASSERT(the_init_thread != NULL);
-	//ASSERT(the_init_thread->cwd.inode == NULL);
-	//ASSERT(the_init_thread->cwd.pos == -1);
 
-	//printf("--> SETTING INIT THREAD CWD... \n");
-	//printf("  --> name of init_thread = %s\n", the_init_thread->name);
-
-    // Get the root directory's inode pointer and set the init thread's cwd.
+    /* Get the root directory's inode pointer and set the init thread's CWD. */
     struct inode* root_dir_inode = inode_open(ROOT_DIR_SECTOR);
     ASSERT(root_dir_inode->is_dir);
     root_dir_inode->parent_dir = BOGUS_SECTOR; // No parent for init thread.
     the_init_thread->cwd_sect = root_dir_inode->sector;
-    //the_init_thread->cwd.inode = root_dir_inode;
-    //the_init_thread->cwd.pos = 0;
-
-    //printf("  --> my sector is %u\n", the_init_thread->cwd.inode->sector);
 }
 
 /*! Starts preemptive thread scheduling by enabling interrupts.
@@ -221,13 +210,7 @@ tid_t thread_create(const char *name, int priority, thread_func *function,
         return TID_ERROR;
 
     /* Initialize thread. */
-    /*
-    struct dir parents_cwd;
-    parents_cwd.inode = parent == NULL ? NULL : parent->cwd.inode;
-    parents_cwd.pos = parent == NULL ? -1 : parent->cwd.pos;
-    */
     init_thread(t, name, priority, flag_child,
-    		// &cwd,
     		parent == NULL ? BOGUS_SECTOR : parent->cwd_sect,
     		parents_child_list);
     t->parent = parent;
@@ -295,9 +278,8 @@ const char * thread_name(void) {
     return thread_current()->name;
 }
 
-/*! Returns the running thread.
-    This is running_thread() plus a couple of sanity checks.
-    See the big comment at the top of thread.h for details. */
+/*! Returns the running thread. This is running_thread() plus a couple of
+    sanity checks. See the big comment at the top of thread.h for details. */
 struct thread * thread_current(void) {
     struct thread *t = running_thread();
 
@@ -325,9 +307,9 @@ void thread_exit(void) {
     struct thread *chld_t;
 
 #ifdef USERPROG
-    /* TODO eventually uncomment this?
 
-	// Close the open file descriptors.
+	/* Close the open file descriptors.*/
+    /* TODO Was causing problems. Fix and uncomment.
 	lock_acquire(&sys_lock);
 	for (l2 = list_begin(&thread_current()->files);
 			 l2 != list_end(&thread_current()->files);
@@ -339,7 +321,7 @@ void thread_exit(void) {
 	lock_release(&sys_lock);
 	*/
 
-    // Tell parent function that I'm dying. Remove from its child list.    
+    /* Tell parent function that I'm dying. Remove from its child list. */
     if (thread_current()->parent != NULL) {
 		for (l = list_begin(&thread_current()->parent->child_list);
 				l != list_end(&thread_current()->parent->child_list);
@@ -352,7 +334,7 @@ void thread_exit(void) {
 		}
     }
 
-    // Iterate over all children, setting their parent pointers to NULL.    
+    /* Iterate over all children, setting their parent pointers to NULL. */
 	for (l = list_begin(&thread_current()->child_list);
 			l != list_end(&thread_current()->child_list);
 			l = list_next(l)) {
@@ -392,16 +374,8 @@ void thread_yield(void) {
 /*! Invoke function 'func' on all threads, passing along 'aux'.
     This function must be called with interrupts off. */
 void thread_foreach(thread_action_func *func, void *aux) {
-	// struct list_elem *e;
-
     ASSERT(intr_get_level() == INTR_OFF);
-
-    thread_foreach_danger_edition(func, aux);
-}
-
-void thread_foreach_danger_edition(thread_action_func *func, void *aux) {
     struct list_elem *e;
-
     for (e = list_begin(&all_list); e != list_end(&all_list);
          e = list_next(e)) {
         struct thread *t = list_entry(e, struct thread, allelem);
@@ -502,8 +476,9 @@ static bool is_thread(struct thread *t) {
 
 /*! Does basic initialization of T as a blocked thread named NAME. */
 static void init_thread(struct thread *t, const char *name, int priority,
-		uint8_t flag_child, block_sector_t pcwd, //struct dir *cwd,
+		uint8_t flag_child, block_sector_t pcwd,
 		struct list *parents_child_list UNUSED) {
+
     enum intr_level old_level;
 
     ASSERT(t != NULL);
@@ -516,44 +491,43 @@ static void init_thread(struct thread *t, const char *name, int priority,
     t->stack = (uint8_t *) t + PGSIZE;
     t->priority = priority;
     t->magic = THREAD_MAGIC;
-	//t->cwd.inode = cwd != NULL ? cwd->inode : NULL;
-	//t->cwd.pos = cwd != NULL ? cwd->pos : -1;
     t->cwd_sect = pcwd;
     list_init(&(t->files));
-    //t->max_fd = 3; // This is the first available fd after debug, which is 2
     old_level = intr_disable();
     t->voluntarily_exited = 0;
     list_push_back(&all_list, &t->allelem);
-    /* Initialize process_wait() system call structures */
+
+    /* Initialize process_wait() system call structures. */
     list_init(&t->child_list);
-    sema_init(&t->i_am_done, 0); /* Locked by child, implicitly */    
+    sema_init(&t->i_am_done, 0); // Locked by child, implicitly.
     sema_init(&t->load_child, 0); 
     t->am_child = flag_child;  
     t->loaded = false; 
     sema_init(&t->tfile.multfile_sema, 0);
-    // Store the filename in a newly allocated page.
+
+    /* Store the filename in a newly allocated page. */
     if(strcmp("main", name) != 0 && strcmp("init", name) != 0
     		&& strcmp("idle", name) != 0) {
 		t->tfile.filename = palloc_get_page(0);
 		if(t->tfile.filename == NULL) {
 			t->tfile.fd = -1;
-			printf("Couldn't get page for thread's filename :-(.\n");
+			PANIC("Couldn't get page for thread's filename :-(.\n");
 		}
-		else {
+		else
 			t->tfile.fd = max_fd++;
-		}
     }
     else {
     	t->tfile.fd = -1;
     	t->tfile.filename = NULL;
     }
 
-    if (flag_child > 0) {
-        sema_init(&t->may_i_die, 0); /* Blocking child from death on sys_exit */    
-    } else {
-    	/* If process, sys_exit will not block for a parent's approval. */
+    /* Blocking child from death on sys_exit */
+    if (flag_child > 0)
+        sema_init(&t->may_i_die, 0);
+
+    /* If process, sys_exit will not block for a parent's approval. */
+    else
         sema_init(&t->may_i_die, 1);
-    }  
     intr_set_level(old_level);
 }
 
@@ -588,12 +562,12 @@ static struct thread * next_thread_to_run(void) {
     before returning, but the first time a thread is scheduled it is called by
     switch_entry() (see switch.S).
 
-   It's not safe to call printf() until the thread switch is complete.  In
-   practice that means that printf()s should be added at the end of the
-   function.
+    It's not safe to call printf() until the thread switch is complete.  In
+    practice that means that printf()s should be added at the end of the
+    function.
 
-   After this function and its caller returns, the thread switch is
-   complete. */
+    After this function and its caller returns, the thread switch is
+    complete. */
 void thread_schedule_tail(struct thread *prev) {
     struct thread *cur = running_thread();
   
@@ -610,7 +584,7 @@ void thread_schedule_tail(struct thread *prev) {
     process_activate();
 #endif
 
-    // Crude timer facility.
+    /* Crude timer facility. */
     if (timer_initd && total_ticks > 0
     		&& total_ticks % TICKS_UNTIL_WRITEBACK == 0)
 		sema_up(&crude_time); // No waiting happens here.
@@ -667,9 +641,6 @@ struct fd_element *thread_get_matching_fd_elem(int fd) {
 			 l != list_end(&thread_current()->files);
 			 l = list_next(l)) {
 		f = list_entry(l, struct fd_element, f_elem);
-
-		//printf("  --> curr fd = %d\n", f->fd);
-
 		if (f->fd == fd)
 			return f;
 	}
@@ -688,12 +659,8 @@ bool thread_is_dir_deletable(const char *path) {
 	if (dir_inode == NULL || !dir_inode->is_dir)
 		return false;
 
-	//printf("--> IN THREAD filename is \"%s\"\n", filename);
-	//printf("--> IN THREAD inode sector=%u, inode parent is %u\n",
-	//			dir_inode->sector, dir_inode->parent_dir);
-
-	// Iterate over all threads, checking each one to see if the cwd is
-	// the given directory or if it has the directory in its open files list.
+	/* Iterate over all threads, checking each one to see if the cwd is
+	   the given directory or if it has the dir in its open files list. */
 	struct list_elem *e;
 	for (e = list_begin(&all_list);
 			e != list_end(&all_list);
@@ -708,7 +675,7 @@ bool thread_is_dir_deletable(const char *path) {
 			}
 		}
 
-		// Else iterate over all open files, checking if this dir is one.
+		/* Else iterate over all open files, checking if this dir is one. */
 		struct list_elem *l;
 		struct fd_element *f;
 		for (l = list_begin(&thread_current()->files);
@@ -724,7 +691,7 @@ bool thread_is_dir_deletable(const char *path) {
 		}
 	}
 
-	// Make sure it's empty.
+	/* Make sure it's empty. */
 	int i;
 	for (i = 0; i < MAX_DIR_ENTRIES; i++) {
 		if (dir_inode->dir_contents[i] != BOGUS_SECTOR) {
@@ -740,4 +707,3 @@ bool thread_is_dir_deletable(const char *path) {
 /*! Offset of `stack' member within `struct thread'.
     Used by switch.S, which can't figure it out on its own. */
 uint32_t thread_stack_ofs = offsetof(struct thread, stack);
-

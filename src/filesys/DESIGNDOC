@@ -12,7 +12,14 @@ Hamik Mukelyan <hamik@caltech.edu>
 Sushant Sundaresh <sushant.sundaresh@gmail.com>
 Dave Luo <dluo@caltech.edu>
 
->> Specify how many late tokens you are using on this assignment: 0
+>> Who did what?
+
+    Hamik:   read/write lock used by buffer cache, read-ahead, write-behind,
+             subdirectories.
+    Sushant: buffer cache, inode indirection, file extension.
+    Dave:    skeleton implementation for subdirectories.
+
+>> Specify how many late tokens you are using on this assignment: 2 + email
 
 >> What is the Git repository and commit hash for your submission?
 
@@ -24,7 +31,30 @@ Dave Luo <dluo@caltech.edu>
 >> If you have any preliminary comments on your submission, notes for the
 >> TAs, or extra credit, please give them here.
 
-TODO TODO TODO describe unimplemented features
+Hamik and Sushant implemented the cache, read-ahead, write-behind, and
+read/write locks on the same branch. Then they started to work in their
+own branches, one for subdirectories and one for file extension and inode
+indirection.
+
+Independent of Sushant's work, Hamik's branch at commit hash
+
+    TODO
+    
+passed 31/121 tests, including all subdirectory tests that weren't
+persistence tests (except dir-vine, since that creates a size 0 file).
+
+Independent of Hamik's work, Sushant's branch at commit hash
+
+    TODO
+    
+passed TODO tests, including all file growth tests except the persistence
+ones. We make a note of this because we anticipated major merging headaches.
+In other words, independently of each other we got all non-persistence tests
+except dir-vine to pass, which corresponds to a fail rate of 24/121.
+
+If you see a lower fail rate it means we managed to merge successfully. If you
+see a higher fail rate it means that we turned in one branch or the other
+because we couldn't merge successfully.
 
 >> Please cite any offline or online sources you consulted while
 >> preparing your submission, other than the Pintos documentation, course

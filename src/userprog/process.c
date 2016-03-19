@@ -21,15 +21,18 @@
 #include "threads/vaddr.h"
 
 static thread_func start_process NO_RETURN;
+
+// ---------------------------- Global variables ------------------------------
+
+extern struct lock sys_lock; 	/*!< Global file system lock. */
+struct lock eflock; 	     	/*!< Lock for the executing_files list. */
+struct list executing_files; 	/*!< Check these before writing to files! */
+
+// ------------------------------ Prototypes ----------------------------------
+
 static bool load(const char *cmdline, void (**eip)(void), void **esp);
 
-/*! Lock for the executing_files list. */
-struct lock eflock;
-
-/*! Check these before writing to files! */
-struct list executing_files;
-
-extern struct lock sys_lock;
+// -------------------------------- Bodies ------------------------------------
 
 /*! Starts a new thread running a user program loaded from FILENAME.  The new
     thread may be scheduled (and may even exit) before process_execute()
@@ -49,7 +52,7 @@ tid_t process_execute(const char *file_name) {
         return TID_ERROR;
     strlcpy(fn_copy, file_name, PGSIZE);
 
-    // Find the program name, which is the first token.
+    /* Find the program name, which is the first token. */
     progname = (char *) palloc_get_page(0);
 	if (progname == NULL)
 		return -1;
@@ -63,11 +66,10 @@ tid_t process_execute(const char *file_name) {
        our child */
     tid = thread_create(progname, PRI_DEFAULT, start_process, fn_copy, 1,
     		&thread_current()->child_list, thread_current()); 
-    // Wait for child to be loaded.
-    sema_down(&thread_current()->load_child); 
+    sema_down(&thread_current()->load_child);  // Wait for child to be loaded.
 
-    // Search the list of children for the one with the matching
-    // tid. Check its exit status. If bad, return -1. Otherwise return tid.
+    /* Search the list of children for the one with the matching
+       tid. Check its exit status. If bad, return -1. Otherwise return tid. */
     struct thread *chld_t;
     struct list_elem *l;
 	for (l = list_begin(&thread_current()->child_list); 
@@ -76,9 +78,8 @@ tid_t process_execute(const char *file_name) {
 		chld_t = list_entry(l, struct thread, chld_elem);
 
 		if(chld_t->tid == tid) {
-			if(!chld_t->loaded) {
+			if(!chld_t->loaded)
 				tid = -1;
-			}
 			found = true;
 			break;
 		}
@@ -91,7 +92,7 @@ tid_t process_execute(const char *file_name) {
 
     if (progname != NULL)
     	palloc_free_page((void *) progname);
-    return tid; // changed from current_thread()->tid
+    return tid;
 }
 
 /*! A thread function that loads a user process and starts it running. */
@@ -119,7 +120,6 @@ static void start_process(void *file_name_) {
 	}
 
     /* If load failed, quit. */
-    //palloc_free_page(file_name);
     if (!success) {
     	if (thread_current()->tfile.filename != NULL) {
     		list_remove(&thread_current()->tfile.f_elem);
@@ -208,9 +208,9 @@ int process_filename_matches(const char *filename) {
     nothing.
 */
 int process_wait(tid_t child_tid) {
+
     /* Search my child list for this child. If it exists, great. If not,
        return -1. */
-
     struct thread *t = thread_current();
     struct list_elem *elem = list_begin(&t->child_list);
 
@@ -233,21 +233,20 @@ int process_wait(tid_t child_tid) {
 
 
     if (!found_tid) {
-    	// Possibly because of TID_ERROR, Child Termination, Child
-    	// Already Waited Upon
+    	// Poss. b/c of TID_ERROR, Child Termination, Child Already Waited Upon
         return -1;
     }
 
-    // Down the sema of the child, i_am_done. Wait for it to call us back.
-    // Disable interrupts so this process can't be terminated if we return.
+    /* Down the sema of the child, i_am_done. Wait for it to call us back.
+       Disable interrupts so this process can't be terminated if we return. */
     old_level = intr_disable();
     sema_down(&mychild->i_am_done);
 
-    // Check the status of the child
+    /* Check the status of the child. */
     result = mychild->status_on_exit;
 
-    // Snip out the child using pointers to both sides of child_list around
-    // the child, then allow the child to destroy itself at will.
+    /* Snip out the child using pointers to both sides of child_list around
+       the child, then allow the child to destroy itself at will. */
     list_remove(elem);
     sema_up(&mychild->may_i_die);    
 
@@ -387,7 +386,7 @@ bool load(const char *file_name, void (**eip) (void), void **esp) {
 
     /* Open executable file. */
 
-    // Find the program name, which is the first token.
+    /* Find the program name, which is the first token. */
     progname = (char *) palloc_get_page(0);
 	if (progname == NULL)
 		goto done;
@@ -397,8 +396,7 @@ bool load(const char *file_name, void (**eip) (void), void **esp) {
 	}
 	progname[i] = '\0';
 
-
-    // Store the filename in the thread struct
+    /* Store the filename in the thread struct */
 	lock_acquire(&eflock);
     if (thread_current()->tfile.filename != NULL) {
     	strlcpy(thread_current()->tfile.filename, progname,
@@ -615,19 +613,19 @@ static bool setup_stack(void **esp, const char *file_name) {
     char *ptr = (char *) PHYS_BASE;
     int i;
 
-    // Make a copy of FILE_NAME. Need a non-const one for tok'ing to work.
+    /* Make a copy of FILE_NAME. Need a non-const one for tok'ing to work. */
     fncopy = (char *) palloc_get_page(0);
     if (fncopy == NULL)
         return false;
     strlcpy(fncopy, file_name, PGSIZE);
 
-    // Setup the stack.
+    /* Setup the stack. */
     kpage = palloc_get_page(PAL_USER | PAL_ZERO);
     if (kpage != NULL) {
         success = install_page(((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
         if (success) {
 
-            // Copy argv elements onto the stack as they're parsed out.
+            /* Copy argv elements onto the stack as they're parsed out. */
             for (token = strtok_r(fncopy, " ", &save_ptr);
                  token != NULL; token = strtok_r(NULL, " ", &save_ptr)) {
 
@@ -659,7 +657,7 @@ static bool setup_stack(void **esp, const char *file_name) {
                 vptr--;
             }
 
-            // Set up argv pointer, which is char **argv, and argc
+            /* Set up argv pointer, which is char **argv, and argc. */
             if ((void *) vptr < PHYS_BASE - PGSIZE) {
 				palloc_free_page((void *) fncopy);
 				return false;
@@ -672,7 +670,7 @@ static bool setup_stack(void **esp, const char *file_name) {
 			}
             *vptr = (char *) argc;
 
-            // The bogus return address.
+            /* The bogus return address. */
             vptr--;
 
             *esp = (void *) vptr;

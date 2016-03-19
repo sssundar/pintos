@@ -23,9 +23,9 @@
 
 //----------------------------- Global variables ------------------------------
 
-struct lock sys_lock;
-
 extern int max_fd;
+
+struct lock sys_lock;
 
 //---------------------------- Function prototypes ----------------------------
 
@@ -90,11 +90,13 @@ bool get_user_quadbyte (const uint8_t *uaddr, int *arg) {
     return false;
 }
 
+/*! Initializes the syscall framework. */
 void sc_init(void) {
     intr_register_int(0x30, 3, INTR_ON, sc_handler, "syscall");
     lock_init(&sys_lock);
 }
 
+/*! Handles specific syscall requests using the given interrupt frame. */
 static void sc_handler(struct intr_frame *f) {
 
 	// Don't need to run these through uptr_is_valid b/c they're generated
@@ -158,6 +160,7 @@ void halt(void) {
 	shutdown_power_off();
 }
 
+/*! Wait for the given process to die. Returns the exit status. */
 int wait(pid_t p) {
 	return process_wait(p);
 }
@@ -167,8 +170,7 @@ int wait(pid_t p) {
     returned. Conventionally, a status of 0 indicates success and nonzero
     values indicate errors.
 
-    Closes all the open file descriptors (i.e., behaves like the Linux _exit
-    function).
+    Closes all open file descriptors. Behaves like the Linux _exit function.
  */
 void exit(int status) {
     struct thread *t = thread_current();
@@ -209,6 +211,7 @@ void exit(int status) {
     lock_release(&sys_lock);
 
     if (t->am_child > 0) {
+
         /* Am I a child process? Then don't kill me just yet, I might be
            needed later. */
         sema_up(&t->i_am_done);
@@ -251,7 +254,6 @@ int filesize(int fd) {
     share a file position.
 */
 int open(const char *file) {
-
 	struct file *f;
 	struct fd_element *fd_elem;
 
@@ -261,9 +263,6 @@ int open(const char *file) {
 		lock_release(&sys_lock);
 		exit(-1);
 	}
-
-	//printf("--> in OPEN, thread is \"%s\"\n", thread_current()->name);
-	//printf("--> calling filesys_open\n");
 
 	f = filesys_open(file);
 	if (f == NULL) {
@@ -285,9 +284,6 @@ int open(const char *file) {
     	fd_elem->fd = max_fd++;
     }
 
-    //printf("--> in OPEN, about to add to list of thread's file.\n");
-    //printf("--> going to return fd %d\n", fd_elem->fd);
-
 	fd_elem->file = f;
 	fd_elem->directory = NULL; // This is set the first time we use it.
 	list_push_back(&thread_current()->files, &fd_elem->f_elem);
@@ -298,26 +294,15 @@ int open(const char *file) {
 
 /*! Writes size bytes from buffer to the open file fd. Returns the number of
     bytes actually written, which may be less than size if some bytes could
-    not be written.
-
-    Writing past end-of-file would normally extend the file, but file growth
-    is not implemented by the basic file system. The expected behavior is to
-    write as many bytes as possible up to end-of-file and return the actual
-    number written, or 0 if no bytes could be written at all. Fd 1 writes to
-    the console.
- */
+    not be written. */
 int write(int fd, const void *buffer, unsigned size) {
 	if (!uptr_is_valid(buffer)) {
 		exit(-1);
 	}	
 
-	// If this fd matches with an executing process's fd...
-	if (process_fd_matches(fd)) {
-
-		//printf("--> matched exec'ing process.\n");
-
+	/* If this fd matches with an executing process's fd... */
+	if (process_fd_matches(fd))
 		return 0;
-	}
 
 	lock_acquire(&sys_lock);
 	if (fd == STDOUT_FILENO) {
@@ -326,13 +311,7 @@ int write(int fd, const void *buffer, unsigned size) {
 		return size;
 	}
 
-	//printf("--> in WRITE, getting matching fd element = %d\n", fd);
-	//printf("--> in WRITE, thread is \"%s\"\n", thread_current()->name);
-
 	struct fd_element *fde = thread_get_matching_fd_elem(fd);
-
-	//printf("--> fde = %p\n", fde);
-
 	if (fde != NULL) {
 		struct file *f;
 		f = fde->file;
@@ -341,9 +320,6 @@ int write(int fd, const void *buffer, unsigned size) {
 			return -1;
 		}
 		lock_release(&sys_lock);
-
-		//printf("--> ABOUT TO WRITE. size = %u\n", size);
-
 		return file_write(f, buffer, size);
 	}
 	lock_release(&sys_lock);
@@ -362,7 +338,7 @@ int read(int fd, void *buffer, unsigned size){
 		exit(-1);
 	}
 
-	// Reading from stdin.
+	/* Reading from stdin. */
 	if (fd == STDIN_FILENO) {
 		unsigned int i;
 		for (i = 0; i != size; i++){
@@ -371,7 +347,8 @@ int read(int fd, void *buffer, unsigned size){
 		lock_release (&sys_lock);
 		return size;
 	}
-	// Reading from other kinds of files.
+
+	/* Reading from other kinds of files. */
 	else {
 		struct fd_element *fde = thread_get_matching_fd_elem(fd);
 		if (fde != NULL) {
@@ -385,6 +362,8 @@ int read(int fd, void *buffer, unsigned size){
 	return -1;
 }
 
+/*! Close the file corresponding to the given file descriptor. Note that
+    file descriptors are thread-specific. */
 void close(int fd) {
 	lock_acquire(&sys_lock);
 	struct fd_element *fde = thread_get_matching_fd_elem(fd);
@@ -396,6 +375,7 @@ void close(int fd) {
 	lock_release(&sys_lock);
 }
 
+/*! Seek to the given POSITION in the file corresponding to FD. */
 void seek(int fd, unsigned position) {
     lock_acquire(&sys_lock);
     struct fd_element *fde = thread_get_matching_fd_elem(fd);
@@ -408,8 +388,7 @@ void seek(int fd, unsigned position) {
 }
 
 /*! Returns the position of the next byte to be read or written in open file
-    fd, expressed in bytes from the beginning of the file.
- */
+    fd, expressed in bytes from the beginning of the file. */
 unsigned tell(int fd){
 	lock_acquire(&sys_lock);
 	struct fd_element *fde = thread_get_matching_fd_elem(fd);
@@ -429,7 +408,6 @@ unsigned tell(int fd){
     require a open system call. Makes non-directory files.
  */
 bool create(const char *file, unsigned initial_size) {
-
 	bool success = false;
 	lock_acquire(&sys_lock);
 
@@ -443,10 +421,7 @@ bool create(const char *file, unsigned initial_size) {
 	struct inode *dir_inode =
 			dir_get_inode_from_path(file, &parent_inode, filename);
 
-	//printf("--> (CREATE) filename is \"%s\"\n", filename);
-	//printf("--> (CREATE) parent = %p, parent sector is %u\n", parent_inode, parent_inode->sector);
-
-	// Make sure file doesn't already exist.
+	/* Make sure file doesn't already exist. */
 	if (dir_inode != NULL) {
 		lock_release(&sys_lock);
 		return false;
@@ -459,10 +434,8 @@ bool create(const char *file, unsigned initial_size) {
 
 /*! Deletes the file called file. Returns true if successful, false
     otherwise. A file may be removed regardless of whether it is open or
-    closed, and removing an open file does not close it.
- */
+    closed, and removing an open file does not close it. */
 bool remove(const char *file) {
-
 	bool success = false;
 	lock_acquire(&sys_lock);
 
@@ -475,8 +448,7 @@ bool remove(const char *file) {
 		return false;
 	}
 
-	// This function does exactly the same as filesys_remove, but to be
-	// safe I think getting a lock is necessary as in exec.
+	/* This function does exactly the same as filesys_remove. */
 	success = filesys_remove(file);
 	lock_release(&sys_lock);
 	return success;
@@ -487,8 +459,7 @@ bool remove(const char *file) {
     pid -1, which otherwise should not be a valid pid, if the program cannot
     load or run for any reason. Thus, the parent process cannot return from
     the exec until it knows whether the child process successfully loaded its
-    executable. Uses appropriate synchronization to ensure this.
- */
+    executable. Uses appropriate synchronization to ensure this. */
 pid_t exec (const char *cmd_line) {
 	tid_t tid;
 	lock_acquire(&sys_lock);
@@ -497,7 +468,7 @@ pid_t exec (const char *cmd_line) {
 		exit(-1);
 	}
 
-    // Find the program name, which is the first token.
+    /* Find the program name, which is the first token. */
     char *progname = (char *) palloc_get_page(0);
 	if (progname == NULL)
 		return -1;
@@ -508,21 +479,16 @@ pid_t exec (const char *cmd_line) {
 	}
 	progname[i] = '\0';
 
-	// struct semaphore *fsema = file_match_sema(cmd_line);
-
 	if (progname != NULL)
 	    palloc_free_page((void *) progname);
 
 	lock_release(&sys_lock);
-
 	tid = process_execute(cmd_line);
-
 	return (pid_t) tid;
 }
 
 /*! True if the given pointer is less than PHYSBASE, is not null, and is a
-    user address one.
- */
+    user address one. */
 bool uptr_is_valid (const void *uptr) {
 	return uptr != NULL && is_user_vaddr(uptr) &&
 			pagedir_get_page(thread_current()->pagedir, uptr) != NULL;
@@ -532,9 +498,8 @@ bool uptr_is_valid (const void *uptr) {
     which may be relative or absolute. Returns true if successful,
     false on failure. */
 bool chdir (const char *dir) {
-	if (!uptr_is_valid(dir)) {
+	if (!uptr_is_valid(dir))
 		return false;
-	}
 
 	char filename[NAME_MAX + 1];
 	struct inode *parent_inode;
@@ -543,7 +508,7 @@ bool chdir (const char *dir) {
 	if (dir_inode == NULL)
 		return false;
 	
-	// Free the old inode in the cwd of the process, add in the new one.
+	/* Free the old inode in the cwd of the process, add in the new one. */
 	thread_current()->cwd_sect = dir_inode->sector;
 	inode_close(dir_inode);
 
@@ -556,31 +521,23 @@ bool chdir (const char *dir) {
     not already exist. That is, mkdir("/a/b/c") succeeds only if /a/b
     already exists and /a/b/c does not. */
 bool mkdir(const char* dir) {
-	if (!uptr_is_valid(dir) || strlen(dir) == 0) {
+	if (!uptr_is_valid(dir) || strlen(dir) == 0)
 		return false;
-	}
-
-	//printf("--> in mkdir, making dir \"%s\"\n", dir);
 
 	char filename[NAME_MAX + 1];
 	struct inode *parent_inode;
 	struct inode *dir_inode =
 			dir_get_inode_from_path(dir, &parent_inode, filename);
 
-	//printf("--> parent_inode = %p\n", parent_inode);
-
-	// Make sure the directory DOESN'T exist but that the parent one DOES.
+	/* Make sure the directory DOESN'T exist but that the parent one DOES. */
 	if (dir_inode != NULL || parent_inode == NULL) {
 		inode_close(dir_inode);
 		inode_close(parent_inode);
 		return false;
 	}
 
-	//printf("--> got filename = \"%s\", parent name = \"%s\", psect = %u\n",
-	//			filename, parent_inode->filename, parent_inode->sector);
-
-	// Good, it doesn't exist. Make it! Recall that the filesys_create call
-	// makes the file AND adds it to its parent directory.
+	/* Good, it doesn't exist. Make it! Recall that the filesys_create call
+	   makes the file AND adds it to its parent directory. */
 	if(!filesys_create(dir, 0, true, parent_inode->sector)) {
 		PANIC("Could not create the desired directory.");
 		NOT_REACHED();
@@ -596,31 +553,25 @@ bool mkdir(const char* dir) {
    READDIR_MAX_LEN + 1 bytes, and returns true. If no entries are
    left in the directory, returns false. */
 bool readdir(int fd, char* name) {
-	if(!uptr_is_valid(name) || !isdir(fd)) {
+	if(!uptr_is_valid(name) || !isdir(fd))
 		return false;
-	}
 	
 	struct fd_element *f = thread_get_matching_fd_elem(fd);
-	if (f == NULL) {
+	if (f == NULL)
 		return false;
-	}
-
-	//printf("--> before dir_readdir call\n");
 
 	return dir_readdir(f->directory, name);
 }
 
-/* Returns true if fd represents a directory, false if it 
-   represents an ordinary file. */
+/* Returns true if fd represents a directory, false if it  represents an
+   ordinary file. */
 bool isdir(int fd) {
 	struct fd_element *f = thread_get_matching_fd_elem(fd);
-	if (f == NULL) {
+	if (f == NULL)
 		return false;
-	}
 	bool isdir = f->file->inode->is_dir;
-	if(isdir && f->directory == NULL) {
+	if(isdir && f->directory == NULL)
 		f->directory = dir_open(f->file->inode);
-	}
 	return isdir;
 }
 
@@ -628,8 +579,7 @@ bool isdir(int fd) {
    which may represent an ordinary file or a directory. */
 int inumber(int fd) {
 	struct fd_element *f = thread_get_matching_fd_elem(fd);
-	if(f == NULL){
+	if(f == NULL)
 		return BOGUS_SECTOR;
-	}
 	return inode_get_inumber(f->file->inode);
 }

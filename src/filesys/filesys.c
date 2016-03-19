@@ -12,26 +12,29 @@
 #include "lib/user/syscall.h"
 #include "threads/thread.h"
 
+// ---------------------------- Global variables ------------------------------
+
+extern bool timer_initd;		   /*!< Extern'd from thread.c. */
+
+long long total_ticks;             /*!< Crude timer's tick count. */
 struct lock monitor_ra;			   /*!< Used to wake up read-ahead. */
 struct condition cond_ra;          /*!< Used to wake up read-ahead. */
-
 struct semaphore crude_time;       /*!< Downed here, upped in thread_tick */
-extern bool timer_initd;
+struct block *fs_device;		   /*!< Partition that contains file system. */
 
 /*! List of the sectors N whose next elements N + 1 should be read ahead. */
 struct list ra_sectors;
 
-long long total_ticks;             /*!< Crude timer's tick count. */
-
-/*! Partition that contains the file system. */
-struct block *fs_device;
+// ------------------------------ Prototypes ----------------------------------
 
 static void do_format(void);
 void write_behind_func(void *aux);
 void read_ahead_func(void *aux);
 
-/*! Initializes the file system module.
-    If FORMAT is true, reformats the file system. */
+// -------------------------------- Bodies ------------------------------------
+
+/*! Initializes the file system module. If FORMAT is true, reformats the
+    file system. */
 void filesys_init(bool format) {
     fs_device = block_get_role(BLOCK_FILESYS);
     if (fs_device == NULL)
@@ -68,6 +71,7 @@ void filesys_done(void) {
     free_map_close();
 }
 
+/*! Gets length oftrailing filename in the given absolute or relative path. */
 static int get_filename_length(const char *path) {
 	char *last_slash = strrchr(path, '/');
 	if (last_slash == NULL)
@@ -95,9 +99,6 @@ bool filesys_create(const char *path, off_t initial_size,
 	}
 	if (inode != NULL)
 		return false;
-
-	//printf("--> IN FILESYS_CREATE thread current name=%s\n", thread_current()->name);
-	//printf("--> IN FILESYS_CREATE thread current cwd sector=%u\n", thread_current()->cwd.inode->sector);
 
 	struct dir dir_static;
 	struct inode *tinode = NULL;
@@ -128,29 +129,15 @@ bool filesys_create(const char *path, off_t initial_size,
     or a null pointer otherwise.  Fails if no file named NAME exists,
     or if an internal memory allocation fails. */
 struct file * filesys_open(const char *path) {
-
-	//printf("--> path is \"%s\"\n", path);
-	//printf("--> thread_curr name = %s\n", thread_current()->name);
-	//printf("--> thread_curr cwd sector = %u\n", thread_current()->cwd.inode->sector);
-	//printf("--> thread_curr cwd name = \"%s\"\n", thread_current()->cwd.inode->filename);
-
     char filename[NAME_MAX + 1];
 	struct inode *parent_inode;
 	struct inode *dir_inode =
 			dir_get_inode_from_path(path, &parent_inode, filename);
-	if (dir_inode == NULL) {
-
-		//printf("--> got a null dir_inode\n");
-
+	if (dir_inode == NULL)
 		return NULL;
-	}
 
-	//printf("--> filename is \"%s\"\n", filename);
-	//printf("--> inode sector=%u, inode parent is %u, parent inode = %p\n",
-	//		dir_inode->sector, dir_inode->parent_dir, parent_inode);
-
-	// Only case where parent is NULL is for root directory. Already got it,
-	// so return it
+	/* Only case where parent is NULL is for root directory. Already got it,
+	   so return it. */
 	if (parent_inode == NULL)
 		return file_open(dir_inode);
 
@@ -159,9 +146,6 @@ struct file * filesys_open(const char *path) {
 	dir_static.pos = 0;
     struct inode *inode = NULL;
     dir_lookup(&dir_static, filename, &inode);
-
-    //printf("--> inode is %p\n", inode);
-
     return file_open(inode);
 }
 
@@ -174,12 +158,8 @@ struct file * filesys_open(const char *path) {
     process. */
 bool filesys_remove(const char *name) {
 
-	//printf("--> check if some process is using \"%s\"\n", name);
-
 	if (thread_is_dir_deletable(name))
 		return false;
-
-	//printf("--> no process is using \"%s\"\n", name);
 
 	char filename[NAME_MAX + 1];
 	struct inode *parent_inode;
@@ -188,15 +168,10 @@ bool filesys_remove(const char *name) {
 	if (dir_inode == NULL) // Can't delete non-existent file.
 		return false;
 
-	//printf("--> IN FILESYS filename is \"%s\"\n", filename);
-	//printf("--> IN FILESYS inode sector=%u, inode parent is %u\n",
-	//		dir_inode->sector, dir_inode->parent_dir);
-
 	struct dir parent_dir;
 	parent_dir.inode = parent_inode;
 	parent_dir.pos = 0;
 	dir_remove(&parent_dir, filename);
-
     return true;
 }
 
@@ -212,8 +187,7 @@ static void do_format(void) {
 
 /*! Iterate over all the cache entries periodically, writing the dirty ones
     back to disk to protect against a system crash. The timing is done with
-    a condition variable that is signalling from thread_tick.
- */
+    a condition variable that is signalling from thread_tick. */
 void write_behind_func(void *aux UNUSED) {
 	do {
 		sema_down(&crude_time); // Wait.
@@ -225,7 +199,6 @@ void write_behind_func(void *aux UNUSED) {
     in ra_sectors and this thread is woken up. This thread is responsible for
     reading in that sector in the background. */
 void read_ahead_func(void *aux UNUSED) {
-
 	do {
 		lock_acquire(&monitor_ra);
 		while(list_size(&ra_sectors) == 0) {
@@ -241,14 +214,12 @@ void read_ahead_func(void *aux UNUSED) {
 		crab_outof_cached_sector(
 				crab_into_cached_sector(rasect->sect_n, true), true);
 		lock_acquire(&monitor_ra);
-		// printf("---> I just saw block_sector_t: %u \n", rasect->sect_n);
 
 		list_remove(l);
 		free(rasect);
 
 		lock_release(&monitor_ra);
 	} while (true);
-
 }
 
 /*! Gets the last slash that isn't the very last char. */
