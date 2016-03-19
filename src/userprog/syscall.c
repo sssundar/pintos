@@ -262,6 +262,8 @@ int open(const char *file) {
 		exit(-1);
 	}
 
+	//printf("--> calling filesys_open\n");
+
 	f = filesys_open(file);
 	if (f == NULL) {
 		lock_release(&sys_lock);
@@ -443,12 +445,12 @@ bool create(const char *file, unsigned initial_size) {
     otherwise. A file may be removed regardless of whether it is open or
     closed, and removing an open file does not close it.
  */
-bool remove (const char *file) {
+bool remove(const char *file) {
 
 	bool success = false;
 	lock_acquire(&sys_lock);
 
-	if (!uptr_is_valid(file)) {
+	if (!uptr_is_valid(file) || strlen(file) == 0 || strcmp(file, "/") == 0) {
 		lock_release(&sys_lock);
 		exit(-1);
 	}
@@ -555,8 +557,8 @@ bool mkdir(const char* dir) {
 		return false;
 	}
 
-	//printf("--> leaving with filename = \"%s\", parent = %p, parent name = \"%s\"\n",
-	//			filename, parent_inode, parent_inode->filename);
+	//printf("--> got filename = \"%s\", parent name = \"%s\", psect = %u\n",
+	//			filename, parent_inode->filename, parent_inode->sector);
 
 	// Good, it doesn't exist. Make it! Recall that the filesys_create call
 	// makes the file AND adds it to its parent directory.
@@ -584,9 +586,9 @@ bool readdir(int fd, char* name) {
 		return false;
 	}
 
-	dir_readdir(f->directory, name);
+	//printf("--> before dir_readdir call\n");
 
-	return true;
+	return dir_readdir(f->directory, name);
 }
 
 /* Returns true if fd represents a directory, false if it 

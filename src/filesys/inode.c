@@ -81,18 +81,17 @@ bool inode_create(block_sector_t sector, off_t length,
         disk_inode->length = length;
         disk_inode->magic = INODE_MAGIC;
         strlcpy(disk_inode->filename, filename, NAME_MAX + 1);
+        disk_inode->parent_dir = parent;
         if (is_directory) {
         	disk_inode->is_dir = true;
         	int i;
         	for (i = 0; i < MAX_DIR_ENTRIES; i++) {
         		disk_inode->dir_contents[i] = BOGUS_SECTOR;
         	}
-        	disk_inode->parent_dir = parent;
         }
-        else {
+        else
         	disk_inode->is_dir = false;
-        	disk_inode->parent_dir = BOGUS_SECTOR;
-        }
+
         if (free_map_allocate(sectors, &disk_inode->start)) {
 
             cache_sector_id dst = crab_into_cached_sector(sector, false);
@@ -155,13 +154,15 @@ struct inode * inode_open(block_sector_t sector) {
     	PANIC("Couldn't malloc enough room for tmp buf.");
     	NOT_REACHED();
     }
-    // Fetch the node from the cache (or disk if necessary)
+
+    /* Fetch the node from the cache (or disk if necessary) */
     cache_sector_id src = crab_into_cached_sector(inode->sector, true);
 	cache_read(src, tmp_buf, 0, BLOCK_SECTOR_SIZE);
 	crab_outof_cached_sector(src, true);
-    // block_read(fs_device, inode->sector, tmp_buf);
+
     struct inode_disk *tmp_inode = (struct inode_disk *) tmp_buf;
     inode->is_dir = tmp_inode->is_dir;
+    inode->parent_dir = tmp_inode->parent_dir;
     strlcpy(inode->filename, tmp_inode->filename, NAME_MAX + 1);
     if (inode->is_dir) {
 		int i;

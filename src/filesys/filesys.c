@@ -132,35 +132,65 @@ struct file * filesys_open(const char *path) {
 	struct inode *dir_inode =
 			dir_get_inode_from_path(path, &parent_inode, filename);
 	if (dir_inode == NULL) {
+
+		//printf("--> got a null dir_inode\n");
+
 		return NULL;
 	}
 
 	//printf("--> filename is \"%s\"\n", filename);
-	//printf("--> inode sector=%u, inode parent is %u\n", dir_inode->sector, dir_inode->parent_dir);
+	//printf("--> inode sector=%u, inode parent is %u, parent inode = %p\n",
+	//		dir_inode->sector, dir_inode->parent_dir, parent_inode);
+
+	// Only case where parent is NULL is for root directory. Already got it,
+	// so return it
+	if (parent_inode == NULL)
+		return file_open(dir_inode);
 
 	struct dir dir_static;
-	dir_static.inode = parent_inode == NULL ?
-			thread_current()->cwd.inode : parent_inode;
+	dir_static.inode = parent_inode;
 	dir_static.pos = 0;
     struct inode *inode = NULL;
-    if (dir_static.inode != NULL)
-    	dir_lookup(&dir_static, filename, &inode);
+    dir_lookup(&dir_static, filename, &inode);
+
+    //printf("--> inode is %p\n", inode);
 
     return file_open(inode);
 }
 
 /*! Deletes the file named NAME.  Returns true if successful, false on failure.
     Fails if no file named NAME exists, or if an internal memory allocation
-    fails. */
+    fails.
+
+    Also returns false if the directory contains files, if some process has
+    the directory open, or if it's the current working directory of some
+    process. */
 bool filesys_remove(const char *name) {
 
-	// TODO this needs to be updated.
+	//printf("--> check if some process is using \"%s\"\n", name);
 
-    struct dir *dir = dir_open_root();
-    bool success = dir != NULL && dir_remove(dir, name);
-    dir_close(dir);
+	if (thread_is_some_process_using_dir(name))
+		return false;
 
-    return success;
+	//printf("--> no process is using \"%s\"\n", name);
+
+	char filename[NAME_MAX + 1];
+	struct inode *parent_inode;
+	struct inode *dir_inode =
+			dir_get_inode_from_path(name, &parent_inode, filename);
+	if (dir_inode == NULL) // Can't delete non-existent file.
+		return false;
+
+	//printf("--> IN FILESYS filename is \"%s\"\n", filename);
+	//printf("--> IN FILESYS inode sector=%u, inode parent is %u\n",
+	//		dir_inode->sector, dir_inode->parent_dir);
+
+	struct dir parent_dir;
+	parent_dir.inode = parent_inode;
+	parent_dir.pos = 0;
+	dir_remove(&parent_dir, filename);
+
+    return true;
 }
 
 /*! Formats the file system. */

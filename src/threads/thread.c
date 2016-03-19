@@ -12,6 +12,7 @@
 #include "threads/synch.h"
 #include "threads/vaddr.h"
 #include "threads/malloc.h"
+#include "filesys/file.h"
 #include "filesys/filesys.h"
 
 #include "list.h"
@@ -665,6 +666,54 @@ struct fd_element *thread_get_matching_fd_elem(int fd) {
 	return NULL;
 }
 
+/*! Returns true if some process has the given directory open or if it's the
+    current working directory of some process. */
+bool thread_is_some_process_using_dir(const char *path) {
+	char filename[NAME_MAX + 1];
+	struct inode *parent_inode;
+	struct inode *dir_inode =
+			dir_get_inode_from_path(path, &parent_inode, filename);
+
+	// If doesn't exist or isn't directory, return false.
+	if (dir_inode == NULL || !dir_inode->is_dir)
+		return false;
+
+	//printf("--> IN THREAD filename is \"%s\"\n", filename);
+	//printf("--> IN THREAD inode sector=%u, inode parent is %u\n", dir_inode->sector, dir_inode->parent_dir);
+
+	// Iterate over all threads, checking each one to see if the cwd is
+	// the given directory or if it has the directory in its open files
+	// list.
+	struct list_elem *e;
+	for (e = list_begin(&all_list);
+			e != list_end(&all_list);
+			e = list_next(e)) {
+		struct thread *t = list_entry(e, struct thread, allelem);
+
+		// Check if CWD is the same as the given dir.
+		if (t->cwd.inode != NULL) {
+			ASSERT(t->cwd.inode->is_dir);
+			if (t->cwd.inode->sector == dir_inode->sector)
+				return true;
+		}
+
+		// Else iterate over all open files, checking if this dir is one.
+		struct list_elem *l;
+		struct fd_element *f;
+		for (l = list_begin(&thread_current()->files);
+				 l != list_end(&thread_current()->files);
+				 l = list_next(l)) {
+			f = list_entry(l, struct fd_element, f_elem);
+			if (f->file != NULL && f->file->inode != NULL
+					&& f->file->inode->sector == dir_inode->sector) {
+				ASSERT(f->file->inode->is_dir);
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
 /*! Offset of `stack' member within `struct thread'.
     Used by switch.S, which can't figure it out on its own. */
 uint32_t thread_stack_ofs = offsetof(struct thread, stack);
