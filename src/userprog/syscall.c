@@ -450,9 +450,13 @@ bool remove(const char *file) {
 	bool success = false;
 	lock_acquire(&sys_lock);
 
-	if (!uptr_is_valid(file) || strlen(file) == 0 || strcmp(file, "/") == 0) {
+	if (!uptr_is_valid(file)) {
 		lock_release(&sys_lock);
 		exit(-1);
+	}
+	if (strlen(file) == 0 || strcmp(file, "/") == 0) {
+		lock_release(&sys_lock);
+		return false;
 	}
 
 	// This function does exactly the same as filesys_remove, but to be
