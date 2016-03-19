@@ -39,6 +39,8 @@ static void cleanup_failed_extension(  uint32_t base_first_index,
                                 bool cleanup_first_data_sector_on_error);
 
 
+void inode_tree_destroy(block_sector_t inode_sector);
+
 /*! Returns the block device sector that contains byte offset POS
     within INODE.
     Returns SILLY_OLD_DISK_SECTOR if INODE does not contain data for a byte at 
@@ -184,6 +186,8 @@ static bool inode_extend(   bool create_double_indirection,
                             off_t* future_length,
                             bool failure_acceptable) {
 
+    // printf("SDEBUG: current_length %d\n", current_length);
+
     ASSERT(current_length >= 0);    
     ASSERT(current_length <= *future_length);
 
@@ -210,8 +214,10 @@ static bool inode_extend(   bool create_double_indirection,
     bool first_second_sweep_flag = false;
 
     /* This function can ONLY be used for extension */
-    if (*future_length == 0)        
+    if (*future_length == 0) {    
+        *doubly_indirect_ = SILLY_OLD_DISK_SECTOR;
         return true;    
+    }
 
     emptiness = calloc(1, sizeof(*emptiness));
 
@@ -223,6 +229,9 @@ static bool inode_extend(   bool create_double_indirection,
                 BLOCK_SECTOR_SIZE);
     } else {
         *future_length = current_length;
+        if (create_double_indirection) {
+            *doubly_indirect_ = SILLY_OLD_DISK_SECTOR;
+        }
         return false;
     }    
 
@@ -247,7 +256,9 @@ static bool inode_extend(   bool create_double_indirection,
         double_indirection_flag = 
             free_map_allocate(1, doubly_indirect_);                    
         if (!double_indirection_flag) {
-            free(emptiness);            
+            free(emptiness);   
+            *doubly_indirect_ = SILLY_OLD_DISK_SECTOR;
+            *future_length = 0;         
             return false;
         }
         cleanup_double_indirection_on_error = true;
@@ -493,8 +504,8 @@ bool inode_create(block_sector_t sector, off_t length) {
                     (size_t) BLOCK_SECTOR_SIZE );     
 
             // printf("SDEBUG: in inode_create, di block post-extension is %u, and length is %u\n", 
-                // ((struct inode_disk *) get_cache_sector_base_addr(di))->doubly_indirect, 
-                // ((struct inode_disk *) get_cache_sector_base_addr(di))->length);
+            //     ((struct inode_disk *) get_cache_sector_base_addr(di))->doubly_indirect, 
+            //     ((struct inode_disk *) get_cache_sector_base_addr(di))->length);
 
             crab_outof_cached_sector(di, false);
 
@@ -647,6 +658,26 @@ static void cleanup_failed_extension(  uint32_t base_first_index,
     }
 }
 
+/*  Intended to destroy and free all of the inode's sectors except the inode
+    on disk, itself. Useful if you're sequentially operating through inodes
+    and directories and something goes wrong. */
+void inode_tree_destroy(block_sector_t inode_sector) {
+    cache_sector_id src = crab_into_cached_sector(inode_sector, true, false);  
+
+    struct inode_disk *data = 
+        (struct inode_disk *) get_cache_sector_base_addr(src);    
+
+    block_sector_t doubly_indirect = data->doubly_indirect;
+
+    crab_outof_cached_sector(src, true);        
+
+    /* Re-appropriated cleanup function, ignore the name */  
+    if (doubly_indirect != SILLY_OLD_DISK_SECTOR) 
+        cleanup_failed_extension(0, 0, &doubly_indirect, true, true, true); 
+
+    free_map_release(inode_sector, 1);
+}
+
 /*! Reads an inode from SECTOR
     and returns a `struct inode' that contains it.
     Returns a null pointer if memory allocation fails. */
@@ -732,26 +763,8 @@ void inode_close(struct inode *inode) {
 
         /* Deallocate blocks if removed. */
         if (inode->removed) {
-
             // printf("SDEBUG: in inode_close, got into removal for inode->sector %u\n", inode->sector);
-
-            block_sector_t doubly_indirect;            
-
-            cache_sector_id src = crab_into_cached_sector(inode->sector, true, 
-                    false);        
-            
-            struct inode_disk *data = 
-                (struct inode_disk *) get_cache_sector_base_addr(src);    
-
-            doubly_indirect = data->doubly_indirect;
-
-            crab_outof_cached_sector(src, true);        
-            
-            /* Re-appropriated cleanup function, ignore the name */  
-            cleanup_failed_extension(0, 0, &doubly_indirect, true, true, true); 
-
-            free_map_release(inode->sector, 1);
-
+            inode_tree_destroy(inode->sector);
         }
 
         free(inode); 
@@ -826,17 +839,22 @@ off_t inode_write_at(struct inode *inode, const void *buffer_, off_t size, off_t
     block_sector_t doubly_indirect;
     struct inode_disk *data;
     cache_sector_id src;
+    
     volatile off_t length = inode_length(inode);
+    ASSERT(length >= 0);
+
     off_t extension_limit = offset + size;            
     if (extension_limit > length) {
         
-        // printf ("SDEBUG: in inode_write_at, potential extension considered.\n");
-        
+        // printf ("SDEBUG: in inode_write_at, potential extension considered.\n");        
+
         lock_acquire(&inode->extension_lock);        
         length = inode_length(inode);
+        ASSERT(length >= 0);
+
         if (extension_limit > length) {
 
-            // printf ("SDEBUG: in inode_write_at, about to extend.\n");
+            // printf ("SDEBUG: in inode_write_at, about to extend.\n");            
 
             src = crab_into_cached_sector(inode->sector, true, false);            
             data = (struct inode_disk *) get_cache_sector_base_addr(src);                        
@@ -953,4 +971,3 @@ static void inode_set_length(const struct inode *inode, off_t updated_length) {
     
     crab_outof_cached_sector(src, true);            
 }
-

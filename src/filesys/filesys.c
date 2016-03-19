@@ -93,12 +93,13 @@ bool filesys_create(const char *name, off_t initial_size) {
                     need to clean up after an inode that's been created,
                     but now needs to be removed (but can't be opened as a file!)
                     as it isn't in the directory */
-                    PANIC("\nIn filesys_create, we didn't code for this case of a directory addition failing after an inode has successfully been created.\n");
+                    inode_tree_destroy(inode_sector);                    
                 }
             } else {
                 // Nothing to clean up but the inode sector itself! 
-                // Inode takes care of itself when it fails.
-                free_map_release(inode_sector, 1);
+                // Inode takes care of its reference tree when it fails on
+                // creation.
+                inode_tree_destroy(inode_sector);    
             }
         }                                    
     }
