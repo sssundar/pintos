@@ -38,7 +38,7 @@ indirection.
 
 Independent of Sushant's work, Hamik's branch at commit hash
 
-    TODO
+    8241d41d3e598aeae5f856dae667cc9bb3956277
     
 passed 31/121 tests, including all subdirectory tests that weren't
 persistence tests (except dir-vine, since that creates a size 0 file).
