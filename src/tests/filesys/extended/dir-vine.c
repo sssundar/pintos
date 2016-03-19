@@ -39,13 +39,12 @@ test_main (void)
       CHECK ((fd = open (file_name)) > 1, "open \"%s\"", file_name);
       snprintf (contents, sizeof contents, "contents %d\n", i);
 
-      // TODO remove below
-      printf("~~> write should return %d. fd = %d\n", strlen (contents), fd);
-      int actually;
+      //printf("~~> write should return %d. fd = %d\n", strlen (contents), fd);
+      //int actually;
 
-      if ((actually = write (fd, contents, strlen (contents))) != (int) strlen (contents))
+      if (write (fd, contents, strlen (contents)) != (int) strlen (contents))
         {
-    	  printf("~~> actually wrote %d\n", actually);
+    	  // printf("~~> actually wrote %d\n", actually);
           CHECK (remove (file_name), "remove \"%s\"", file_name);
           close (fd);
           break;

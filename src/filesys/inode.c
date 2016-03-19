@@ -325,7 +325,7 @@ off_t inode_write_at(struct inode *inode, const void *buffer_,
     if (inode->deny_write_cnt)
         return 0;
 
-    printf("  --> about to enter while\n");
+    //printf("  --> about to enter while. size is %d\n", size);
 
     while (size > 0) {
         /* Sector to write, starting byte offset within sector. */
@@ -340,7 +340,7 @@ off_t inode_write_at(struct inode *inode, const void *buffer_,
         /* Number of bytes to actually write into this sector. */
         int chunk_size = size < min_left ? size : min_left;
 
-        printf("    --> chunk_size = %d\n", chunk_size);
+        // printf("    --> chunk_size = %d\n", chunk_size);
 
         if (chunk_size <= 0)
             break;

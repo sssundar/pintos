@@ -314,7 +314,7 @@ int write(int fd, const void *buffer, unsigned size) {
 	// If this fd matches with an executing process's fd...
 	if (process_fd_matches(fd)) {
 
-		printf("--> matched exec'ing process.\n");
+		//printf("--> matched exec'ing process.\n");
 
 		return 0;
 	}
@@ -342,7 +342,7 @@ int write(int fd, const void *buffer, unsigned size) {
 		}
 		lock_release(&sys_lock);
 
-		printf("--> ABOUT TO WRITE. size = %u\n", size);
+		//printf("--> ABOUT TO WRITE. size = %u\n", size);
 
 		return file_write(f, buffer, size);
 	}
