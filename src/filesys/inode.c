@@ -44,8 +44,12 @@ void inode_tree_destroy(block_sector_t inode_sector);
 /*! Returns the block device sector that contains byte offset POS
     within INODE.
     Returns SILLY_OLD_DISK_SECTOR if INODE does not contain data for a byte at 
-    offset POS. */
-static block_sector_t byte_to_sector(const struct inode *inode, off_t pos) {
+    offset POS. Ignores length restrictions if you are currently extending
+    and are trying to hide this fact from readers by not changing the
+    length. */
+static block_sector_t byte_to_sector(   const struct inode *inode, 
+                                        off_t pos,
+                                        bool extending) {
     ASSERT(inode != NULL);
 
     /* First things first, check the file length against the position. It 
@@ -60,7 +64,7 @@ static block_sector_t byte_to_sector(const struct inode *inode, off_t pos) {
     is necessary.
     */
 
-    if (pos >= inode_length(inode)) {
+    if ((pos >= inode_length(inode)) && !extending) {
         return SILLY_OLD_DISK_SECTOR;
     }
 
@@ -798,11 +802,11 @@ off_t inode_read_at(struct inode *inode, void *buffer_, off_t size, off_t offset
     uint8_t *buffer = buffer_;
     off_t bytes_read = 0;
     
-    off_t length = inode_length(inode);     /* Might change mid-call! */
+    off_t length = inode_length(inode); /* Might change mid-call! */
 
     while (size > 0) {
         /* Disk sector to read, starting byte offset within sector. */
-        block_sector_t sector_idx = byte_to_sector (inode, offset);   
+        block_sector_t sector_idx = byte_to_sector (inode, offset, false);   
 
         // printf("SDEBUG: in inode_read_at, with inode->sector, offset %u, %u, reading sector %u\n", inode->sector, offset, sector_idx);
 
@@ -853,7 +857,13 @@ off_t inode_write_at(struct inode *inode, const void *buffer_, off_t size, off_t
     struct inode_disk *data;
     cache_sector_id src;
     
-    volatile off_t length = inode_length(inode);
+    volatile off_t length = inode_length(inode);    
+    bool am_extending = false;  /* A flag to let us release the file_extension
+                                    lock after we do the extension + write
+                                    so that readers never see zeros we 
+                                    didn't intend to write, but also
+                                    don't have to get stuck on a lock.
+                                    This really only hurts other extenders. */
     ASSERT(length >= 0);    
 
     off_t extension_limit = offset + size;            
@@ -868,6 +878,8 @@ off_t inode_write_at(struct inode *inode, const void *buffer_, off_t size, off_t
         // printf("SDEBUG: second read of length of inode->sector %u file is %d when considering extension\n", inode->sector, length);
 
         if (extension_limit > length) {
+
+            am_extending = true;
 
             // printf ("SDEBUG: in inode_write_at, about to extend.\n");            
 
@@ -905,18 +917,19 @@ off_t inode_write_at(struct inode *inode, const void *buffer_, off_t size, off_t
                 // printf("SDEBUG: length of inode->sector %u file is %d just after extension\n", inode->sector, length);
                 // printf("SDEBUG: intended length of inode->sector %u file is %d just after extension\n", inode->sector, extension_limit);
             }
-            
-            inode_set_length(inode, extension_limit);   
-            length = inode_length(inode);
-            // printf("SDEBUG: in inode_write_at, changed length of file to %d\n", length);            
-        }
+                        
+            length = extension_limit;
+            // printf("SDEBUG: in inode_write_at, will change length of file to %d\n", length);            
+        } 
 
-        lock_release(&inode->extension_lock);
+        if (!am_extending) {                        
+            lock_release(&inode->extension_lock);
+        }
     }    
 
     while (size > 0) {
         /* Sector to write, starting byte offset within sector. */
-        block_sector_t sector_idx = byte_to_sector(inode, offset);
+        block_sector_t sector_idx = byte_to_sector(inode, offset, am_extending);
         int sector_ofs = offset % BLOCK_SECTOR_SIZE;
 
         // printf("SDEBUG: in inode_write_at, with arguments (inode->sector, size, offset): (%u, %u, %u) writing sector %u\n", inode->sector, size, offset, sector_idx);
@@ -940,6 +953,11 @@ off_t inode_write_at(struct inode *inode, const void *buffer_, off_t size, off_t
         size -= chunk_size;
         offset += chunk_size;
         bytes_written += chunk_size;
+    }
+
+    if (am_extending) {
+        inode_set_length(inode, extension_limit);   
+        lock_release(&inode->extension_lock);
     }
 
     // printf("SDEBUG: inode_write_at, wrote %u bytes\n", bytes_written);
