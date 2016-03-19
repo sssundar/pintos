@@ -472,9 +472,6 @@ cache_sector_id crab_into_cached_sector(block_sector_t t, bool readnotwrite,
 
             if (!free_sector_allocated) {
                 /* Proceed with Eviction */
-                // if (get_cache_metadata(target)->old_disk_sector == 1) {
-                //     printf("SDEBUG: cache eviction: evicting root dir file with length %d prior to eviction\n", *((off_t *) get_cache_sector_base_addr(target)));
-                // }
                 evict_cached_sector(target);                
             } 
 
@@ -486,9 +483,6 @@ cache_sector_id crab_into_cached_sector(block_sector_t t, bool readnotwrite,
                 clear_sector(target);
             } else {                            
                 pull_sector_from_disk_to_cache(t, target);
-                // if (t == 1) {
-                //     printf("SDEBUG: cache replacement: cached root dir file with length %d after caching\n", *((off_t *) get_cache_sector_base_addr(target)));
-                // }                
             }            
 
             /*    
@@ -716,11 +710,7 @@ void evict_cached_sector (cache_sector_id c) {
         (supplemental_filesystem_cache_table + c)->old_disk_sector != 
         SILLY_OLD_DISK_SECTOR
         );
-    
-    // if ((supplemental_filesystem_cache_table + c)->old_disk_sector == 1) {
-    //     printf("SDEBUG: root is being evicted, is it dirty? %s\n", (supplemental_filesystem_cache_table + c)->cache_sector_dirty ? "yes" : "no");
-    // }
-
+        
     if ((supplemental_filesystem_cache_table + c)->cache_sector_dirty) {
         push_sector_from_cache_to_disk(
             (supplemental_filesystem_cache_table + c)->old_disk_sector, c);

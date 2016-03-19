@@ -80,8 +80,7 @@ static bool lookup(const struct dir *dir, const char *name,
     ASSERT(name != NULL);
 
     for (ofs = 0; inode_read_at(dir->inode, &e, sizeof(e), ofs) == sizeof(e);
-         ofs += sizeof(e)) {
-        // printf("SDEBUG: Directory entry name %s vs %s\n", (char *) &e.name, name);
+         ofs += sizeof(e)) {        
         if (e.in_use && !strcmp(name, e.name)) {
             if (ep != NULL)
                 *ep = e;
@@ -139,8 +138,7 @@ bool dir_add(struct dir *dir, const char *name, block_sector_t inode_sector) {
        Otherwise, we'd need to verify that we didn't get a short
        read due to something intermittent such as low memory. */
     for (ofs = 0; inode_read_at(dir->inode, &e, sizeof(e), ofs) == sizeof(e);
-         ofs += sizeof(e)) {
-        // printf("SDEBUG: Directory entry name %s, in use %s\n", (char *) &e.name, e.in_use ? "true" : "false");
+         ofs += sizeof(e)) {        
         if (!e.in_use)
             break;
     }
@@ -148,10 +146,8 @@ bool dir_add(struct dir *dir, const char *name, block_sector_t inode_sector) {
     /* Write slot. */
     e.in_use = true;
     strlcpy(e.name, name, sizeof e.name);
-    e.inode_sector = inode_sector;
-    // printf("SDEBUG: in dir_add, right before inode_write_at.\n"); 
-    success = inode_write_at(dir->inode, &e, sizeof(e), ofs) == sizeof(e);
-    // printf("SDEBUG: in dir_add, right after inode_write_at.\n"); 
+    e.inode_sector = inode_sector;    
+    success = inode_write_at(dir->inode, &e, sizeof(e), ofs) == sizeof(e);    
 
 done:
     return success;

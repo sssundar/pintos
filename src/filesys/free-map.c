@@ -36,8 +36,6 @@ bool free_map_allocate(size_t cnt, block_sector_t *sectorp) {
 
     lock_acquire(&free_map_lock);    
     block_sector_t sector = bitmap_scan_and_flip(free_map, 0, cnt, false);
-
-    // printf("SDEBUG: in free_map_allocate, just allocated sector, cnt in memory: %u, %u\n", sector, cnt);
     
     if (sector != BITMAP_ERROR && free_map_file != NULL &&
         !bitmap_write(free_map, free_map_file)) {
@@ -46,8 +44,7 @@ bool free_map_allocate(size_t cnt, block_sector_t *sectorp) {
         sector = BITMAP_ERROR;
     }
     if (sector != BITMAP_ERROR) {
-        *sectorp = sector;
-        // printf("SDEBUG: in free_map_allocate, just allocated sector, cnt on disk: %u, %u\n", sector, cnt);
+        *sectorp = sector;        
     }
     lock_release(&free_map_lock);
 
@@ -59,9 +56,7 @@ void free_map_release(block_sector_t sector, size_t cnt) {
     lock_acquire(&free_map_lock);
     ASSERT(bitmap_all(free_map, sector, cnt));
     bitmap_set_multiple(free_map, sector, cnt, false);
-    bitmap_write(free_map, free_map_file); //==TODO== Currently assumed to work
-
-    // printf("SDEBUG: in free_map_release, just released sector, cnt : %u, %u\n", sector, cnt);
+    bitmap_write(free_map, free_map_file); //==TODO== Currently assumed to work    
     
     lock_release(&free_map_lock);    
 }
@@ -84,9 +79,7 @@ void free_map_close(void) {
 
 /*! Creates a new free map file on disk and writes the free map to it. */
 void free_map_create(void) {
-    /* Create inode. */    
-
-    // printf("SDEBUG: free_map_create byte size: %u\n",bitmap_file_size(free_map));
+    /* Create inode. */        
 
     if (!inode_create(FREE_MAP_SECTOR, bitmap_file_size(free_map)))
         PANIC("free map creation failed");
