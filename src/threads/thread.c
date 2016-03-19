@@ -652,7 +652,7 @@ static tid_t allocate_tid(void) {
 
 /*! Finds the file struct pointer that corresponds to the given file
     descriptor. */
-struct file *thread_get_matching_file(int fd) {
+struct fd_element *thread_get_matching_fd_elem(int fd) {
 	struct list_elem *l;
 	struct fd_element *f;
 	for (l = list_begin(&thread_current()->files);
@@ -660,7 +660,7 @@ struct file *thread_get_matching_file(int fd) {
 			 l = list_next(l)) {
 		f = list_entry(l, struct fd_element, f_elem);
 		if (f->fd == fd)
-			return f->file;
+			return f;
 	}
 	return NULL;
 }

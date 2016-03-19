@@ -39,6 +39,7 @@ typedef int tid_t;
 struct fd_element{
 	int fd;
 	struct file *file;
+	struct dir *directory;
 	char *filename;
 	struct semaphore multfile_sema;
 	struct list_elem  f_elem;
@@ -223,7 +224,7 @@ int thread_get_load_avg(void);
 
 void thread_set_initial_thread_cwd(void);
 
-struct file *thread_get_matching_file(int fd);
+struct fd_element *thread_get_matching_fd_elem(int fd);
 
 #endif /* threads/thread.h */
 

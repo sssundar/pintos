@@ -236,20 +236,25 @@ done:
     return success;
 }
 
-// TODO UPDATE THIS FUNCTION!!!!!!!!!
 /*! Reads the next directory entry in DIR and stores the name in NAME.  Returns
     true if successful, false if the directory contains no more entries. */
 bool dir_readdir(struct dir *dir, char name[NAME_MAX + 1]) {
-    struct dir_entry e;
+	bool success = false;
 
-    while (inode_read_at(dir->inode, &e, sizeof(e), dir->pos) == sizeof(e)) {
-        dir->pos += sizeof(e);
-        if (e.in_use) {
-            strlcpy(name, e.name, NAME_MAX + 1);
-            return true;
-        } 
+    if (dir->pos < MAX_DIR_ENTRIES && dir->pos >=0) {
+    	struct inode *entry_inode =
+    			inode_open(dir->inode->dir_contents[dir->pos]);
+    	if (entry_inode == NULL) {
+    		PANIC("Couldn't open entry's inode.");
+    		NOT_REACHED();
+    	}
+
+    	strlcpy(name, entry_inode->filename, NAME_MAX + 1);
+    	success = true;
     }
-    return false;
+
+    dir->pos = (dir->pos + 1) % MAX_DIR_ENTRIES;
+    return success;
 }
 
 /*! Return the sector in which the given relative- or absolute-named file

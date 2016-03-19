@@ -317,6 +317,7 @@ int open(const char *file){
     }
 
 	fd_elem->file = f;
+	fd_elem->directory = NULL; // This is set the first time we use it.
 	list_push_back(&thread_current()->files, &fd_elem->f_elem);
 
 	lock_release(&sys_lock);
@@ -652,44 +653,41 @@ bool mkdir(const char* dir) {
    null-terminated file name in name, which must have room for
    READDIR_MAX_LEN + 1 bytes, and returns true. If no entries are
    left in the directory, returns false. */
-bool readdir(int fd UNUSED, char* name UNUSED) {
+bool readdir(int fd, char* name) {
+	if(!uptr_is_valid(name) || !isdir(fd)) {
+		return false;
+	}
+	
+	struct fd_element *f = thread_get_matching_fd_elem(fd);
+	if (f == NULL) {
+		return false;
+	}
 
-	/*
-	if(!uptr_is_valid(name)) {
-		return false;
-	}
-	struct file *f = get_file(fd);
-	if(f == NULL || !file_isdir(f)) {
-		return false;
-	}
-	
-	off_t cd = 2 * sizeof(char*);
-	if(tell(f) < cd){
-		seek(f, cd);
-	}
-	
-	strlcpy (name, f, READDIR_MAX_LEN + 1);
+	dir_readdir(f->directory, name);
+
 	return true;
-	*/
-	return false;// TODO
 }
 
 /* Returns true if fd represents a directory, false if it 
    represents an ordinary file. */
 bool isdir(int fd) {
-	struct file *f = thread_get_matching_file(fd);
+	struct fd_element *f = thread_get_matching_fd_elem(fd);
 	if (f == NULL) {
 		return false;
 	}
-	return f->inode->is_dir;
+	bool isdir = f->file->inode->is_dir;
+	if(isdir && f->directory == NULL) {
+		f->directory = dir_open(f->file->inode);
+	}
+	return isdir;
 }
 
 /* Returns the inode number of the inode associated with fd, 
    which may represent an ordinary file or a directory. */
-int inumber(int fd UNUSED) {
-	struct file *f = thread_get_matching_file(fd);
+int inumber(int fd) {
+	struct fd_element *f = thread_get_matching_fd_elem(fd);
 	if(f == NULL){
 		return BOGUS_SECTOR;
 	}
-	return inode_get_inumber(f->inode);
+	return inode_get_inumber(f->file->inode);
 }
