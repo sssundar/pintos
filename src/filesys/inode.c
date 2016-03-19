@@ -315,7 +315,8 @@ off_t inode_read_at(struct inode *inode, void *buffer_, off_t size, off_t offset
     less than SIZE if end of file is reached or an error occurs.
     (Normally a write at end of file would extend the inode, but
     growth is not yet implemented.) */
-off_t inode_write_at(struct inode *inode, const void *buffer_, off_t size, off_t offset) {
+off_t inode_write_at(struct inode *inode, const void *buffer_,
+		off_t size, off_t offset) {
     const uint8_t *buffer = buffer_;
     off_t bytes_written = 0;
     // ==TODO== REMOVE
@@ -323,6 +324,8 @@ off_t inode_write_at(struct inode *inode, const void *buffer_, off_t size, off_t
 
     if (inode->deny_write_cnt)
         return 0;
+
+    printf("  --> about to enter while\n");
 
     while (size > 0) {
         /* Sector to write, starting byte offset within sector. */
@@ -336,6 +339,9 @@ off_t inode_write_at(struct inode *inode, const void *buffer_, off_t size, off_t
 
         /* Number of bytes to actually write into this sector. */
         int chunk_size = size < min_left ? size : min_left;
+
+        printf("    --> chunk_size = %d\n", chunk_size);
+
         if (chunk_size <= 0)
             break;
         

@@ -660,10 +660,11 @@ struct fd_element *thread_get_matching_fd_elem(int fd) {
 			 l != list_end(&thread_current()->files);
 			 l = list_next(l)) {
 		f = list_entry(l, struct fd_element, f_elem);
+
+		//printf("  --> curr fd = %d\n", f->fd);
+
 		if (f->fd == fd)
 			return f;
-
-		printf("  --> curr fd = %d\n", f->fd);
 	}
 	return NULL;
 }

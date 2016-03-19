@@ -32,7 +32,7 @@ test_main (void)
       /* Create file. */
       snprintf (file_name, sizeof file_name, "file%d", i);
 
-      printf("~~> creating file w/ name \"%s\"\n", file_name);
+      //printf("~~> creating file w/ name \"%s\"\n", file_name);
 
       if (!create (file_name, 0))
         break;

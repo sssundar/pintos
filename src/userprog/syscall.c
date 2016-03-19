@@ -262,7 +262,7 @@ int open(const char *file) {
 		exit(-1);
 	}
 
-	printf("--> in OPEN, thread is \"%s\"\n", thread_current()->name);
+	//printf("--> in OPEN, thread is \"%s\"\n", thread_current()->name);
 	//printf("--> calling filesys_open\n");
 
 	f = filesys_open(file);
@@ -285,7 +285,8 @@ int open(const char *file) {
     	fd_elem->fd = max_fd++;
     }
 
-    printf("--> in OPEN, about to add to list of thread's file.\n");
+    //printf("--> in OPEN, about to add to list of thread's file.\n");
+    //printf("--> going to return fd %d\n", fd_elem->fd);
 
 	fd_elem->file = f;
 	fd_elem->directory = NULL; // This is set the first time we use it.
@@ -306,7 +307,6 @@ int open(const char *file) {
     the console.
  */
 int write(int fd, const void *buffer, unsigned size) {
-	struct file *f;
 	if (!uptr_is_valid(buffer)) {
 		exit(-1);
 	}	
@@ -326,17 +326,24 @@ int write(int fd, const void *buffer, unsigned size) {
 		return size;
 	}
 
-	printf("--> in WRITE, getting matching fd element\n");
-	printf("--> in WRITE, thread is \"%s\"\n", thread_current()->name);
+	//printf("--> in WRITE, getting matching fd element = %d\n", fd);
+	//printf("--> in WRITE, thread is \"%s\"\n", thread_current()->name);
 
 	struct fd_element *fde = thread_get_matching_fd_elem(fd);
+
+	//printf("--> fde = %p\n", fde);
+
 	if (fde != NULL) {
+		struct file *f;
 		f = fde->file;
 		if (f == NULL || (f->inode != NULL && f->inode->is_dir)) {
 			lock_release(&sys_lock);
 			return -1;
 		}
 		lock_release(&sys_lock);
+
+		printf("--> ABOUT TO WRITE. size = %u\n", size);
+
 		return file_write(f, buffer, size);
 	}
 	lock_release(&sys_lock);
