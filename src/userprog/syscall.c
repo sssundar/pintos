@@ -597,7 +597,7 @@ bool chdir (const char *dir) {
     not already exist. That is, mkdir("/a/b/c") succeeds only if /a/b
     already exists and /a/b/c does not. */
 bool mkdir(const char* dir) {
-	if (!uptr_is_valid(dir)) {
+	if (!uptr_is_valid(dir) || strlen(dir) == 0) {
 		return false;
 	}
 
