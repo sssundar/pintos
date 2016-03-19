@@ -225,7 +225,7 @@ int thread_get_load_avg(void);
 void thread_set_initial_thread_cwd(void);
 
 struct fd_element *thread_get_matching_fd_elem(int fd);
-bool thread_is_some_process_using_dir(const char *path);
+bool thread_is_dir_deletable(const char *path);
 
 #endif /* threads/thread.h */
 

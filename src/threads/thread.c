@@ -666,9 +666,9 @@ struct fd_element *thread_get_matching_fd_elem(int fd) {
 	return NULL;
 }
 
-/*! Returns true if some process has the given directory open or if it's the
-    current working directory of some process. */
-bool thread_is_some_process_using_dir(const char *path) {
+/*! Returns true if some process has the given directory open, if it's the
+    current working directory of some process, or if it's not empty. */
+bool thread_is_dir_deletable(const char *path) {
 	char filename[NAME_MAX + 1];
 	struct inode *parent_inode;
 	struct inode *dir_inode =
@@ -693,8 +693,10 @@ bool thread_is_some_process_using_dir(const char *path) {
 		// Check if CWD is the same as the given dir.
 		if (t->cwd.inode != NULL) {
 			ASSERT(t->cwd.inode->is_dir);
-			if (t->cwd.inode->sector == dir_inode->sector)
+			if (t->cwd.inode->sector == dir_inode->sector) {
+				inode_close(dir_inode);
 				return true;
+			}
 		}
 
 		// Else iterate over all open files, checking if this dir is one.
@@ -707,10 +709,22 @@ bool thread_is_some_process_using_dir(const char *path) {
 			if (f->file != NULL && f->file->inode != NULL
 					&& f->file->inode->sector == dir_inode->sector) {
 				ASSERT(f->file->inode->is_dir);
+				inode_close(dir_inode);
 				return true;
 			}
 		}
 	}
+
+	// Make sure it's empty.
+	int i;
+	for (i = 0; i < MAX_DIR_ENTRIES; i++) {
+		if (dir_inode->dir_contents[i] != BOGUS_SECTOR) {
+			inode_close(dir_inode);
+			return true;
+		}
+	}
+
+	inode_close(dir_inode);
 	return false;
 }
 

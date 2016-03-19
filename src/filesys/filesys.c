@@ -169,7 +169,7 @@ bool filesys_remove(const char *name) {
 
 	//printf("--> check if some process is using \"%s\"\n", name);
 
-	if (thread_is_some_process_using_dir(name))
+	if (thread_is_dir_deletable(name))
 		return false;
 
 	//printf("--> no process is using \"%s\"\n", name);
