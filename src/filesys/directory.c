@@ -253,7 +253,8 @@ bool dir_readdir(struct dir *dir, char name[NAME_MAX + 1]) {
 }
 
 /*! Return the sector in which the given relative- or absolute-named file
-    lives. Returns NULL if can't find the directory. */
+    lives. Returns NULL if can't find the directory. User must close the
+    inode returned. */
 struct inode *dir_get_inode_from_path(const char *path) {
 	char *last_slash = strrchr(path, '/');
 

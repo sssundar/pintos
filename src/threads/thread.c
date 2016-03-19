@@ -66,7 +66,7 @@ static long long kernel_ticks;  /*!< # of timer ticks in kernel threads. */
 static long long user_ticks;    /*!< # of timer ticks in user programs. */
 
 /*! Private pointer to the initial thread. */
-static struct thread *the_init_thread;
+static volatile struct thread *the_init_thread;
 
 /* Scheduling. */
 #define TIME_SLICE 4            /*!< # of timer ticks to give each thread. */
@@ -131,11 +131,17 @@ void thread_set_initial_thread_cwd(void) {
 	ASSERT(the_init_thread->cwd.inode == NULL);
 	ASSERT(the_init_thread->cwd.pos == -1);
 
+	//printf("--> SETTING INIT THREAD CWD... \n");
+	//printf("  --> name of init_thread = %s\n", the_init_thread->name);
+
     /* Get the root directory's inode pointer and set the init thread's cwd. */
     struct inode* root_dir_inode = inode_open(ROOT_DIR_SECTOR);
     ASSERT(root_dir_inode->is_dir);
+    root_dir_inode->parent_dir = BOGUS_SECTOR; // No parent for init thread.
     the_init_thread->cwd.inode = root_dir_inode;
     the_init_thread->cwd.pos = 0;
+
+    //printf("  --> my sector is %u\n", the_init_thread->cwd.inode->sector);
 }
 
 /*! Starts preemptive thread scheduling by enabling interrupts.
@@ -642,6 +648,21 @@ static tid_t allocate_tid(void) {
     lock_release(&tid_lock);
 
     return tid;
+}
+
+/*! Finds the file struct pointer that corresponds to the given file
+    descriptor. */
+struct file *thread_get_matching_file(int fd) {
+	struct list_elem *l;
+	struct fd_element *f;
+	for (l = list_begin(&thread_current()->files);
+			 l != list_end(&thread_current()->files);
+			 l = list_next(l)) {
+		f = list_entry(l, struct fd_element, f_elem);
+		if (f->fd == fd)
+			return f->file;
+	}
+	return NULL;
 }
 
 /*! Offset of `stack' member within `struct thread'.

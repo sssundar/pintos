@@ -137,6 +137,9 @@ int main(void) {
     filesys_init(format_filesys);
     thread_set_initial_thread_cwd();
 
+    //printf("--> IN INIT thread current name=%s\n", thread_current()->name);
+    //printf("--> IN INIT thread current cwd sector=%u\n", thread_current()->cwd.inode->sector);
+
 #endif
 
     printf("Boot complete.\n");

@@ -223,5 +223,7 @@ int thread_get_load_avg(void);
 
 void thread_set_initial_thread_cwd(void);
 
+struct file *thread_get_matching_file(int fd);
+
 #endif /* threads/thread.h */
 

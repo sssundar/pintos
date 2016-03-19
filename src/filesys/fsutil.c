@@ -10,6 +10,7 @@
 #include "threads/malloc.h"
 #include "threads/palloc.h"
 #include "threads/vaddr.h"
+#include "threads/thread.h"
 
 /*! List files in the root directory. */
 void fsutil_ls(char **argv UNUSED) {
@@ -108,11 +109,18 @@ void fsutil_extract(char **argv UNUSED) {
             printf("Putting '%s' into the file system...\n", file_name);
 
             /* Create destination file. */
+            // printf("--> IN FSUTIL thread current name=%s\n", thread_current()->name);
+            // printf("--> IN FSUTIL thread current cwd sector=%u\n", thread_current()->cwd.inode->sector);
             if (!filesys_create(file_name, size, false, BOGUS_SECTOR))
-                PANIC("%s: create failed", file_name);            
+                PANIC("%s: create failed", file_name);
+
+            // printf("--> After creation of thing.\n");
+
             dst = filesys_open(file_name);
             if (dst == NULL)
                 PANIC("%s: open failed", file_name);
+
+            // printf("--> After opening of thing.\n");
 
             /* Do copy. */
             while (size > 0) {

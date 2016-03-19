@@ -23,10 +23,12 @@ struct block *fs_device;
 
 void filesys_init(bool format);
 void filesys_done(void);
-bool filesys_create(const char *name, off_t initial_size,
+bool filesys_create(const char *path, off_t initial_size,
 		bool is_directory, block_sector_t parent);
-struct file *filesys_open(const char *name);
+struct file *filesys_open(const char *path);
 bool filesys_remove(const char *name);
+
+char *find_last_slash(const char *path);
 
 #endif /* filesys/filesys.h */
 

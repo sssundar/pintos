@@ -35,7 +35,6 @@ int get_user (const uint8_t *uaddr);
 bool put_user (uint8_t *udst, uint8_t byte);
 bool get_user_quadbyte (const uint8_t *uaddr, int *arg);
 bool uptr_is_valid (const void *uptr);
-static char *find_last_slash(const char *path);
 
 //---------------------------- Function definitions ---------------------------
 
@@ -591,19 +590,6 @@ bool chdir (const char *dir) {
 	return true;
 }
 
-/*! Gets the last slash that isn't the very last char. */
-static char *find_last_slash(const char *path) {
-	int i;
-	int len = strlen(path);
-	if (len <= 1)
-		return NULL;
-	for (i = len - 2; i >= 0; i--) {
-		if (path[i] == '/')
-			return (char *) (path + i);
-	}
-	return NULL;
-}
-
 /*! Creates the directory named dir, which may be relative or absolute.
     Returns true if successful, false on failure. Fails if dir already
     exists or if any directory name in dir, besides the last, does
@@ -651,23 +637,21 @@ bool mkdir(const char* dir) {
 		return false;
 	}
 
-	// Good, it doesn't exist. Make it!
-	block_sector_t sect_allocd;
-	if(!free_map_allocate(1, &sect_allocd)) { // TODO fix for unlimited files
-		PANIC("Could not find free sector for directory!");
+	// Good, it doesn't exist. Make it! Recall that the filesys_create call
+	// makes the file AND adds it to its parent directory.
+	if(!filesys_create(dir, 0, true, dir_inode->sector)) {
+		PANIC("Could not create the desired directory.");
 		NOT_REACHED();
 	}
 
-	// TODO Finish this function.
-
-	return false;
+	return true;
 }
 
 /* Reads a directory entry from file descriptor fd, 
- * which must represent a directory. If successful, stores the 
- * null-terminated file name in name, which must have room for 
- * READDIR_MAX_LEN + 1 bytes, and returns true. If no entries are 
- * left in the directory, returns false.*/
+   which must represent a directory. If successful, stores the
+   null-terminated file name in name, which must have room for
+   READDIR_MAX_LEN + 1 bytes, and returns true. If no entries are
+   left in the directory, returns false. */
 bool readdir(int fd UNUSED, char* name UNUSED) {
 
 	/*
@@ -691,27 +675,21 @@ bool readdir(int fd UNUSED, char* name UNUSED) {
 }
 
 /* Returns true if fd represents a directory, false if it 
- * represents an ordinary file.*/
-bool isdir(int fd UNUSED) {
-	/*
-	struct file *f = get_file(fd);
-	if (f == NULL){
-	return false;
+   represents an ordinary file. */
+bool isdir(int fd) {
+	struct file *f = thread_get_matching_file(fd);
+	if (f == NULL) {
+		return false;
 	}
-	return file_isdir(f);
-	*/
-	return false;// TODO
+	return f->inode->is_dir;
 }
 
 /* Returns the inode number of the inode associated with fd, 
- * which may represent an ordinary file or a directory.*/
+   which may represent an ordinary file or a directory. */
 int inumber(int fd UNUSED) {
-	/*
-	struct file *f = get_file(fd);
+	struct file *f = thread_get_matching_file(fd);
 	if(f == NULL){
-	  return false;
+		return BOGUS_SECTOR;
 	}
 	return inode_get_inumber(f->inode);
-	*/
-	return -1;// TODO
 }
