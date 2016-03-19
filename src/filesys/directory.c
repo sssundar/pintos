@@ -120,7 +120,7 @@ bool dir_add(struct dir *dir, const char *name, block_sector_t inode_sector) {
     bool success = false;
 
     ASSERT(dir != NULL);
-    ASSERT(name != NULL);
+    ASSERT(name != NULL);    
 
     /* Check NAME for validity. */
     if (*name == '\0' || strlen(name) > NAME_MAX)
@@ -139,6 +139,7 @@ bool dir_add(struct dir *dir, const char *name, block_sector_t inode_sector) {
        read due to something intermittent such as low memory. */
     for (ofs = 0; inode_read_at(dir->inode, &e, sizeof(e), ofs) == sizeof(e);
          ofs += sizeof(e)) {
+        // printf("SDEBUG: Directory entry name %s\n", (char *) &e.name);
         if (!e.in_use)
             break;
     }

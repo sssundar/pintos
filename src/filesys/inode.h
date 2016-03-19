@@ -4,10 +4,40 @@
 #include <stdbool.h>
 #include "filesys/off_t.h"
 #include "devices/block.h"
+#include "threads/synch.h"
+#include "lib/kernel/list.h"
 
 struct bitmap;
 
 #define INDIRECTION_REFERENCES ( BLOCK_SECTOR_SIZE/sizeof(block_sector_t) )
+
+/*! On-disk inode.
+    Must be exactly BLOCK_SECTOR_SIZE bytes long. */
+struct inode_disk {    
+    off_t length;                       /*!< File size in bytes. */
+    unsigned magic;                     /*!< Magic number. */
+
+    /* Branching out to data, or indirection references */
+    block_sector_t ignore[125];         /* Unused */
+    block_sector_t doubly_indirect;     /* 8 Mb reference */
+};
+
+/* An indirection sector referencing data or further indirection sectors */
+struct indirection_block {
+    block_sector_t sector[128];        
+};
+
+/*! In-memory inode. */
+struct inode {
+    struct list_elem elem;              /*!< Element in inode list. */
+    block_sector_t sector;              /*!< Sector number of disk location. */
+    int open_cnt;                       /*!< Number of openers. */
+    bool removed;                       /*!< True if deleted, false otherwise.*/
+    int deny_write_cnt;                 /*!< 0: writes ok, >0: deny writes. */    
+    struct lock ismd_lock;               /*! Inode Struct Metadata Lock */
+    struct lock extension_lock;         /*! Extension lock */
+};
+
 
 void inode_init(void);
 bool inode_create(block_sector_t, off_t);

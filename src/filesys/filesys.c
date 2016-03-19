@@ -72,21 +72,43 @@ void filesys_done(void) {
 bool filesys_create(const char *name, off_t initial_size) {
     block_sector_t inode_sector = 0;
     
-    printf ("SDEBUG: filesys_create, filename: %s\n", name);
+    // printf ("SDEBUG: filesys_create, filename: %s\n", name);
 
     struct dir *dir = dir_open_root();    
-    bool success = (dir != NULL &&
-                    free_map_allocate(1, &inode_sector) &&
-                    inode_create(inode_sector, initial_size) &&
-                    dir_add(dir, name, inode_sector));
-    if (!success && inode_sector != 0) 
-        free_map_release(inode_sector, 1);
+    
+    bool success = (dir != NULL);
+    if (success) {
+        success = (success && free_map_allocate(1, &inode_sector));
+        if (success) {
+            success = (success && inode_create(inode_sector, initial_size));
+            if (success) {
+                // printf("SDEBUG: in filesys_create, just before adding file to the directory.\n");
+                success = (success && dir_add(dir, name, inode_sector));
+                // printf("SDEBUG: in filesys_create, just after adding file to the directory.\n");
+                if (success) {
+                    // Let's do something with this file! 
+                } else {
+                /*  ==TODO== Unless directory additions are synchronized
+                    so they cannot fail, and we do them first, we would
+                    need to clean up after an inode that's been created,
+                    but now needs to be removed (but can't be opened as a file!)
+                    as it isn't in the directory */
+                    PANIC("\nIn filesys_create, we didn't code for this case of a directory addition failing after an inode has successfully been created.\n");
+                }
+            } else {
+                // Nothing to clean up but the inode sector itself! 
+                // Inode takes care of itself when it fails.
+                free_map_release(inode_sector, 1);
+            }
+        }                                    
+    }
+    
     dir_close(dir);
 
-    if (success) 
-        printf ("SDEBUG: filesys_create, created filename: %s at sector %u\n", name, inode_sector);    
-    else 
-        printf ("SDEBUG: filesys_create, didn't create filename: %s\n at sector %u\n", name, inode_sector);
+    // if (success) 
+        // printf ("SDEBUG: filesys_create, created filename: %s at sector %u\n", name, inode_sector);    
+    // else 
+        // printf ("SDEBUG: filesys_create, didn't create filename: %s\n at sector %u\n", name, inode_sector);
 
     return success;
 }
@@ -98,8 +120,9 @@ struct file * filesys_open(const char *name) {
     struct dir *dir = dir_open_root();
     struct inode *inode = NULL;
 
-    if (dir != NULL)
+    if (dir != NULL) {
         dir_lookup(dir, name, &inode);
+    }
     dir_close(dir);
 
     return file_open(inode);
