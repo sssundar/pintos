@@ -70,8 +70,6 @@ struct inode * dir_get_inode(struct dir *dir) {
     false otherwise.  On success, sets *INODE to an inode for the file,
     otherwise to a null pointer.  The caller must close *INODE. */
 bool dir_lookup(const struct dir *dir, const char *name, struct inode **inode) {
-    // struct dir_entry e;
-
     ASSERT(dir != NULL);
     ASSERT(name != NULL);
     
@@ -98,24 +96,24 @@ bool dir_add(struct dir *dir, const char *name, block_sector_t inode_sector) {
     ASSERT(dir != NULL);
     ASSERT(name != NULL);
 
-    // Check NAME for validity.
+    /* Check NAME for validity. */
     if (*name == '\0' || strlen(name) > NAME_MAX)
         return false;
 
-    // Check that NAME is not in use.
+    /* Check that NAME is not in use. */
     if(inode_find_matching_dir_entry(dir->inode, name) != BOGUS_SECTOR)
     	goto done;
 
-    // If we got here then the NAME is valid and unused in this directory.
-    // Add it to the directory by putting its sector into the directory's
-    // entries array.
+    /* If we got here then the NAME is valid and unused in this directory.
+       Add it to the directory by putting its sector into the directory's
+       entries array. */
     int idx = inode_get_first_open_directory_slot(dir->inode);
     if (idx == -1) {
     	PANIC("Not enough room in the inode for a new directory entry.");
     	NOT_REACHED();
     }
-    // Add the given filename to the inode's sector in case it's not already
-    // there.
+    /* Add the given filename to the inode's sector in case it's not already
+       there. */
     dir->inode->dir_contents[idx] = inode_sector;
     success = true;
 
@@ -132,19 +130,19 @@ bool dir_remove(struct dir *dir, const char *name) {
     ASSERT(dir != NULL && dir->inode != NULL);
     ASSERT(name != NULL);
 
-    // Check that NAME is not in use.
+    /* Check that NAME is not in use. */
     block_sector_t sect;
     int idx;
     inode_find_matching_idx_and_sector(dir->inode, name, &sect, &idx);
 	if(sect == BOGUS_SECTOR)
 		goto done;
 
-	// Erase the entry for the entries array of the directory's inode.
+	/* Erase the entry for the entries array of the directory's inode. */
 	if (idx != -1) {
 		dir->inode->dir_contents[idx] = BOGUS_SECTOR;
 	}
 
-	// Open inode, remove it.
+	/* Open inode, remove it. */
 	inode = inode_open(sect);
 	if (inode == NULL)
 		goto done;

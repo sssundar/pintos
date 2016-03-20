@@ -310,19 +310,18 @@ int write(int fd, const void *buffer, unsigned size) {
 		lock_release(&sys_lock);
 		return size;
 	}
+	
+	/* Release this because file_write should be thread_safe now. */
+	lock_release(&sys_lock);
 
 	struct fd_element *fde = thread_get_matching_fd_elem(fd);
 	if (fde != NULL) {
 		struct file *f;
 		f = fde->file;
-		if (f == NULL || (f->inode != NULL && f->inode->is_dir)) {
-			lock_release(&sys_lock);
+		if (f == NULL || (f->inode != NULL && f->inode->is_dir))
 			return -1;
-		}
-		lock_release(&sys_lock);
 		return file_write(f, buffer, size);
 	}
-	lock_release(&sys_lock);
 	return 0;
 }
 
@@ -331,13 +330,13 @@ int write(int fd, const void *buffer, unsigned size) {
     read (due to a condition other than end of file). Fd 0 reads from the
     keyboard using input_getc().
 */
-int read(int fd, void *buffer, unsigned size){
+int read(int fd, void *buffer, unsigned size) {
 	lock_acquire (&sys_lock);
 	if (!uptr_is_valid(buffer) || fd < 0) {
 		lock_release(&sys_lock);
 		exit(-1);
 	}
-
+	
 	/* Reading from stdin. */
 	if (fd == STDIN_FILENO) {
 		unsigned int i;
@@ -350,47 +349,42 @@ int read(int fd, void *buffer, unsigned size){
 
 	/* Reading from other kinds of files. */
 	else {
+		/* Release this because file_read should be thread_safe now. */
+		lock_release (&sys_lock);
 		struct fd_element *fde = thread_get_matching_fd_elem(fd);
 		if (fde != NULL) {
 			struct file *f;
 			f = fde->file;
-			lock_release (&sys_lock);
 			return file_read(f, buffer, size);
 		}
 	}
-   	lock_release (&sys_lock);
 	return -1;
 }
 
 /*! Close the file corresponding to the given file descriptor. Note that
     file descriptors are thread-specific. */
 void close(int fd) {
-	lock_acquire(&sys_lock);
 	struct fd_element *fde = thread_get_matching_fd_elem(fd);
 	if (fde != NULL) {
 		file_close(fde->file);
 		list_remove(&fde->f_elem);
 		free(fde);
 	}
-	lock_release(&sys_lock);
 }
 
 /*! Seek to the given POSITION in the file corresponding to FD. */
 void seek(int fd, unsigned position) {
-    lock_acquire(&sys_lock);
     struct fd_element *fde = thread_get_matching_fd_elem(fd);
     if (fde != NULL) {
     	struct file *f;
 		f = fde->file;
 		file_seek(f, position);
 	}
-    lock_release(&sys_lock);
 }
 
 /*! Returns the position of the next byte to be read or written in open file
     fd, expressed in bytes from the beginning of the file. */
-unsigned tell(int fd){
-	lock_acquire(&sys_lock);
+unsigned tell(int fd) {
 	struct fd_element *fde = thread_get_matching_fd_elem(fd);
 	if (fde != NULL) {
 		struct file *f;
@@ -398,7 +392,6 @@ unsigned tell(int fd){
 		lock_release(&sys_lock);
 		return file_tell(f);
 	}
-	lock_release(&sys_lock);
 	return -1;
 }
 
@@ -460,7 +453,7 @@ bool remove(const char *file) {
     load or run for any reason. Thus, the parent process cannot return from
     the exec until it knows whether the child process successfully loaded its
     executable. Uses appropriate synchronization to ensure this. */
-pid_t exec (const char *cmd_line) {
+pid_t exec(const char *cmd_line) {
 	tid_t tid;
 	lock_acquire(&sys_lock);
 	if (!uptr_is_valid(cmd_line)) {

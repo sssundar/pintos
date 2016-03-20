@@ -406,6 +406,7 @@ bool load(const char *file_name, void (**eip) (void), void **esp) {
     }
     lock_release(&eflock);
 
+    // ==TODO== Remove this when directory/filesystem accesses are thread-safe.
     lock_acquire(&sys_lock);
     file = filesys_open(progname);
     if (file == NULL) {
@@ -415,7 +416,7 @@ bool load(const char *file_name, void (**eip) (void), void **esp) {
     }
     lock_release(&sys_lock);
 
-    /* Read and verify executable header. */
+    /* Read and verify executable header. */     
     if (file_read(file, &ehdr, sizeof ehdr) != sizeof ehdr ||
         memcmp(ehdr.e_ident, "\177ELF\1\1\1", 7) || ehdr.e_type != 2 ||
         ehdr.e_machine != 3 || ehdr.e_version != 1 ||

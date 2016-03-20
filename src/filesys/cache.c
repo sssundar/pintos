@@ -29,6 +29,7 @@ void evict_cached_sector (cache_sector_id c);
 void mark_cache_sector_as_accessed(cache_sector_id c);
 void mark_cache_sector_as_dirty(cache_sector_id c);
 bool is_disk_sector_in_cache (cache_sector_id c, block_sector_t t);
+void clear_sector(cache_sector_id c);
 
 /* =============== Statically Allocated Variables ================= */ 
 
@@ -137,9 +138,23 @@ void mark_cache_sector_as_accessed(cache_sector_id c) {
     lock_release(&allow_cache_sweeps);
 }
 
+/* Clears a sector in cache that the caller has a rwlock on */
+void clear_sector(cache_sector_id c) {
+    static uint8_t zeros[BLOCK_SECTOR_SIZE]; /* Zero on init */
+    memcpy(supplemental_filesystem_cache_table[c].head_of_sector_in_memory, 
+        &zeros, 
+        BLOCK_SECTOR_SIZE);           
+}         
+
 /*! Gets sector N + 1 given sector N. */
 block_sector_t get_next_sector(block_sector_t curr_sector) {
 	// TODO CHANGE THIS OR DIE. That is, change after inode indirection is done
+    // Specifically, have whatever is traversing the cache for the first access
+    // call this with the next sector (if available). Alternatively, give
+    // an inode and an offset (next offset) to this function and let it find
+    // the next target. But don't pass a sector - then we have to traverse 
+    // the entire index one reference at a time, we can't take advantage of
+    // logarithmic search.
 	return curr_sector + 1;
 }
 
@@ -157,6 +172,8 @@ void cache_read(cache_sector_id src, void *dst, int offset, size_t bytes) {
                                     src)->head_of_sector_in_memory + 
                         (uint32_t) offset), 
             bytes);
+
+    mark_cache_sector_as_accessed(src);
 
     /* Add the next sector to the read-ahead queue. */
     lock_acquire(&monitor_ra);
@@ -228,6 +245,9 @@ void cache_write(cache_sector_id dst, void *src, int offset, int bytes) {
                         (uint32_t) offset), 
             src,
             bytes);
+
+    mark_cache_sector_as_dirty(dst);
+    mark_cache_sector_as_accessed(dst);
 }
 
 /* Gets the kernel virtual address of the base of the cache sector specified */
@@ -274,15 +294,18 @@ bool is_disk_sector_in_cache (cache_sector_id c, block_sector_t t) {
     how to interpret files, how to extend them, etc. but when they want to 
     actually do reads/writes, they come here and can assume the cache has
     what they need.
-
+    
     The requested sector on disk, t, must already exist on the free-space map 
-    of the disk. 
-
-    ==TODO== What about file extension? deletion?
-    ==TODO== What if the sector doesn't exist in the free-space map? Should
-        that be the responsibility of the inode function caller?
+    of the disk (it's ok if it's the one held in memory).
+    
+    If the extending flag is set, whether reading or writing, the block is
+    cleared prior to handing over the lock on the desired sector to the caller, 
+    and if the block isn't found in cache (e.g. after a file removal, and
+    reallocation of blocks), an eviction is performed, but nothing new is
+    brought in.
     */
-cache_sector_id crab_into_cached_sector(block_sector_t t, bool readnotwrite) {
+cache_sector_id crab_into_cached_sector(block_sector_t t, bool readnotwrite, 
+    	bool extending) {
     
     cache_sector_id target;
     struct cache_meta_data *meta_walker;
@@ -377,6 +400,14 @@ cache_sector_id crab_into_cached_sector(block_sector_t t, bool readnotwrite) {
             } else {
                 /* We have the r/w lock and the requested disk sector is in the 
                     sector "target". We're done. */
+
+                if (extending) {
+                    /*  This was here from a previous owner, clear it before
+                        letting the new owner see it. They think it's un-
+                        allocated. */
+                    clear_sector(target);
+                }
+
                 break;
             }            
 
@@ -444,8 +475,15 @@ cache_sector_id crab_into_cached_sector(block_sector_t t, bool readnotwrite) {
                 evict_cached_sector(target);
             } 
 
-            /* Bring in the relevant data from disk */        
-            pull_sector_from_disk_to_cache(t, target);
+            /* Bring in the relevant data from disk if necessary */        
+            if (extending) {
+                /*  This was here from a previous owner, clear it before
+                    letting the new owner see it. They think it's un-
+                    allocated. */
+                clear_sector(target);
+            } else {                            
+                pull_sector_from_disk_to_cache(t, target);
+            }            
 
             /*    
                 Acquire a sweep lock                                
@@ -463,7 +501,7 @@ cache_sector_id crab_into_cached_sector(block_sector_t t, bool readnotwrite) {
 
             (meta_walker+target)->cache_sector_evicters_ignore = false;
             (meta_walker+target)->cache_sector_accessed = false;
-            (meta_walker+target)->cache_sector_dirty = false;
+            (meta_walker+target)->cache_sector_dirty = extending;
             (meta_walker+target)->old_disk_sector = SILLY_OLD_DISK_SECTOR;
 
             /* IRRELEVANT: Read = True, Write = False */

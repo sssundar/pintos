@@ -107,15 +107,22 @@ bool filesys_create(const char *path, off_t initial_size,
 	}
 	dir_static.inode = parent_inode == NULL ? tinode : parent_inode;
 	dir_static.pos = 0;
-    bool success = (dir_static.inode != NULL &&
-    				free_map_allocate(1, &inode_sector) &&
-                    inode_create(inode_sector,
-                    		initial_size,
-                    		is_directory,
-							filename,
-							is_directory ? parent : BOGUS_SECTOR) &&
-                    dir_add(&dir_static, filename, inode_sector));
-
+    bool success = false;
+    
+    if(dir_static.inode != NULL && free_map_allocate(1, &inode_sector)) {
+    	bool in_success = inode_create(inode_sector,
+    			initial_size, is_directory, filename,
+				is_directory ? parent : BOGUS_SECTOR)
+						&& dir_add(&dir_static, filename, inode_sector);
+		if(!in_success) {
+			if (tinode != NULL)
+    			inode_close(tinode);
+			inode_tree_destroy(inode_sector);
+			return false;
+		}
+		success = true;
+    }
+    
     if (tinode != NULL)
     	inode_close(tinode);
 
@@ -212,7 +219,7 @@ void read_ahead_func(void *aux UNUSED) {
 		// Read in the next sector from disk.
 		lock_release(&monitor_ra);
 		crab_outof_cached_sector(
-				crab_into_cached_sector(rasect->sect_n, true), true);
+				crab_into_cached_sector(rasect->sect_n, true, false), true);
 		lock_acquire(&monitor_ra);
 
 		list_remove(l);
