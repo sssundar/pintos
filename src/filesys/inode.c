@@ -534,12 +534,12 @@ bool inode_create(block_sector_t sector, off_t length,
 static void synch_directory_inode_to_disk (struct inode *i) {
     struct inode_disk *disk_dir;
     cache_sector_id dir = crab_into_cached_sector(i->sector, false, true);
-    disk_dir = (struct inode_disk *) get_cache_sector_base_addr(dir);
+    disk_dir = (struct inode_disk *) get_cache_sector_base_addr(dir);    
     if (disk_dir->is_dir) {
         disk_dir->parent_dir = i->parent_dir;
         memcpy((void *) &disk_dir->dir_contents, 
                 (void *) &i->dir_contents, 
-                (size_t) (MAX_DIR_ENTRIES * sizeof(block_sector_t) ) );        
+                (size_t) (MAX_DIR_ENTRIES * sizeof(block_sector_t) ) );  
     }
     crab_outof_cached_sector(dir, false);
 }
@@ -785,7 +785,7 @@ void inode_close(struct inode *inode) {
         /* Deallocate blocks if removed. */
         if (inode->removed) {                    
             inode_tree_destroy(inode->sector);
-        } else {
+        } else if (inode->is_dir) {
             synch_directory_inode_to_disk (inode); /* Kludge for directories */
         }
 
