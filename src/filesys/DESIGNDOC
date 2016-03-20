@@ -4,7 +4,7 @@
                      |     DESIGN DOCUMENT     |
                      +-------------------------+
 
----- GROUP ----  
+---- GROUP ----
 
 >> Fill in the names and email addresses of your group members.
 
@@ -16,45 +16,25 @@ Dave Luo <dluo@caltech.edu>
 
     Hamik:   read/write lock used by buffer cache, read-ahead, write-behind,
              subdirectories.
-    Sushant: buffer cache, inode indirection, file extension.
+    Sushant: buffer cache, clock eviction, inode indirection, file extension.
     Dave:    skeleton implementation for subdirectories.
 
->> Specify how many late tokens you are using on this assignment: 2 + email
+>> Specify how many late tokens you are using on this assignment: 
+    We are using two late tokens. We emailed you about turning the set in
+    by 7 PM on the 19th of March. Thanks a TON, Donnie!
 
 >> What is the Git repository and commit hash for your submission?
 
    Repository URL: login.cms.caltech.edu:/cs/courses/cs124/teams/Curiosity
-   commit TODO
+   Commit ==TODO==
+
 
 ---- PRELIMINARIES ----
 
 >> If you have any preliminary comments on your submission, notes for the
 >> TAs, or extra credit, please give them here.
 
-Hamik and Sushant implemented the cache, read-ahead, write-behind, and
-read/write locks on the same branch. Then they started to work in their
-own branches, one for subdirectories and one for file extension and inode
-indirection.
-
-Independent of Sushant's work, Hamik's branch at commit hash
-
-    8241d41d3e598aeae5f856dae667cc9bb3956277
-    
-passed 31/121 tests, including all subdirectory tests that weren't
-persistence tests (except dir-vine, since that creates a size 0 file).
-
-Independent of Hamik's work, Sushant's branch at commit hash
-
-    TODO
-    
-passed TODO tests, including all file growth tests except the persistence
-ones. We make a note of this because we anticipated major merging headaches.
-In other words, independently of each other we got all non-persistence tests
-except dir-vine to pass, which corresponds to a fail rate of 24/121.
-
-If you see a lower fail rate it means we managed to merge successfully. If you
-see a higher fail rate it means that we turned in one branch or the other
-because we couldn't merge successfully.
+None.
 
 >> Please cite any offline or online sources you consulted while
 >> preparing your submission, other than the Pintos documentation, course
@@ -73,7 +53,56 @@ hilariously bloated compared to that. Guess we should have looked at Wikipedia!
 >> `struct' member, global or static variable, `typedef', or
 >> enumeration.  Identify the purpose of each in 25 words or less.
 
-TODO
+/*  The number of indirect references in a single or double indirect reference
+    sector. */
+#define INDIRECTION_REFERENCES ( BLOCK_SECTOR_SIZE/sizeof(block_sector_t) )
+
+/*  A lock on the entire free_map, so that bitmap accesses and allocations
+    are thread safe. We couldn't see a way around this one. */
+static struct lock free_map_lock;
+
+/*  A dummy value considerably larger than 8MB (the largest filesystem disk 
+    designed for). Indicates "not assigned" in indirection references. */
+#define SILLY_OLD_DISK_SECTOR (block_sector_t) 0xFFFFFFFF
+
+/*  struct inode_disk, for indexing and extensibility, was stripped of
+    it's ->start field, and given a doubly_indirect field:
+
+    block_sector_t doubly_indirect;     /* 8 Mb reference */
+
+    that is a doubly indirect reference pointing to a sector containing
+    128 singly indirect references. 
+
+    Plenty of other changes were made for directory handling. See that
+    section for details. */
+
+/*  An indirection sector referencing data or further indirection sectors.
+    This maps well to both doubly and singly indirect sectors. */
+struct indirection_block {
+    block_sector_t sector[128];        
+};
+
+/* A lock of all open inodes so list accesses are thread-safe */
+static struct lock open_inodes_lock;
+
+/*! In-memory inode. */
+struct inode {
+    struct list_elem elem;              /*!< Element in inode list. */
+    block_sector_t sector;              /*!< Sector number of disk location. */
+    int open_cnt;                       /*!< Number of openers. */
+    bool removed;                       /*!< True if deleted, false otherwise.*/
+    int deny_write_cnt;                 /*!< 0: writes ok, >0: deny writes. */    
+    
+    /*  This lock is used to change open_cnt and deny_write_cnt in a thread
+        safe manner. elem is protected by the open_inodes lock. */
+    struct lock ismd_lock;              /*! Inode Struct Metadata Lock */
+
+    /* A file extension lock to make sure readers see only what
+    is written, and writers wait their turn when trying to extend
+    the file (so they extend leapfrogging, not bulldozing. */
+    struct lock extension_lock;         /*! Extension lock */
+};
+
 
 >> A2: What is the maximum size of a file supported by your inode
 >> structure?  Show your work.
@@ -93,12 +122,37 @@ No configuration involving some metadata and zero double indirect blocks
 can realize 8MiB file sizes, so our implementation is the simplest possible
 one giving at least the required file size.
 
+It is by no means the most efficient for anything but the largest file
+sizes. Please see index_sizing.py - we know there were parametric ways
+of approaching this problem, that would have let us experiment with
+different branch-order choices.
+
 ---- SYNCHRONIZATION ----
 
 >> A3: Explain how your code avoids a race if two processes attempt to
 >> extend a file at the same time.
 
-TODO
+Files attempting to write to a file first check the inode length from disk.
+They do this without any lock, so the number is not consistent between them,
+necessarily, especially if someone else is just wrapping up an extension.
+
+If they see grounds for extending the file, they attempt to get an extension
+lock. One succeeds, checks the length again (this time sure it's the only
+one who could change it) and decides if it actually needs to extend.
+
+If it does, it proceeds to extend the file to exactly the length it desires,
+not rounded up a block. The details of this operation are outside the scope
+of this question. Then it writes whatever it wanted to write, and THEN, 
+it updates the length. This way incoming writers and readers don't see any
+open space (if they want to work past file boundaries) until this write
+is complete. No "extension zeros" are readable.
+
+It then releases the extension lock, and the other guy comes in and 
+decides if he still needs to extend anything.
+
+In this manner, readers (so long as they aren't reading beyond
+the visible file boundaries) aren't blocked at all, and writers staying
+within the confines of the file aren't either; only other extenders are blocked.
 
 >> A4: Suppose processes A and B both have file F open, both
 >> positioned at end-of-file.  If A reads and B writes F at the same
@@ -107,7 +161,28 @@ TODO
 >> nonzero data, A is not allowed to see all zeros.  Explain how your
 >> code avoids this race.
 
-TODO
+One or the other will access the length first. Suppose A does. A, being a
+reader, will take the length as fixed. If A's read stays within the bounds
+of this length, A assumes any extenders are done extending, and proceeds
+without acquiring any locks. If A's read extends the current length, A 
+reads zero bytes beyond it's initially observed length. That means,
+no extension-zeros, no partial extension writes, it just stops at the
+length it first saw.
+
+B, on the other hand, will take a cursory look at the length,
+and if its write will pass the length, it tries to acquire an extension
+lock. Once this is received, B checks the length again, and if no one
+else has extended past the point B wants to write, B holds the lock, and
+extends the file (how is, again, beyond the scope of the queston). B does
+NOT change the length of the file in the meantime. It just blocks any other
+writers who want to extend the file (other writers and readers are fine, and
+readers overreaching will just see the old length and stop reading). 
+
+When B is done extending, it writes what it wants to write, then it changes
+the length, and releases the extension lock. Now, any readers/writers who want
+to extend are welcome to do so - they see all of what B intended to write. 
+
+Therefore, A will read none or all of what B writes - never part.
 
 >> A5: Explain how your synchronization design provides "fairness".
 >> File access is "fair" if readers cannot indefinitely block writers
@@ -303,14 +378,91 @@ caught this bug.
 >> `struct' member, global or static variable, `typedef', or
 >> enumeration.  Identify the purpose of each in 25 words or less.
 
-TODO
+/* Sizing in memory of the cache of disk sectors for files */
+#define NUM_DISK_SECTORS_CACHED 64
+#define NUM_DISK_CACHE_PAGES 8
+typedef uint32_t cache_sector_id; 
+
+/*! Sentinel value for old_disk_sector so we know it's ignorable (evictions,
+    vs write-ahead, vs. normal operation). Works only because we have
+    a tiny disk (8MB) cap. */
+#define SILLY_OLD_DISK_SECTOR (block_sector_t) 0xFFFFFFFF
+
+/*! Cache Meta^2 Data, containing flags and locks useful for concurrent 
+    reading/writing access, and eviction. */
+struct cache_meta_data {
+    // ------------------------- Invariants -----------------------------------
+    /* This cache sector's id, from 0 to NUM_DISK_SECTORS_CACHED-1 */
+    cache_sector_id cid;
+    /*  Kernel virtual address of start of this cached sector. */
+    void *head_of_sector_in_memory;
+
+    // ------------------ Critical/mutable fields -----------------------------
+    /* We only allow single-sector wide allocation at a time. */
+    bool cache_sector_free;
+    /* Preferentially do not evict if possible. */
+    bool cache_sector_dirty;
+    /* For basic clock eviction algorithm. */
+    bool cache_sector_accessed;
+    /* Flag saying we're currently evicting, or writing ahead,
+       so might want to check old_disk_sector (if >= 0)
+       as well if you are sweeping meta^2 data. also (ideally) don't try
+       to evict this again till I finish! */
+    bool cache_sector_evicters_ignore;
+    /* The disk sector we're evicting. */
+    block_sector_t old_disk_sector;
+    /* It is the disk sector we're bringing (after eviction), or have
+       already brought, in. */
+    block_sector_t current_disk_sector;
+    /* Cache sector read/write/eviction lock (multiple access exclusion)
+       blocks threads waiting for the current disk sector. */
+    struct rwlock read_write_diskio_lock; 
+    /* Incoming crabbing threads looking for current_disk_sector when we're
+       in the middle of an io operation should request this lock. It
+       will already be held by the io-initiating thread.
+       They will either be woken (at which point they can restart their
+       crab) or they will GET the lock (in which case the lock was
+       just released by io-initiating thread. In this case they
+       immediately release the lock and try crabbing in again. */
+    struct lock pending_io_lock;
+};
+
+/* Pointer to the head of a contiguous array of cache_meta_data structs */
+struct cache_meta_data *supplemental_filesystem_cache_table;
+
+/*! List of the sectors N whose next elements N + 1 should be read ahead.
+    defined in filesys.c. */
+extern struct list ra_sectors;
+
+// Please see C4.
+extern struct lock monitor_ra;
+extern struct condition cond_ra;
+
+/*! Cache circular queue head index for clock eviction */
+cache_sector_id cache_head;
+
+/*! Maintain a global allow_cache_sweeps lock permanently
+    This allows threads to search the cache meta^2 data for their 
+    sector of interest without having to worry about whether sector meta^2 data
+    changes partway through. They cannot spend a long time holding this lock.
+    See discussion of crabbing in Lecture 25! */
+struct lock allow_cache_sweeps; 
+
+/* Pointer to the pages associated with the file system cache itself */
+void *file_system_cache;
+
 
 ---- ALGORITHMS ----
 
 >> C2: Describe how your cache replacement algorithm chooses a cache
 >> block to evict.
 
-TODO
+It is the simplest possible clock. It maintains a circular array-queue structure
+with a head pointer, and cycles through once searching for non-accessed, non-
+dirty, and not-in-the-process-of-being-evicted cache sectors. If it finds none,
+it cycles again, and this time it takes anything that isn't being evicted,
+the first it finds (whether accessed or dirty). We do not discriminate between
+metadata and actual data.
 
 >> C3: Describe your implementation of write-behind.
 
@@ -349,12 +501,76 @@ it's signaled we dequeue a read-ahead sector and load it into the cache.
 >> buffer cache block, how are other processes prevented from evicting
 >> that block?
 
-TODO
+We use a read/write/io condition lock. Reads and writes are in-memory accesses.
+IO accesses are disk access (evictions, replacements). All mutually exclude
+each other.
+
+If one process is actively reading or writing in-memory (not replacement or
+eviction), things are straightforward: the would-be evictors check for
+a flag that other evictors know to leave, saying "don't try to evict me."
+This flag is set atomically within a cache-sweep lock. If they don't see
+the lock, they set the flag themselves, atomically, and try to acquire
+an IO lock. 
+
+They get priority if the current readers or writers finish. This means
+not that there are no waiting readers/writers, but the current ones,
+the ones inside the condition lock already, have to exit the lock, before
+others are allowed R->IO, W->IO or R->W, W->R access.
+
+By means of this flag, only one thread ever queues up for an IO lock, or holds 
+it, max - there is never a running IO lock holder + an IO lock waiter.
 
 >> C6: During the eviction of a block from the cache, how are other
 >> processes prevented from attempting to access the block?
 
-TODO
+This is the tricky case, because I did it with a flag and a lock, rather than
+a try_to_get_lock. So, I'm thinking I need to evict a block because I don't
+see it in the cache array.
+
+I acquire a cache sweep lock so the cache metadata is know static.
+I search the cache for my sector of interest. If I do not find it, 
+I use my clock eviction policy to pick an eviction candidate.
+
+Now, I need to atomically flag the sector in question so that other evicters
+know to leave it alone. I then release my cache sweep lock,
+and request an IO lock. 
+
+No others will try to evict this sector now. Readers and writers will
+keep trying to access the sector for the OLD sector, still in there. Unknown
+to me, others trying to bring in my sector of interest might succeed elsewhere.
+
+Now I get the IO lock. I check to see (with a cache sweep lock) whether
+my sector of interest is anywhere else. If it is, I release the IO lock
+and reset the evicters-ignore flag, and walk out of the sector, to try to
+go to that sector (if it still exists when I get there).
+
+If my target still isn't anywhere else, then, still within the static confines 
+of the sweep lock, I get a pending_io lock, then set the metadata for the 
+cache sector to identify the old sector I'm about to evict, and the new
+sector I'm about to bring in. 
+
+Now threads already blocked on the old sector, when they wake up when I'm done,
+will see that they have the wrong sector and go look somewhere else. New threads
+coming in looking for the old sector know to block on me till I finish 
+evicting (synchronizing to disk) so they won't attempt to bring the same
+block in anywhere else. New threads coming in looking for the thing I'm 
+bringing in won't be able to beat me to the punch (say they get to the 
+old disk sector between the time it takes me to release the sweep lock
+and get the IO lock). They'll block on the pending_io lock because they'll
+see an eviction is in place so the "current disk sector" isn't ready yet.
+
+Now I can release the sweep lock. The metadata changes show up atomically,
+and the dual-locking mechanism ensures I can't be beaten to the sector
+by others looking for the same target sector. Shortly after I get the
+IO lock, I can release the pending_io lock. The waiting threads for the 
+sector I'm bringing up all wake up, see they need my sector, and block
+on the proper rwio lock. 
+
+So now I can finish at my leisure. I evict, replace if necessary, or clear
+if it's just a new sector being allocated, and then get a sweep lock,
+remove the evicters ignore flag, reset accessed and dirty bits, and 
+release my IO lock, followed by the sweep lock, so from the outside world's 
+point of view the sector is atomically ready for rw/io again. 
 
 ---- RATIONALE ----
 
@@ -366,8 +582,11 @@ the cache then we won't have to access the disk at all until the write-behind
 thread runs for back-up. That scenario would benefit enormously from caching.
 
 If we have a file larger than the cache that is accessed linearly from start 
-to finish then read-ahead would help a lot. Write-back would help with data
-recovery and consistency under system crashes.
+to finish then read-ahead would help a lot. So long as not too many others
+were also reading/writing with accesses requring the cache; in that case
+read-ahead might toss a ton of metadata and slow us down. 
+
+Write-back would help with data recovery and consistency under system crashes.
 
                SURVEY QUESTIONS
                ================
