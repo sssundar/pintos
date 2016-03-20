@@ -7,6 +7,11 @@
 #include "threads/malloc.h"
 #include "threads/thread.h"
 
+// ------------------------------ Prototypes ----------------------------------
+
+static uint32_t get_last_consecutive_char(const char *str, char c);
+static bool is_single_repeated_char(const char *str, char c);
+
 // -------------------------------- Bodies ------------------------------------
 
 /*! Creates a directory with space for ENTRY_CNT entries in the
@@ -175,6 +180,25 @@ bool dir_readdir(struct dir *dir, char name[NAME_MAX + 1]) {
     return success;
 }
 
+/*! Returns index of last consecutive char C in STR from its start.
+    Returns max unsigned 32 bit int if the first char doesn't match. */
+static uint32_t get_last_consecutive_char(const char *str, char c) {
+	char *ptr = (char *) str;
+	uint32_t i = 0;
+	while (*ptr != '\0' && *ptr == c) {
+		ptr++;
+		i++;
+	}
+	return i - 1;
+}
+
+/*! Returns true if STR consists of just the char C repeated. */
+static bool is_single_repeated_char(const char *str, char c) {
+	if (strlen(str) == 0)
+		return false;
+	return get_last_consecutive_char(str, c) == strlen(str) - 1;
+}
+
 /*! Return the sector in which the given relative- or absolute-named file
     lives. Returns NULL if can't find the directory. User must close the
     inode returned. Stores the parent directory's inode pointer into PARENT
@@ -183,7 +207,7 @@ struct inode *dir_get_inode_from_path(const char *path,
 		struct inode **parent, char *filename) {
 	char *last_slash = strrchr(path, '/');
 
-	if (strcmp(path, "/") == 0) {
+	if (strcmp(path, "/") == 0 || is_single_repeated_char(path, '/')) {
 		struct inode *rtn = dir_open_root()->inode;
 		*parent = NULL;
 		strlcpy(filename, "/", 2);
@@ -250,6 +274,9 @@ struct inode *dir_get_inode_from_path(const char *path,
 		/* Find the current directory name from the path. */
 		char curr_dir_name[NAME_MAX + 1];
 		char *first_slash = strchr(path_ptr, '/');
+
+		/* Consolidate repeated slashes. */
+		first_slash += get_last_consecutive_char(first_slash, '/');
 		strlcpy(curr_dir_name, path_ptr, first_slash - path_ptr + 1);
 
 		/* Get the directory's sector from disk or the cache. */
