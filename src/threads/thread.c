@@ -3,6 +3,7 @@
 #include <random.h>
 #include <stdio.h>
 #include <string.h>
+#include "lib/user/syscall.h"
 #include "list.h"
 #include "threads/thread.h"
 #include "threads/flags.h"
@@ -308,18 +309,15 @@ void thread_exit(void) {
 
 #ifdef USERPROG
 
-	/* Close the open file descriptors.*/
-    /* TODO Was causing problems. Fix and uncomment.
-	lock_acquire(&sys_lock);
+	/* Close the open files.*/
+	struct list_elem *l2;
+	struct fd_element *r2;
 	for (l2 = list_begin(&thread_current()->files);
 			 l2 != list_end(&thread_current()->files);
 			 l2 = list_next(l2)) {
-		r2 = list_entry(l, struct fd_element, f_elem);
-		close(r2->fd);
-		free(r2);
+		r2 = list_entry(l2, struct fd_element, f_elem);
+		file_close(r2->file);
 	}
-	lock_release(&sys_lock);
-	*/
 
     /* Tell parent function that I'm dying. Remove from its child list. */
     if (thread_current()->parent != NULL) {
