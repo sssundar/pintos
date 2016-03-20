@@ -40,6 +40,8 @@ static void cleanup_failed_extension(  uint32_t base_first_index,
 
 void inode_tree_destroy(block_sector_t inode_sector);
 
+static void synch_directory_inode_to_disk (struct inode *i);
+
 /*! Returns the number of sectors to allocate for an inode SIZE
     bytes long. */
 static inline size_t bytes_to_sectors(off_t size) {
@@ -528,6 +530,20 @@ bool inode_create(block_sector_t sector, off_t length,
     return success;
 }
 
+/*! Called to push directory inode metadata to the disk. */
+static void synch_directory_inode_to_disk (struct inode *i) {
+    struct inode_disk *disk_dir;
+    cache_sector_id dir = crab_into_cached_sector(i->sector, false, true);
+    disk_dir = (struct inode_disk *) get_cache_sector_base_addr(dir);
+    if (disk_dir->is_dir) {
+        disk_dir->parent_dir = i->parent_dir;
+        memcpy((void *) &disk_dir->dir_contents, 
+                (void *) &i->dir_contents, 
+                (size_t) (MAX_DIR_ENTRIES * sizeof(block_sector_t) ) );        
+    }
+    crab_outof_cached_sector(dir, false);
+}
+
 /*! Cleans up after a failed file extension, either during creation or afterward
     A file extension lock must be held on the inode prior to entry.
 
@@ -764,11 +780,13 @@ void inode_close(struct inode *inode) {
             */    
         lock_acquire(&open_inodes_lock);
         list_remove(&inode->elem);        
-        lock_release(&open_inodes_lock);
-            
+        lock_release(&open_inodes_lock);        
+
         /* Deallocate blocks if removed. */
-        if (inode->removed) {        
+        if (inode->removed) {                    
             inode_tree_destroy(inode->sector);
+        } else {
+            synch_directory_inode_to_disk (inode); /* Kludge for directories */
         }
 
         free(inode); 
