@@ -42,12 +42,6 @@ void inode_tree_destroy(block_sector_t inode_sector);
 
 static void synch_directory_inode_to_disk (struct inode *i);
 
-/*! Returns the number of sectors to allocate for an inode SIZE
-    bytes long. */
-static inline size_t bytes_to_sectors(off_t size) {
-    return DIV_ROUND_UP(size, BLOCK_SECTOR_SIZE);
-}
-
 /*! Returns the block device sector that contains byte offset POS
     within INODE.
     Returns SILLY_OLD_DISK_SECTOR if INODE does not contain data for a byte at 
@@ -533,7 +527,7 @@ bool inode_create(block_sector_t sector, off_t length,
 /*! Called to push directory inode metadata to the disk. */
 static void synch_directory_inode_to_disk (struct inode *i) {
     struct inode_disk *disk_dir;
-    cache_sector_id dir = crab_into_cached_sector(i->sector, false, true);
+    cache_sector_id dir = crab_into_cached_sector(i->sector, false, false);
     disk_dir = (struct inode_disk *) get_cache_sector_base_addr(dir);    
     if (disk_dir->is_dir) {
         disk_dir->parent_dir = i->parent_dir;
@@ -1032,7 +1026,7 @@ int inode_get_first_open_directory_slot(struct inode *dir) {
 	return -1;
 }
 
-/*! Gets the directory entry in the given inode DIRECTROY with the
+/*! Gets the directory entry in the given inode DIRECTORY with the
     given NAME. Also gets the index at which it occurs. */
 void inode_find_matching_idx_and_sector(struct inode *directory,
 		const char *name, block_sector_t *the_sector, int *the_index) {
